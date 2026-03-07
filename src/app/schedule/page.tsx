@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { Calendar, MapPin, Tv, Plus } from 'lucide-react';
+import { Calendar, MapPin, Tv, Plus, ChevronDown } from 'lucide-react';
 
 import { getFollowedTeams } from '@/lib/user-prefs';
 import { getUpcomingGames } from '@/lib/mock-data';
@@ -12,6 +12,8 @@ import { contrastColor, formatTimeInZone, datekeyInZone } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
+import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
+import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import type { Team, UpcomingGame, SportKey } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -79,14 +81,50 @@ function CompetitionBadge({ name }: { name: string }) {
 
 // ─── Schedule row ─────────────────────────────────────────────────────────────
 
-function ScheduleRow({ game, userTz }: { game: ScheduleEntry; userTz: string }) {
+interface ScheduleRowProps {
+  game: ScheduleEntry;
+  userTz: string;
+  dateKey: string;
+  isHighlighted: boolean;
+  isExpanded: boolean;
+  onHover: (dateKey: string | null) => void;
+  onToggle: () => void;
+}
+
+function ScheduleRow({
+  game,
+  userTz,
+  dateKey,
+  isHighlighted,
+  isExpanded,
+  onHover,
+  onToggle,
+}: ScheduleRowProps) {
   const { team } = game;
   const displayTime = formatTimeInZone(game.date, userTz);
 
   return (
     <div
-      className="flex items-center gap-3 glass rounded-2xl px-4 py-3 float-hover"
-      style={{ borderLeftColor: `${team.primaryColor}70`, borderLeftWidth: '2px' }}
+      className={[
+        'flex items-center gap-3 glass px-4 py-3 cursor-pointer',
+        'transition-all duration-200 select-none',
+        isExpanded ? '' : 'rounded-2xl float-hover',
+        isHighlighted && !isExpanded ? 'brightness-110' : '',
+      ].join(' ')}
+      style={{
+        borderLeftColor: `${team.primaryColor}70`,
+        borderLeftWidth: '2px',
+        ...(isHighlighted && !isExpanded
+          ? { boxShadow: `0 0 20px ${team.primaryColor}28, inset 0 0 0 1px ${team.primaryColor}22` }
+          : {}),
+      }}
+      onClick={onToggle}
+      onMouseEnter={() => onHover(dateKey)}
+      onMouseLeave={() => onHover(null)}
+      role="button"
+      aria-expanded={isExpanded}
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
       {/* Team badge */}
       <TeamBadge
@@ -130,12 +168,17 @@ function ScheduleRow({ game, userTz }: { game: ScheduleEntry; userTz: string }) 
         </div>
       </div>
 
-      {/* Time + home/away */}
-      <div className="text-right shrink-0">
-        <p className="text-sm font-bold" style={{ color: team.primaryColor }}>
-          {displayTime}
-        </p>
-        <p className="text-xs text-white/35 mt-0.5">{game.isHome ? 'Home' : 'Away'}</p>
+      {/* Time + home/away + expand toggle */}
+      <div className="text-right shrink-0 flex items-center gap-2.5">
+        <div>
+          <p className="text-sm font-bold" style={{ color: team.primaryColor }}>
+            {displayTime}
+          </p>
+          <p className="text-xs text-white/35 mt-0.5">{game.isHome ? 'Home' : 'Away'}</p>
+        </div>
+        <ChevronDown
+          className={`h-4 w-4 text-white/25 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+        />
       </div>
     </div>
   );
@@ -203,6 +246,50 @@ function FilterPill({
   );
 }
 
+// ─── Followed-teams sidebar widget ────────────────────────────────────────────
+
+function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
+  if (teams.length === 0) return null;
+  return (
+    <div className="glass rounded-2xl p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">
+        Following
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {teams.map(team => (
+          <div key={team.id} className="relative group">
+            <TeamBadge
+              logoUrl={TEAM_LOGOS[team.id]}
+              abbreviation={team.abbreviation}
+              primaryColor={team.primaryColor}
+              size={44}
+              className="rounded-xl"
+            />
+            {/* Name tooltip */}
+            <div
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-md
+                         text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100
+                         pointer-events-none transition-opacity duration-150 z-20"
+              style={{
+                background: `${team.primaryColor}dd`,
+                color: contrastColor(team.primaryColor),
+              }}
+            >
+              {team.shortName}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Link href="/onboarding" className="block mt-3">
+        <button className="text-[10px] font-semibold text-white/25 hover:text-white/60 transition-colors flex items-center gap-1">
+          <Plus className="h-3 w-3" />
+          Add teams
+        </button>
+      </Link>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
@@ -213,6 +300,12 @@ export default function SchedulePage() {
 
   const [activeLeague,   setActiveLeague]   = useState<SportKey | 'all'>('all');
   const [homeAwayFilter, setHomeAwayFilter] = useState<'all' | 'home' | 'away'>('all');
+
+  // Cross-highlight state: shared between calendar and schedule rows
+  const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
+
+  // Expanded card state
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Detect browser timezone once on mount
   useEffect(() => {
@@ -274,10 +367,23 @@ export default function SchedulePage() {
   // Only show league tabs for leagues the user actually follows
   const presentLeagues = LEAGUES.filter(l => teams.some(t => t.league === l.id));
 
+  // Calendar interaction handlers
+  const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
+
+  const handleDayClick = useCallback((dk: string) => {
+    const el = document.getElementById(`date-section-${dk}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  // Toggle expanded card
+  const toggleExpand = useCallback((id: string) => {
+    setExpandedId(prev => prev === id ? null : id);
+  }, []);
+
   if (!loading && teams.length === 0) return <EmptyState />;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-8">
 
       {/* ── Header ── */}
       <div className="mb-6">
@@ -297,64 +403,116 @@ export default function SchedulePage() {
         <NextGameHero game={allGames[0]} userTz={userTz} />
       )}
 
-      {/* ── Filters ── */}
-      {!loading && (
-        <div className="flex flex-wrap items-center gap-2 mb-8">
-          <div className="flex flex-wrap gap-1.5 flex-1">
-            <FilterPill label="All"  active={activeLeague === 'all'} onClick={() => setActiveLeague('all')} />
-            {presentLeagues.map(l => (
-              <FilterPill
-                key={l.id}
-                label={`${l.icon} ${l.name}`}
-                active={activeLeague === l.id}
-                onClick={() => setActiveLeague(l.id)}
-              />
-            ))}
-          </div>
-          <div className="flex gap-1.5 shrink-0">
-            {(['all', 'home', 'away'] as const).map(opt => (
-              <FilterPill
-                key={opt}
-                label={opt === 'all' ? 'All games' : opt.charAt(0).toUpperCase() + opt.slice(1)}
-                active={homeAwayFilter === opt}
-                onClick={() => setHomeAwayFilter(opt)}
-                muted
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ── Two-column layout: schedule list + sidebar ── */}
+      <div className="lg:grid lg:grid-cols-[1fr_270px] lg:gap-6 lg:items-start">
 
-      {/* ── Content ── */}
-      {loading ? (
-        <ScheduleSkeleton />
-      ) : filteredGames.length === 0 ? (
-        <div className="text-center py-20 text-white/40">
-          <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No fixtures match this filter.</p>
-        </div>
-      ) : (
-        <div className="space-y-8">
-          {groupedByDate.map(({ dateKey, representativeDate, games }) => (
-            <section key={dateKey}>
-              <div className="flex items-center gap-3 mb-3">
-                <p className="text-sm font-bold text-white/80 shrink-0">
-                  {formatDateHeading(representativeDate, dateKey, userTz)}
-                </p>
-                <div className="flex-1 h-px bg-white/10" />
-                <span className="text-xs text-white/30 shrink-0">
-                  {games.length} game{games.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {games.map(game => (
-                  <ScheduleRow key={game.id} game={game} userTz={userTz} />
+        {/* ── Left column: filters + schedule ── */}
+        <div>
+          {/* Filters */}
+          {!loading && (
+            <div className="flex flex-wrap items-center gap-2 mb-8">
+              <div className="flex flex-wrap gap-1.5 flex-1">
+                <FilterPill label="All"  active={activeLeague === 'all'} onClick={() => setActiveLeague('all')} />
+                {presentLeagues.map(l => (
+                  <FilterPill
+                    key={l.id}
+                    label={`${l.icon} ${l.name}`}
+                    active={activeLeague === l.id}
+                    onClick={() => setActiveLeague(l.id)}
+                  />
                 ))}
               </div>
-            </section>
-          ))}
+              <div className="flex gap-1.5 shrink-0">
+                {(['all', 'home', 'away'] as const).map(opt => (
+                  <FilterPill
+                    key={opt}
+                    label={opt === 'all' ? 'All games' : opt.charAt(0).toUpperCase() + opt.slice(1)}
+                    active={homeAwayFilter === opt}
+                    onClick={() => setHomeAwayFilter(opt)}
+                    muted
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Schedule content */}
+          {loading ? (
+            <ScheduleSkeleton />
+          ) : filteredGames.length === 0 ? (
+            <div className="text-center py-20 text-white/40">
+              <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p className="text-sm">No fixtures match this filter.</p>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {groupedByDate.map(({ dateKey, representativeDate, games }) => (
+                <section key={dateKey} id={`date-section-${dateKey}`}>
+                  <div className="flex items-center gap-3 mb-3">
+                    <p className="text-sm font-bold text-white/80 shrink-0">
+                      {formatDateHeading(representativeDate, dateKey, userTz)}
+                    </p>
+                    <div className="flex-1 h-px bg-white/10" />
+                    <span className="text-xs text-white/30 shrink-0">
+                      {games.length} game{games.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {games.map(game => {
+                      const isHighlighted = hoveredDateKey === dateKey;
+                      const isExpanded    = expandedId === game.id;
+
+                      return (
+                        <div
+                          key={game.id}
+                          className="rounded-2xl overflow-hidden"
+                          style={{
+                            transition: 'box-shadow 0.15s ease',
+                            boxShadow: isHighlighted
+                              ? `0 0 28px ${game.team.primaryColor}28`
+                              : undefined,
+                          }}
+                        >
+                          <ScheduleRow
+                            game={game}
+                            userTz={userTz}
+                            dateKey={dateKey}
+                            isHighlighted={isHighlighted}
+                            isExpanded={isExpanded}
+                            onHover={handleCalendarHover}
+                            onToggle={() => toggleExpand(game.id)}
+                          />
+                          {isExpanded && <GameExpandPanel game={game} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* ── Right column: sticky sidebar ── */}
+        <aside className="hidden lg:block sticky top-20 space-y-4 mt-0">
+
+          {/* Calendar */}
+          {!loading && (
+            <ScheduleCalendar
+              games={filteredGames}
+              userTz={userTz}
+              hoveredDateKey={hoveredDateKey}
+              onHover={handleCalendarHover}
+              onDayClick={handleDayClick}
+            />
+          )}
+
+          {/* Followed teams */}
+          <FollowedTeamsWidget teams={teams} />
+
+        </aside>
+      </div>
     </div>
   );
 }
