@@ -2,52 +2,124 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Keyframes — defined at root so inline style animations can reference them ── */
+
+@keyframes drift {
+  0%,  100% { transform: translate(0, 0) scale(1); }
+  33%        { transform: translate(24px, -36px) scale(1.06); }
+  66%        { transform: translate(-18px, 22px) scale(0.94); }
+}
+
+@keyframes drift-slow {
+  0%,  100% { transform: translate(0, 0) scale(1); }
+  40%        { transform: translate(-30px, 20px) scale(1.08); }
+  75%        { transform: translate(18px, -28px) scale(0.92); }
+}
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%       { opacity: 0.7; transform: scale(1.12); }
+}
+
 @layer base {
   :root {
     color-scheme: dark;
   }
 
   html {
-    @apply bg-zinc-950 text-zinc-50 antialiased;
+    @apply antialiased text-white;
     scroll-behavior: smooth;
+    background-color: #03031a;
   }
 
   body {
-    @apply bg-zinc-950 min-h-screen;
+    min-height: 100vh;
+    background-color: #03031a;
+    /*
+     * Five ambient gradient blobs — read by backdrop-filter on glass cards.
+     * Cool indigo at the top, warm violet+orange mid-canvas, electric blue far-left.
+     * Keep opacity moderate so they illuminate rather than overpower.
+     */
+    background-image:
+      /* Top-centre — electric indigo crown */
+      radial-gradient(ellipse 130% 70% at 50% -20%, rgba(109,  40, 217, 0.40) 0%, transparent 65%),
+      /* Bottom-right — deep violet warmth */
+      radial-gradient(ellipse  75% 70% at 105% 100%, rgba(192,  38, 211, 0.22) 0%, transparent 65%),
+      /* Mid-right — sunset amber pulse */
+      radial-gradient(ellipse  50% 50% at  92%  42%, rgba(251, 146,  60, 0.12) 0%, transparent 60%),
+      /* Left-centre — electric blue */
+      radial-gradient(ellipse  55% 60% at  -8%  60%, rgba( 37,  99, 235, 0.16) 0%, transparent 65%),
+      /* Bottom-left — rose undertone */
+      radial-gradient(ellipse  40% 40% at  10% 100%, rgba(219,  39, 119, 0.09) 0%, transparent 60%);
   }
 
-  /* Custom scrollbar — dark theme */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    @apply bg-zinc-950;
-  }
+  /* Frosted scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    @apply bg-zinc-700 rounded-full;
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-600;
+    background: rgba(255, 255, 255, 0.26);
   }
 }
 
 @layer utilities {
-  /* Gradient glow used in hero and cards */
+  /* Hero section — transparent so body gradient shows through */
   .hero-gradient {
-    background:
-      radial-gradient(ellipse at 65% 35%, rgba(99, 102, 241, 0.18) 0%, transparent 60%),
-      radial-gradient(ellipse at 10% 80%, rgba(6, 182, 212, 0.10) 0%, transparent 50%),
-      #09090b;
+    background: transparent;
   }
 
-  /* Subtle team color glow applied inline via style prop */
-  .team-glow {
-    box-shadow: 0 0 0 1px var(--team-color, #6366f1);
+  /* ── Glass surface utilities ────────────────────────────────────────────────
+   * saturate(180%) makes the blurred background colours more vivid — the
+   * "real glass" effect where what's behind is amplified, not washed out.
+   */
+  .glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
   }
 
-  /* Card surface */
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+  }
+
+  .glass-hero {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(48px) saturate(200%);
+    -webkit-backdrop-filter: blur(48px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 0  0  1px rgba(255, 255, 255, 0.04),
+      0 20px 80px rgba(0, 0, 0, 0.50),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+  }
+
+  /* ── Float animation for hover effects ─────────────────────────────────── */
+  .float-hover {
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+  .float-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.40);
+  }
+
+  /* ── Gradient text — Electric Purple → Sunset Orange ───────────────────── */
+  .gradient-warm {
+    background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f97316 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Card surface — kept for backwards compat ──────────────────────────── */
   .card-surface {
-    @apply bg-zinc-900 border border-zinc-800 rounded-2xl;
+    @apply glass rounded-2xl;
   }
 }

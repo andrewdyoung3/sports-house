@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Sparkles, Calendar, Newspaper, Trophy } from 'lucide-react';
 import Link from 'next/link';
 
@@ -21,6 +21,11 @@ interface TeamFeedCardProps {
 
 export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [userTz,      setUserTz]      = useState('Australia/Brisbane');
+
+  useEffect(() => {
+    try { setUserTz(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch { /* keep default */ }
+  }, []);
 
   const games   = getUpcomingGames(team, 2);
   const results = getRecentResults(team, 5);
@@ -69,7 +74,8 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
             <button
               onClick={() => onUnfollow(team.id)}
               className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors px-1 py-1 rounded-lg hover:bg-zinc-800"
-              title="Unfollow team"
+              title={`Unfollow ${team.name}`}
+              aria-label={`Unfollow ${team.name}`}
             >
               ✕
             </button>
@@ -95,7 +101,7 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
           </p>
           <div className="space-y-4">
             {games.map(game => (
-              <GameCard key={game.id} game={game} teamColor={team.primaryColor} />
+              <GameCard key={game.id} game={game} teamColor={team.primaryColor} userTz={userTz} />
             ))}
           </div>
         </CardSection>

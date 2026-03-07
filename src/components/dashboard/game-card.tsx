@@ -1,15 +1,17 @@
 import type { UpcomingGame } from '@/types';
 import { Tv, MapPin, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { formatGameDate } from '@/lib/utils';
+import { formatGameDate, formatTimeInZone } from '@/lib/utils';
 
 interface GameCardProps {
   game: UpcomingGame;
   teamColor: string;
+  userTz: string;
 }
 
-export function GameCard({ game, teamColor }: GameCardProps) {
-  const dateLabel = formatGameDate(game.date);
+export function GameCard({ game, teamColor, userTz }: GameCardProps) {
+  const dateLabel   = formatGameDate(game.date);
+  const displayTime = formatTimeInZone(game.date, userTz);
 
   return (
     <div className="flex flex-col gap-3">
@@ -33,7 +35,7 @@ export function GameCard({ game, teamColor }: GameCardProps) {
 
         <div className="text-right shrink-0">
           <p className="text-sm font-bold" style={{ color: teamColor }}>{dateLabel}</p>
-          <p className="text-xs text-zinc-500">{game.time}</p>
+          <p className="text-xs text-zinc-500">{displayTime}</p>
         </div>
       </div>
 
@@ -45,7 +47,7 @@ export function GameCard({ game, teamColor }: GameCardProps) {
         </span>
         <span className="flex items-center gap-1 text-xs text-zinc-500">
           <Calendar className="h-3 w-3" />
-          {new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+          {new Intl.DateTimeFormat('en-AU', { timeZone: userTz, month: 'short', day: 'numeric' }).format(new Date(game.date))}
         </span>
         {game.odds && (
           <span className="text-xs text-zinc-500">

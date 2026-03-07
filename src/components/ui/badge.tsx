@@ -8,10 +8,10 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const variants: Record<BadgeVariant, string> = {
-  default: 'bg-zinc-800 text-zinc-300 border border-zinc-700',
+  default: 'bg-white/8 text-white/70 border border-white/12',
   win:     'bg-emerald-900/50 text-emerald-400 border border-emerald-800/60',
   loss:    'bg-red-900/40 text-red-400 border border-red-800/50',
-  neutral: 'bg-zinc-800 text-zinc-400 border border-zinc-700',
+  neutral: 'bg-white/6 text-white/50 border border-white/10',
   live:    'bg-red-600 text-white animate-pulse',
 };
 

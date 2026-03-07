@@ -10,10 +10,26 @@ import type { Team } from '@/types';
 
 const STORAGE_KEY = 'sports-house:teams';
 
+function isTeam(v: unknown): v is Team {
+  return (
+    typeof v === 'object' && v !== null &&
+    typeof (v as Record<string, unknown>).id === 'string' &&
+    typeof (v as Record<string, unknown>).name === 'string' &&
+    typeof (v as Record<string, unknown>).shortName === 'string' &&
+    typeof (v as Record<string, unknown>).abbreviation === 'string' &&
+    typeof (v as Record<string, unknown>).league === 'string' &&
+    typeof (v as Record<string, unknown>).primaryColor === 'string' &&
+    typeof (v as Record<string, unknown>).secondaryColor === 'string' &&
+    typeof (v as Record<string, unknown>).venue === 'string'
+  );
+}
+
 export function getFollowedTeams(): Team[] {
   if (typeof window === 'undefined') return [];
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]') as Team[];
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(isTeam);
   } catch {
     return [];
   }

@@ -33,8 +33,11 @@ export function timeAgo(iso: string): string {
   return `${d}d ago`;
 }
 
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+
 /** Return a contrasting text color (black or white) for a given hex background. */
 export function contrastColor(hex: string): string {
+  if (!HEX_RE.test(hex)) return '#ffffff';
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
@@ -45,8 +48,41 @@ export function contrastColor(hex: string): string {
 
 /** Add alpha transparency to a hex color. */
 export function hexAlpha(hex: string, alpha: number): string {
+  if (!HEX_RE.test(hex)) return hex;
   const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
   return `${hex}${a}`;
+}
+
+/** Validate and return a safe hex color, falling back to a default. */
+export function safeHex(hex: string, fallback = '#6B7280'): string {
+  return HEX_RE.test(hex) ? hex : fallback;
+}
+
+/**
+ * Format a UTC ISO date string as a local time with timezone abbreviation.
+ * e.g. formatTimeInZone('2026-03-14T09:10:00Z', 'Australia/Brisbane') → '7:10 pm AEST'
+ */
+export function formatTimeInZone(isoDate: string, timeZone: string): string {
+  return new Date(isoDate).toLocaleTimeString('en-AU', {
+    timeZone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  });
+}
+
+/**
+ * Return the 'YYYY-MM-DD' date string in a given timezone.
+ * Used for grouping games by calendar date in the user's local timezone.
+ */
+export function datekeyInZone(isoDate: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(isoDate));
 }
 
 /** Deterministic "random" number based on a string seed (for consistent mock data). */

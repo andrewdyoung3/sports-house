@@ -38,18 +38,18 @@ export default function OnboardingPage() {
 
   const isSelected = (id: string) => selected.some(t => t.id === id);
 
-  // Step 2: confirm and navigate to dashboard
+  // Step 2: confirm and navigate to schedule
   const handleFinish = () => {
     saveFollowedTeams(selected);
-    router.push('/dashboard');
+    router.push('/schedule');
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-zinc-950">
+    <div className="min-h-screen">
       {/* Progress bar */}
-      <div className="fixed top-14 left-0 right-0 z-40 h-0.5 bg-zinc-800">
+      <div className="fixed top-14 left-0 right-0 z-40 h-0.5 bg-white/10">
         <div
           className="h-full bg-indigo-500 transition-all duration-500"
           style={{ width: step === 1 ? '50%' : '100%' }}
@@ -76,16 +76,16 @@ export default function OnboardingPage() {
       </div>
 
       {/* Sticky bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-4 py-4">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-black/40 backdrop-blur-xl border-t border-white/10 px-4 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             {/* Selected team chips */}
             <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
               {selected.length === 0 ? (
-                <p className="text-sm text-zinc-500 whitespace-nowrap">No teams selected yet</p>
+                <p className="text-sm text-white/35 whitespace-nowrap">No teams selected yet</p>
               ) : (
                 <>
-                  <span className="text-sm font-semibold text-zinc-300 whitespace-nowrap shrink-0">
+                  <span className="text-sm font-semibold text-white/75 whitespace-nowrap shrink-0">
                     {selected.length} team{selected.length !== 1 ? 's' : ''}
                   </span>
                   <div className="flex gap-1 overflow-x-auto">
@@ -106,7 +106,7 @@ export default function OnboardingPage() {
                       </span>
                     ))}
                     {selected.length > 6 && (
-                      <span className="text-xs text-zinc-500 px-1 py-1 shrink-0">+{selected.length - 6} more</span>
+                      <span className="text-xs text-white/40 px-1 py-1 shrink-0">+{selected.length - 6} more</span>
                     )}
                   </div>
                 </>
@@ -139,7 +139,7 @@ export default function OnboardingPage() {
                 className="gap-2"
               >
                 <Check className="h-4 w-4" />
-                Go to Dashboard
+                View My Schedule
               </Button>
             )}
           </div>
@@ -168,7 +168,7 @@ function Step1({ activeSport, setActiveSport, query, setQuery, filteredTeams, is
       <div className="mb-8">
         <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-2">Step 1 of 2</p>
         <h1 className="text-3xl sm:text-4xl font-black text-white mb-2">Which teams do you follow?</h1>
-        <p className="text-zinc-400">Select as many as you like. You can change this any time.</p>
+        <p className="text-white/55">Select as many as you like. You can change this any time.</p>
       </div>
 
       {/* Sport filter tabs */}
@@ -180,8 +180,8 @@ function Step1({ activeSport, setActiveSport, query, setQuery, filteredTeams, is
             className={[
               'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all',
               activeSport === league.id
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100',
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
+                : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white',
             ].join(' ')}
           >
             <span>{league.icon}</span>
@@ -202,7 +202,7 @@ function Step1({ activeSport, setActiveSport, query, setQuery, filteredTeams, is
 
       {/* Team grid */}
       {filteredTeams.length === 0 ? (
-        <div className="text-center py-16 text-zinc-500">
+        <div className="text-center py-16 text-white/40">
           <Search className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium">No teams match &ldquo;{query}&rdquo;</p>
           <p className="text-sm mt-1">Try a different name or clear the search</p>
@@ -237,14 +237,14 @@ function Step2({ selected, toggleTeam }: { selected: Team[]; toggleTeam: (t: Tea
       <div className="mb-8">
         <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-2">Step 2 of 2</p>
         <h1 className="text-3xl sm:text-4xl font-black text-white mb-2">Confirm your teams</h1>
-        <p className="text-zinc-400">
+        <p className="text-white/55">
           You&apos;re following <strong className="text-white">{selected.length} team{selected.length !== 1 ? 's' : ''}</strong>.
           Click any team to remove it.
         </p>
       </div>
 
       {selected.length === 0 ? (
-        <div className="text-center py-16 text-zinc-500">
+        <div className="text-center py-16 text-white/40">
           <p className="font-medium">No teams selected</p>
           <p className="text-sm mt-1">Go back to choose at least one team</p>
         </div>
@@ -252,7 +252,7 @@ function Step2({ selected, toggleTeam }: { selected: Team[]; toggleTeam: (t: Tea
         <div className="space-y-8">
           {byLeague.map(({ league, teams }) => (
             <div key={league.id}>
-              <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <h2 className="text-sm font-bold text-white/45 uppercase tracking-widest mb-3 flex items-center gap-2">
                 <span>{league.icon}</span> {league.fullName}
               </h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">

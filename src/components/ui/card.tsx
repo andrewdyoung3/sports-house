@@ -9,7 +9,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export function Card({ className, accentColor, style, children, ...props }: CardProps) {
   return (
     <div
-      className={cn('bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden', className)}
+      className={cn('glass rounded-2xl overflow-hidden', className)}
       style={{
         ...(accentColor ? { borderTopColor: accentColor, borderTopWidth: '2px' } : {}),
         ...style,
@@ -22,7 +22,7 @@ export function Card({ className, accentColor, style, children, ...props }: Card
 }
 
 export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-5 py-4 border-b border-zinc-800', className)} {...props} />;
+  return <div className={cn('px-5 py-4 border-b border-white/8', className)} {...props} />;
 }
 
 export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -30,5 +30,5 @@ export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>
 }
 
 export function CardSection({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-5 py-3 border-t border-zinc-800/60', className)} {...props} />;
+  return <div className={cn('px-5 py-3 border-t border-white/6', className)} {...props} />;
 }

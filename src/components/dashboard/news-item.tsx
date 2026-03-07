@@ -15,10 +15,20 @@ interface NewsItemProps {
   item: NewsItem;
 }
 
+function safeNewsUrl(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function NewsCard({ item }: NewsItemProps) {
+  const href = safeNewsUrl(item.url);
   return (
     <a
-      href={item.url}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
       className="flex items-start gap-3 group hover:bg-zinc-800/50 rounded-xl p-2.5 -mx-2.5 transition-colors"
