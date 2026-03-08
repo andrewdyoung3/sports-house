@@ -28,7 +28,7 @@ export function HeroCTA() {
         </Link>
         <Link href="/onboarding">
           <Button size="lg" variant="outline" className="w-full sm:w-auto">
-            Change My Teams
+            Select Teams
           </Button>
         </Link>
       </div>
