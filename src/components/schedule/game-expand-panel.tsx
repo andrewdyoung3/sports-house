@@ -16,7 +16,7 @@ interface GameExpandPanelProps {
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl']);
+const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 
 // ── Standings row ─────────────────────────────────────────────────────────────
 
@@ -90,7 +90,10 @@ function NewsItem({
 export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
   const { team } = game;
 
-  const [results,  setResults]  = useState<GameResult[]>(() => getRecentResults(team, 5));
+  const [results,    setResults]    = useState<GameResult[]>(() => getRecentResults(team, 5));
+  const [oppResults, setOppResults] = useState<GameResult[]>(() =>
+    getRecentResults({ id: `opp-${game.opponentAbbr}`, league: team.league } as Team, 5),
+  );
   const [context,  setContext]  = useState<PreviewContext | null>(null);
   const [loading,  setLoading]  = useState(REAL_DATA_LEAGUES.has(team.league));
 
@@ -99,23 +102,24 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
 
     const resultsUrl = `/api/results?league=${team.league}&teamId=${team.id}`;
     const previewUrl = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}`;
+    const oppUrl     = game.opponentId
+      ? `/api/results?league=${team.league}&teamId=${game.opponentId}`
+      : null;
 
     Promise.all([
       fetch(resultsUrl).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(previewUrl).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([resultsData, ctxData]: [GameResult[] | null, PreviewContext | null]) => {
+      oppUrl ? fetch(oppUrl).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+    ]).then(([resultsData, ctxData, oppData]: [GameResult[] | null, PreviewContext | null, GameResult[] | null]) => {
       if (Array.isArray(resultsData) && resultsData.length > 0) setResults(resultsData);
       if (ctxData && typeof ctxData === 'object') setContext(ctxData);
+      if (Array.isArray(oppData) && oppData.length > 0) setOppResults(oppData);
     }).finally(() => setLoading(false));
-  }, [team.id, team.league, game.id, game.opponent]);
+  }, [team.id, team.league, game.id, game.opponent, game.opponentId]);
 
   const wins   = results.filter(r => r.isWin).length;
   const draws  = results.filter(r => r.isDraw).length;
   const preview = getAIPreview(team, game.opponent, results, context);
-
-  const formLabel = draws > 0
-    ? `${wins}W ${draws}D ${results.length - wins - draws}L`
-    : `${wins}/${results.length} wins`;
 
   const hasStandings = context?.teamStanding || context?.opponentStanding;
   const hasNews = (context?.teamNews?.length ?? 0) > 0 || (context?.opponentNews?.length ?? 0) > 0;
@@ -138,11 +142,11 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
       {/* ── Form + Standings / Key Factors ── */}
       <div className="grid grid-cols-2 gap-5">
 
-        {/* Recent form */}
+        {/* Recent form — both teams */}
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
             <Trophy className="h-3 w-3" />
-            {team.shortName} — Last {results.length}
+            Form — Last {results.length}
           </p>
 
           {loading ? (
@@ -151,12 +155,16 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
               Loading results…
             </div>
           ) : (
-            <>
-              <RecentForm results={results} />
-              <p className="text-[10px] text-white/30 mt-1.5">
-                {formLabel} · hover for details
-              </p>
-            </>
+            <div className="space-y-2.5">
+              <div>
+                <p className="text-[10px] text-white/40 mb-1.5">{team.shortName}</p>
+                <RecentForm results={results} />
+              </div>
+              <div>
+                <p className="text-[10px] text-white/40 mb-1.5">{game.opponentAbbr}</p>
+                <RecentForm results={oppResults} />
+              </div>
+            </div>
           )}
         </div>
 

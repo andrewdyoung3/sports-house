@@ -14,6 +14,8 @@ import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
+import { LeagueTable } from '@/components/schedule/league-table';
+import type { StandingRow } from '@/components/schedule/league-table';
 import type { Team, UpcomingGame, SportKey } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -21,7 +23,7 @@ import type { Team, UpcomingGame, SportKey } from '@/types';
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** Leagues backed by real APIs — all others use deterministic mock data. */
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 
 const MOCK_GAMES_PER_TEAM = 10;
 
@@ -298,9 +300,10 @@ export default function SchedulePage() {
   const [loading,  setLoading]  = useState(true);
   const [userTz,   setUserTz]   = useState('Australia/Brisbane');
 
-  const [activeLeague,   setActiveLeague]   = useState<SportKey | 'all'>('all');
-  const [homeAwayFilter, setHomeAwayFilter] = useState<'all' | 'home' | 'away'>('all');
+  const [activeLeague,    setActiveLeague]    = useState<SportKey | 'all'>('all');
+  const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
+  const [standings,       setStandings]       = useState<StandingRow[] | null>(null);
 
   // Cross-highlight state: shared between calendar and schedule rows
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
@@ -316,6 +319,19 @@ export default function SchedulePage() {
       // keep default AEST
     }
   }, []);
+
+  // Fetch standings whenever the active league changes (only for real-data leagues)
+  useEffect(() => {
+    if (activeLeague === 'all' || !REAL_DATA_LEAGUES.has(activeLeague)) {
+      setStandings(null);
+      return;
+    }
+    setStandings(null); // clear stale data while loading
+    fetch(`/api/standings?league=${activeLeague}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: StandingRow[]) => setStandings(rows.length > 0 ? rows : null))
+      .catch(() => setStandings(null));
+  }, [activeLeague]);
 
   useEffect(() => {
     const followed = getFollowedTeams();
@@ -339,6 +355,12 @@ export default function SchedulePage() {
       setLoading(false);
     });
   }, []);
+
+  // IDs of followed teams in the currently active league (for standings highlight)
+  const followedTeamIds = useMemo(
+    () => new Set(teams.filter(t => activeLeague === 'all' || t.league === activeLeague).map(t => t.id)),
+    [teams, activeLeague],
+  );
 
   // League + home/away filters
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
@@ -531,6 +553,15 @@ export default function SchedulePage() {
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
               onDayClick={handleDayClick}
+            />
+          )}
+
+          {/* League standings (only when a specific league tab is active) */}
+          {!loading && standings && activeLeague !== 'all' && (
+            <LeagueTable
+              league={activeLeague}
+              rows={standings}
+              followedTeamIds={followedTeamIds}
             />
           )}
 

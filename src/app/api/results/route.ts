@@ -337,9 +337,214 @@ async function fetchEPLResults(teamId: string): Promise<GameResult[]> {
     .slice(0, 5);
 }
 
+// ─── Super Rugby — ESPN public API (league ID: 242041) ───────────────────────
+
+const SRU_ESPN_NAME: Record<string, string> = {
+  'sru-brumbies':    'Brumbies',
+  'sru-reds':        'Queensland Reds',
+  'sru-waratahs':    'New South Wales Waratahs',
+  'sru-force':       'Western Force',
+  'sru-blues':       'Blues',
+  'sru-chiefs':      'Chiefs',
+  'sru-crusaders':   'Crusaders',
+  'sru-highlanders': 'Highlanders',
+  'sru-hurricanes':  'Hurricanes',
+  'sru-drua':        'Fijian Drua',
+  'sru-moana':       'Moana Pasifika',
+};
+
+const SRU_CDN = 'https://a.espncdn.com/i/teamlogos/rugby/teams/500';
+const SRU_OPP_LOGO: Record<string, string> = {
+  'Brumbies':                 `${SRU_CDN}/25889.png`,
+  'ACT Brumbies':             `${SRU_CDN}/25889.png`,
+  'Queensland Reds':          `${SRU_CDN}/182.png`,
+  'Reds':                     `${SRU_CDN}/182.png`,
+  'New South Wales Waratahs': `${SRU_CDN}/227.png`,
+  'Waratahs':                 `${SRU_CDN}/227.png`,
+  'NSW Waratahs':             `${SRU_CDN}/227.png`,
+  'Western Force':            `${SRU_CDN}/25893.png`,
+  'Force':                    `${SRU_CDN}/25893.png`,
+  'Blues':                    `${SRU_CDN}/25932.png`,
+  'Chiefs':                   `${SRU_CDN}/25934.png`,
+  'Crusaders':                `${SRU_CDN}/25936.png`,
+  'Highlanders':              `${SRU_CDN}/25938.png`,
+  'Hurricanes':               `${SRU_CDN}/25939.png`,
+  'Fijian Drua':              `${SRU_CDN}/289338.png`,
+  'Drua':                     `${SRU_CDN}/289338.png`,
+  'Moana Pasifika':           `${SRU_CDN}/289319.png`,
+};
+
+async function fetchSuperRugbyResults(teamId: string): Promise<GameResult[]> {
+  const teamName = SRU_ESPN_NAME[teamId];
+  if (!teamName) return [];
+
+  // 120-day lookback
+  const now   = new Date();
+  const start = new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
+  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(start)}-${fmt(now)}`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const matchesTeam = (c: any) =>
+    c.team?.displayName === teamName || c.team?.name === teamName;
+
+  const events = ((data.events ?? []) as any[]).filter(e => {
+    const completed    = e.status?.type?.completed === true;
+    const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+    return completed && competitors.some(matchesTeam);
+  });
+
+  return events
+    .map((e: any): GameResult => {
+      const comp:        any   = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const ourComp = competitors.find(matchesTeam);
+      const oppComp = competitors.find((c: any) => !matchesTeam(c));
+      const isHome  = ourComp?.homeAway === 'home';
+      const oppName = oppComp?.team?.displayName ?? 'Unknown';
+      const teamScore = Number(ourComp?.score ?? 0);
+      const oppScore  = Number(oppComp?.score ?? 0);
+
+      return {
+        opponent:        oppName,
+        opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
+        opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
+          ?? SRU_OPP_LOGO[oppName],
+        isHome,
+        isWin:           teamScore > oppScore,
+        teamScore,
+        opponentScore:   oppScore,
+        date:            new Date(e.date).toISOString(),
+      };
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
+// ─── International Rugby Union — ESPN public API ──────────────────────────────
+
+const RINT_ESPN_NAME_R: Record<string, string> = {
+  'rint-wallabies': 'Australia',
+  'rint-allblacks': 'New Zealand',
+  'rint-boks':      'South Africa',
+  'rint-england':   'England',
+  'rint-ireland':   'Ireland',
+  'rint-france':    'France',
+  'rint-scotland':  'Scotland',
+  'rint-wales':     'Wales',
+  'rint-argentina': 'Argentina',
+  'rint-fiji':      'Fiji',
+  'rint-samoa':     'Samoa',
+  'rint-tonga':     'Tonga',
+};
+
+const RINT_CDN_R = 'https://a.espncdn.com/i/teamlogos/rugby/teams/500';
+const RINT_OPP_LOGO_R: Record<string, string> = {
+  'Australia':    `${RINT_CDN_R}/6.png`,
+  'New Zealand':  `${RINT_CDN_R}/8.png`,
+  'South Africa': `${RINT_CDN_R}/5.png`,
+  'England':      `${RINT_CDN_R}/1.png`,
+  'Ireland':      `${RINT_CDN_R}/3.png`,
+  'France':       `${RINT_CDN_R}/9.png`,
+  'Scotland':     `${RINT_CDN_R}/2.png`,
+  'Wales':        `${RINT_CDN_R}/4.png`,
+  'Argentina':    `${RINT_CDN_R}/10.png`,
+  'Fiji':         `${RINT_CDN_R}/14.png`,
+  'Samoa':        `${RINT_CDN_R}/15.png`,
+  'Tonga':        `${RINT_CDN_R}/16.png`,
+  'Italy':        `${RINT_CDN_R}/20.png`,
+  'Japan':        `${RINT_CDN_R}/23.png`,
+  'United States':`${RINT_CDN_R}/11.png`,
+  'Georgia':      `${RINT_CDN_R}/81.png`,
+  'Namibia':      `${RINT_CDN_R}/82.png`,
+};
+
+const RINT_RC_TEAMS  = new Set(['rint-wallabies', 'rint-allblacks', 'rint-boks', 'rint-argentina']);
+const RINT_SN_TEAMS  = new Set(['rint-england', 'rint-ireland', 'rint-france', 'rint-scotland', 'rint-wales']);
+
+async function fetchRintResultsComp(
+  teamName: string,
+  compId: string,
+  range: string,
+): Promise<GameResult[]> {
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const matchesTeam = (c: any) =>
+    c.team?.displayName === teamName || c.team?.name === teamName;
+
+  return ((data.events ?? []) as any[])
+    .filter(e => e.status?.type?.completed === true &&
+      (e.competitions?.[0]?.competitors ?? []).some(matchesTeam))
+    .map((e: any): GameResult => {
+      const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+      const ourComp = competitors.find(matchesTeam);
+      const oppComp = competitors.find((c: any) => !matchesTeam(c));
+      const isHome    = ourComp?.homeAway === 'home';
+      const oppName   = oppComp?.team?.displayName ?? 'Unknown';
+      const teamScore = Number(ourComp?.score ?? 0);
+      const oppScore  = Number(oppComp?.score ?? 0);
+
+      return {
+        opponent:        oppName,
+        opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
+        opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
+          ?? RINT_OPP_LOGO_R[oppName],
+        isHome,
+        isWin:           teamScore > oppScore,
+        teamScore,
+        opponentScore:   oppScore,
+        date:            new Date(e.date).toISOString(),
+      };
+    });
+}
+
+async function fetchInternationalRugbyResults(teamId: string): Promise<GameResult[]> {
+  const teamName = RINT_ESPN_NAME_R[teamId];
+  if (!teamName) return [];
+
+  const now   = new Date();
+  const start = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000); // 1-year lookback
+  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(start)}-${fmt(now)}`;
+
+  const compIds = ['289234']; // always include int'l tests
+  if (RINT_RC_TEAMS.has(teamId)) compIds.push('244293');
+  if (RINT_SN_TEAMS.has(teamId)) compIds.push('180659');
+
+  const results = await Promise.allSettled(
+    compIds.map(id => fetchRintResultsComp(teamName, id, range)),
+  );
+
+  const all = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+  // Dedup by date + opponent (same game may appear in multiple competition feeds)
+  const seen   = new Set<string>();
+  const unique = all.filter(r => {
+    const key = `${r.date.slice(0, 10)}-${r.opponent}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return unique
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
@@ -352,9 +557,11 @@ export async function GET(req: NextRequest) {
 
   try {
     let results: GameResult[] = [];
-    if (league === 'afl') results = await fetchAFLResults(teamId);
-    else if (league === 'nrl') results = await fetchNRLResults(teamId);
-    else if (league === 'epl') results = await fetchEPLResults(teamId);
+    if      (league === 'afl')         results = await fetchAFLResults(teamId);
+    else if (league === 'nrl')         results = await fetchNRLResults(teamId);
+    else if (league === 'epl')         results = await fetchEPLResults(teamId);
+    else if (league === 'super_rugby') results = await fetchSuperRugbyResults(teamId);
+    else if (league === 'rugby_int')   results = await fetchInternationalRugbyResults(teamId);
 
     return NextResponse.json(results);
   } catch (err) {

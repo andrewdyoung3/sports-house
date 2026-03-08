@@ -54,6 +54,7 @@ export interface UpcomingGame {
   streaming: string[];    // Streaming platforms
   competition?: string;    // e.g. "FA Cup", "Champions League" (omitted for regular season)
   opponentLogoUrl?: string; // Official logo URL (from ESPN CDN when available)
+  opponentId?: string;      // Our internal team slug for the opponent (when resolvable)
   odds?: {
     spread: string;
     overUnder: string;

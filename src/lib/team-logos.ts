@@ -9,11 +9,10 @@
  *   NBA        → https://a.espncdn.com/i/teamlogos/nba/500/{abbr}.png
  *   MLB        → https://a.espncdn.com/i/teamlogos/mlb/500/{abbr}.png
  *   NHL        → https://a.espncdn.com/i/teamlogos/nhl/500/{abbr}.png
- *   Super Rugby → https://super.rugby/sites/sanzar/assets/teamlogos/SRP_{Name}.png
+ *   Super Rugby → https://a.espncdn.com/i/teamlogos/rugby/teams/500/{numericId}.png
  */
 
-const ESPN  = 'https://a.espncdn.com/i/teamlogos';
-const SRP   = 'https://super.rugby/sites/sanzar/assets/teamlogos';
+const ESPN = 'https://a.espncdn.com/i/teamlogos';
 
 export const TEAM_LOGOS: Record<string, string> = {
 
@@ -57,18 +56,35 @@ export const TEAM_LOGOS: Record<string, string> = {
   'nrl-roosters':  `${ESPN}/rugby/teams/500/289204.png`,
   'nrl-tigers':    `${ESPN}/rugby/teams/500/289200.png`,
 
+  // ── International Rugby ─────────────────────────────────────────────────────
+  // ESPN CDN — numeric IDs verified from ESPN rugby teams endpoints (March 2026)
+  // Path pattern: /rugby/teams/500/{id}.png (same CDN as NRL/SRU)
+  'rint-wallabies': `${ESPN}/rugby/teams/500/6.png`,
+  'rint-allblacks': `${ESPN}/rugby/teams/500/8.png`,
+  'rint-boks':      `${ESPN}/rugby/teams/500/5.png`,
+  'rint-england':   `${ESPN}/rugby/teams/500/1.png`,
+  'rint-ireland':   `${ESPN}/rugby/teams/500/3.png`,
+  'rint-france':    `${ESPN}/rugby/teams/500/9.png`,
+  'rint-scotland':  `${ESPN}/rugby/teams/500/2.png`,
+  'rint-wales':     `${ESPN}/rugby/teams/500/4.png`,
+  'rint-argentina': `${ESPN}/rugby/teams/500/10.png`,
+  'rint-fiji':      `${ESPN}/rugby/teams/500/14.png`,
+  'rint-samoa':     `${ESPN}/rugby/teams/500/15.png`,
+  'rint-tonga':     `${ESPN}/rugby/teams/500/16.png`,
+
   // ── Super Rugby Pacific ─────────────────────────────────────────────────────
-  // Official logos from super.rugby (SANZAR) — ESPN CDN doesn't serve these
-  'sru-brumbies':    `${SRP}/SRP_ACT_Brumbies.png`,
-  'sru-reds':        `${SRP}/SRP_Reds.png`,
-  'sru-waratahs':    `${SRP}/SRP_NSW_Waratahs.png`,
-  'sru-force':       `${SRP}/SRP_Western_Force.png`,
-  'sru-blues':       `${SRP}/SRP_Blues.png`,
-  'sru-chiefs':      `${SRP}/SRP_Chiefs.png`,
-  'sru-crusaders':   `${SRP}/SRP_Crusaders.png`,
-  'sru-highlanders': `${SRP}/SRP_Highlanders.png`,
-  'sru-hurricanes':  `${SRP}/SRP_Hurricanes.png`,
-  'sru-drua':        `${SRP}/SRP_Fijian_Drua_1.png`,
+  // ESPN CDN — numeric IDs verified from ESPN rugby/242041/teams endpoint (March 2026)
+  'sru-brumbies':    `${ESPN}/rugby/teams/500/25889.png`,
+  'sru-reds':        `${ESPN}/rugby/teams/500/182.png`,
+  'sru-waratahs':    `${ESPN}/rugby/teams/500/227.png`,
+  'sru-force':       `${ESPN}/rugby/teams/500/25893.png`,
+  'sru-blues':       `${ESPN}/rugby/teams/500/25932.png`,
+  'sru-chiefs':      `${ESPN}/rugby/teams/500/25934.png`,
+  'sru-crusaders':   `${ESPN}/rugby/teams/500/25936.png`,
+  'sru-highlanders': `${ESPN}/rugby/teams/500/25938.png`,
+  'sru-hurricanes':  `${ESPN}/rugby/teams/500/25939.png`,
+  'sru-drua':        `${ESPN}/rugby/teams/500/289338.png`,
+  'sru-moana':       `${ESPN}/rugby/teams/500/289319.png`,
 
   // ── EPL ────────────────────────────────────────────────────────────────────
   'epl-arsenal':       `${ESPN}/soccer/500/359.png`,

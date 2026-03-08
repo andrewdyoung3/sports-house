@@ -1,18 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronUp, Sparkles, Calendar, Newspaper, Trophy } from 'lucide-react';
 import Link from 'next/link';
 
 import { Card, CardHeader, CardBody, CardSection } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TeamBadge } from '@/components/ui/team-badge';
 import { GameCard } from '@/components/dashboard/game-card';
 import { NewsCard } from '@/components/dashboard/news-item';
 import { RecentForm } from '@/components/dashboard/recent-form';
 
 import { getUpcomingGames, getRecentResults, getRecentNews, getAIPreview } from '@/lib/mock-data';
-import type { Team } from '@/types';
+import { TEAM_LOGOS } from '@/lib/team-logos';
+import type { Team, UpcomingGame, GameResult, NewsItem } from '@/types';
+
+/** Leagues with real API backends. */
+const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby']);
 
 interface TeamFeedCardProps {
   team: Team;
@@ -23,14 +28,33 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [userTz,      setUserTz]      = useState('Australia/Brisbane');
 
+  // Initialise with mock data for instant render; real data replaces on fetch.
+  const [games,   setGames]   = useState<UpcomingGame[]>(() => getUpcomingGames(team, 2));
+  const [results, setResults] = useState<GameResult[]>(() => getRecentResults(team, 5));
+  const [news,    setNews]    = useState<NewsItem[]>(() => getRecentNews(team, 3));
+
   useEffect(() => {
     try { setUserTz(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch { /* keep default */ }
   }, []);
 
-  const games   = getUpcomingGames(team, 2);
-  const results = getRecentResults(team, 5);
-  const news    = getRecentNews(team, 3);
-  const preview = games[0] ? getAIPreview(team, games[0].opponent) : null;
+  useEffect(() => {
+    if (!REAL_DATA_LEAGUES.has(team.league)) return;
+
+    Promise.all([
+      fetch(`/api/fixtures?league=${team.league}&teamId=${team.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/results?league=${team.league}&teamId=${team.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/news?league=${team.league}&teamId=${team.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([gamesData, resultsData, newsData]: [UpcomingGame[] | null, GameResult[] | null, NewsItem[] | null]) => {
+      if (Array.isArray(gamesData)   && gamesData.length > 0)   setGames(gamesData.slice(0, 2));
+      if (Array.isArray(resultsData) && resultsData.length > 0) setResults(resultsData);
+      if (Array.isArray(newsData)    && newsData.length > 0)    setNews(newsData);
+    });
+  }, [team.id, team.league]);
+
+  const preview = useMemo(
+    () => games[0] ? getAIPreview(team, games[0].opponent, results) : null,
+    [team, games, results],
+  );
 
   // W/L record from recent form
   const wins   = results.filter(r => r.isWin).length;
@@ -43,12 +67,13 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {/* Team crest */}
-            <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black text-sm shrink-0"
-              style={{ backgroundColor: team.primaryColor }}
-            >
-              {team.abbreviation}
-            </div>
+            <TeamBadge
+              logoUrl={TEAM_LOGOS[team.id]}
+              abbreviation={team.abbreviation}
+              primaryColor={team.primaryColor}
+              size={44}
+              className="rounded-xl"
+            />
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">

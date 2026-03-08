@@ -422,9 +422,146 @@ async function fetchEPLPreview(
   };
 }
 
+// ─── International Rugby Union — ESPN ────────────────────────────────────────
+
+const RINT_ESPN_NAME_P: Record<string, string> = {
+  'rint-wallabies': 'Australia',
+  'rint-allblacks': 'New Zealand',
+  'rint-boks':      'South Africa',
+  'rint-england':   'England',
+  'rint-ireland':   'Ireland',
+  'rint-france':    'France',
+  'rint-scotland':  'Scotland',
+  'rint-wales':     'Wales',
+  'rint-argentina': 'Argentina',
+  'rint-fiji':      'Fiji',
+  'rint-samoa':     'Samoa',
+  'rint-tonga':     'Tonga',
+};
+
+const RINT_RC_TEAM_NAMES = new Set(['Australia', 'New Zealand', 'South Africa', 'Argentina']);
+const RINT_SN_TEAM_NAMES = new Set(['England', 'Ireland', 'France', 'Scotland', 'Wales']);
+
+async function fetchRINTPreview(
+  teamId: string,
+  opponentName: string,
+): Promise<PreviewContext> {
+  const teamName = RINT_ESPN_NAME_P[teamId];
+  if (!teamName) return {};
+
+  // Choose competition based on team membership
+  const compId = RINT_RC_TEAM_NAMES.has(teamName) ? '244293'
+    : RINT_SN_TEAM_NAMES.has(teamName) ? '180659'
+    : null;
+  if (!compId) return {}; // Pacific teams — no standings for these comps
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/v2/sports/rugby/${compId}/standings`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return {};
+
+  const data = await res.json();
+  const entries: any[] =
+    data.children?.[0]?.standings?.entries ??
+    data.standings?.entries ??
+    [];
+
+  function parseRintStanding(name: string): TeamStanding | undefined {
+    const idx = entries.findIndex((x: any) =>
+      x.team?.displayName === name || x.team?.name === name,
+    );
+    if (idx < 0) return undefined;
+    const stats = entries[idx].stats ?? [];
+    const sv = (...names: string[]): number =>
+      Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
+    return {
+      name,
+      position: idx + 1,
+      played:   sv('gamesPlayed'),
+      wins:     sv('wins', 'gamesWon'),
+      draws:    sv('ties', 'gamesDrawn'),
+      losses:   sv('losses', 'gamesLost'),
+      points:   sv('points'),
+    };
+  }
+
+  return {
+    teamStanding:     parseRintStanding(teamName),
+    opponentStanding: parseRintStanding(opponentName),
+  };
+}
+
+// ─── Super Rugby — ESPN ───────────────────────────────────────────────────────
+
+const SRU_ESPN_NAME: Record<string, string> = {
+  'sru-brumbies':    'Brumbies',
+  'sru-reds':        'Queensland Reds',
+  'sru-waratahs':    'New South Wales Waratahs',
+  'sru-force':       'Western Force',
+  'sru-blues':       'Blues',
+  'sru-chiefs':      'Chiefs',
+  'sru-crusaders':   'Crusaders',
+  'sru-highlanders': 'Highlanders',
+  'sru-hurricanes':  'Hurricanes',
+  'sru-drua':        'Fijian Drua',
+  'sru-moana':       'Moana Pasifika',
+};
+
+function parseSRUStandings(entries: any[], displayName: string, idx: number): TeamStanding | undefined {
+  const e = entries.find((x: any) =>
+    x.team?.displayName === displayName || x.team?.name === displayName,
+  );
+  if (!e) return undefined;
+  const stats = e.stats ?? [];
+  const sv = (...names: string[]): number =>
+    Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
+  return {
+    name:     displayName,
+    position: idx + 1,
+    played:   sv('gamesPlayed'),
+    wins:     sv('wins', 'gamesWon'),
+    draws:    sv('ties', 'gamesDrawn'),
+    losses:   sv('losses', 'gamesLost'),
+    points:   sv('points'),
+  };
+}
+
+async function fetchSRUPreview(
+  teamId: string,
+  opponentName: string,
+): Promise<PreviewContext> {
+  const teamName = SRU_ESPN_NAME[teamId];
+  if (!teamName) return {};
+
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/rugby/242041/standings',
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return {};
+
+  const data = await res.json();
+  const entries: any[] =
+    data.children?.[0]?.standings?.entries ??
+    data.standings?.entries ??
+    [];
+
+  const teamIdx = entries.findIndex((x: any) =>
+    x.team?.displayName === teamName || x.team?.name === teamName,
+  );
+  const oppIdx = entries.findIndex((x: any) =>
+    x.team?.displayName === opponentName || x.team?.name === opponentName,
+  );
+
+  return {
+    teamStanding:     teamIdx >= 0 ? parseSRUStandings(entries, teamName, teamIdx)     : undefined,
+    opponentStanding: oppIdx  >= 0 ? parseSRUStandings(entries, opponentName, oppIdx)  : undefined,
+  };
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
@@ -439,9 +576,11 @@ export async function GET(req: NextRequest) {
 
   try {
     let ctx: PreviewContext = {};
-    if (league === 'afl') ctx = await fetchAFLPreview(teamId, opponentName, gameId);
-    else if (league === 'nrl') ctx = await fetchNRLPreview(teamId, opponentName);
-    else if (league === 'epl') ctx = await fetchEPLPreview(teamId, opponentName);
+    if      (league === 'afl')         ctx = await fetchAFLPreview(teamId, opponentName, gameId);
+    else if (league === 'nrl')         ctx = await fetchNRLPreview(teamId, opponentName);
+    else if (league === 'epl')         ctx = await fetchEPLPreview(teamId, opponentName);
+    else if (league === 'super_rugby') ctx = await fetchSRUPreview(teamId, opponentName);
+    else if (league === 'rugby_int')   ctx = await fetchRINTPreview(teamId, opponentName);
     return NextResponse.json(ctx);
   } catch (err) {
     console.error('[/api/preview]', err);

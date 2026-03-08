@@ -1,6 +1,7 @@
 import type { UpcomingGame } from '@/types';
 import { Tv, MapPin, Calendar } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { TeamBadge } from '@/components/ui/team-badge';
 import { formatGameDate, formatTimeInZone } from '@/lib/utils';
 
 interface GameCardProps {
@@ -18,13 +19,14 @@ export function GameCard({ game, teamColor, userTz }: GameCardProps) {
       {/* Matchup header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {/* Opponent colored dot */}
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-[11px] font-black shrink-0"
-            style={{ backgroundColor: game.opponentColor }}
-          >
-            {game.opponentAbbr}
-          </div>
+          {/* Opponent badge */}
+          <TeamBadge
+            logoUrl={game.opponentLogoUrl}
+            abbreviation={game.opponentAbbr}
+            primaryColor={game.opponentColor}
+            size={32}
+            className="rounded-lg"
+          />
           <div>
             <p className="text-sm font-bold text-zinc-100">
               {game.isHome ? 'vs' : '@'} {game.opponentAbbr}
