@@ -106,16 +106,21 @@ async function fetchNRLStandings(): Promise<StandingRow[]> {
   const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
   const stat = (e: any, n: string) =>
     (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
-  return entries.map((e, i): StandingRow => ({
-    name:     e.team?.displayName ?? '',
-    teamId:   NRL_ESPN_TO_ID[e.team?.displayName ?? ''],
-    position: i + 1,
-    played:   stat(e, 'gamesPlayed'),
-    wins:     stat(e, 'gamesWon'),
-    draws:    stat(e, 'gamesDrawn'),
-    losses:   stat(e, 'gamesLost'),
-    points:   stat(e, 'points'),
-  }));
+  return entries.map((e, i): StandingRow => {
+    const cur  = i + 1;
+    const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
+    return {
+      name:       e.team?.displayName ?? '',
+      teamId:     NRL_ESPN_TO_ID[e.team?.displayName ?? ''],
+      position:   cur,
+      played:     stat(e, 'gamesPlayed'),
+      wins:       stat(e, 'gamesWon'),
+      draws:      stat(e, 'gamesDrawn'),
+      losses:     stat(e, 'gamesLost'),
+      points:     stat(e, 'points'),
+      rankChange: prev !== undefined ? prev - cur : undefined,
+    };
+  });
 }
 
 // ─── EPL — ESPN public API ────────────────────────────────────────────────────
@@ -153,18 +158,23 @@ async function fetchEPLStandings(): Promise<StandingRow[]> {
   const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
   const stat = (e: any, n: string) =>
     (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
-  return entries.map((e, i): StandingRow => ({
-    name:         e.team?.displayName ?? '',
-    teamId:       EPL_ESPN_TO_ID[e.team?.displayName ?? ''],
-    position:     i + 1,
-    played:       stat(e, 'gamesPlayed'),
-    wins:         stat(e, 'wins'),
-    draws:        stat(e, 'ties'),
-    losses:       stat(e, 'losses'),
-    points:       stat(e, 'points'),
-    goalsFor:     stat(e, 'pointsFor'),
-    goalsAgainst: stat(e, 'pointsAgainst'),
-  }));
+  return entries.map((e, i): StandingRow => {
+    const cur  = i + 1;
+    const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
+    return {
+      name:         e.team?.displayName ?? '',
+      teamId:       EPL_ESPN_TO_ID[e.team?.displayName ?? ''],
+      position:     cur,
+      played:       stat(e, 'gamesPlayed'),
+      wins:         stat(e, 'wins'),
+      draws:        stat(e, 'ties'),
+      losses:       stat(e, 'losses'),
+      points:       stat(e, 'points'),
+      goalsFor:     stat(e, 'pointsFor'),
+      goalsAgainst: stat(e, 'pointsAgainst'),
+      rankChange:   prev !== undefined ? prev - cur : undefined,
+    };
+  });
 }
 
 // ─── Super Rugby Pacific — ESPN public API ────────────────────────────────────
@@ -205,15 +215,18 @@ async function fetchSuperRugbyStandings(): Promise<StandingRow[]> {
     names.reduce((v, n) => v || ((e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0), 0 as number);
   return entries.map((e, i): StandingRow => {
     const name = e.team?.displayName ?? e.team?.name ?? '';
+    const cur  = i + 1;
+    const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name,
-      teamId:   SRU_ESPN_TO_ID[name],
-      position: i + 1,
-      played:   stat(e, 'gamesPlayed'),
-      wins:     stat(e, 'wins', 'gamesWon'),
-      draws:    stat(e, 'ties', 'gamesDrawn'),
-      losses:   stat(e, 'losses', 'gamesLost'),
-      points:   stat(e, 'points'),
+      teamId:     SRU_ESPN_TO_ID[name],
+      position:   cur,
+      played:     stat(e, 'gamesPlayed'),
+      wins:       stat(e, 'wins', 'gamesWon'),
+      draws:      stat(e, 'ties', 'gamesDrawn'),
+      losses:     stat(e, 'losses', 'gamesLost'),
+      points:     stat(e, 'points'),
+      rankChange: prev !== undefined ? prev - cur : undefined,
     };
   });
 }
@@ -247,15 +260,18 @@ async function fetchRINTStandings(): Promise<StandingRow[]> {
 
   return entries.map((e, i): StandingRow => {
     const name = e.team?.displayName ?? e.team?.name ?? '';
+    const cur  = i + 1;
+    const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name,
-      teamId:   RINT_RC_DISP_TO_ID[name],
-      position: i + 1,
-      played:   stat(e, 'gamesPlayed'),
-      wins:     stat(e, 'wins', 'gamesWon'),
-      draws:    stat(e, 'ties', 'gamesDrawn'),
-      losses:   stat(e, 'losses', 'gamesLost'),
-      points:   stat(e, 'points'),
+      teamId:     RINT_RC_DISP_TO_ID[name],
+      position:   cur,
+      played:     stat(e, 'gamesPlayed'),
+      wins:       stat(e, 'wins', 'gamesWon'),
+      draws:      stat(e, 'ties', 'gamesDrawn'),
+      losses:     stat(e, 'losses', 'gamesLost'),
+      points:     stat(e, 'points'),
+      rankChange: prev !== undefined ? prev - cur : undefined,
     };
   });
 }

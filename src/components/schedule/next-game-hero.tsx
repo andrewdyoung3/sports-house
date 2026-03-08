@@ -11,6 +11,16 @@ import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
+// Logo URLs for background watermarks — mirrors the maps in schedule/page.tsx
+const LEAGUE_LOGO: Record<string, string> = {
+  nrl:         'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
+  epl:         'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
+  super_rugby: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
+};
+const COMPETITION_LOGO: Record<string, string> = {
+  'Champions League': 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+};
+
 interface NextGameHeroProps {
   game: ScheduleEntry;
   userTz: string;
@@ -31,8 +41,12 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
   const [expanded, setExpanded] = useState(false);
 
   const { team } = game;
-  const displayTime = formatTimeInZone(game.date, userTz);
-  const countdown   = timeUntil(game.date);
+  const displayTime   = formatTimeInZone(game.date, userTz);
+  const countdown     = timeUntil(game.date);
+  const teamLogoUrl   = TEAM_LOGOS[team.id];
+  const leagueLogoUrl = game.competition
+    ? COMPETITION_LOGO[game.competition]
+    : LEAGUE_LOGO[team.league];
 
   const dateLabel = new Intl.DateTimeFormat('en-AU', {
     timeZone: userTz,
@@ -56,12 +70,34 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
 
       {/* ── Collapsed header card — overflow-hidden clips the colour strip ── */}
       <div
-        className={`glass-hero overflow-hidden ${expanded ? 'rounded-t-3xl' : 'rounded-3xl'}`}
+        className={`relative overflow-hidden glass-hero ${expanded ? 'rounded-t-3xl' : 'rounded-3xl'}`}
         style={{
           boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.13)',
           borderColor: `${team.primaryColor}30`,
         }}
       >
+        {/* ── Background watermarks ── */}
+        {teamLogoUrl && (
+          <img
+            src={teamLogoUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
+            style={{ right: '110px', height: '180px', opacity: 0.09 }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
+        {leagueLogoUrl && (
+          <img
+            src={leagueLogoUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
+            style={{ right: '8px', height: '140px', opacity: 0.12 }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
+
         {/* Team-colour gradient top edge */}
         <div
           className="h-[2px] w-full"

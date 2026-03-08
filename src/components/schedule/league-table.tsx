@@ -15,6 +15,7 @@ const LEAGUE_LABEL: Record<string, string> = {
   nrl:         'NRL',
   epl:         'Premier League',
   super_rugby: 'Super Rugby',
+  rugby_int:   'Rugby Championship',
 };
 
 export function LeagueTable({ league, rows, followedTeamIds }: LeagueTableProps) {

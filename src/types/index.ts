@@ -112,6 +112,7 @@ export interface TeamStanding {
   goalsFor?: number;
   goalsAgainst?: number;
   percentage?: number;     // AFL: for/against percentage
+  rankChange?: number;     // +ve = moved up, -ve = moved down, 0 = same (from ESPN previousRank)
 }
 
 export interface NewsHeadline {
@@ -133,6 +134,21 @@ export interface PreviewContext {
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
   tips?: TipSummary;
+}
+
+// ─── AI Match Preview ────────────────────────────────────────────────────────
+
+export interface AIPreview {
+  /** Big-picture season story — positions, stakes, narrative weight. */
+  context: string;
+  /** The tactical clash where the fixture will be won or lost. */
+  tacticalBattle: string;
+  /** Player or position that is the pivotal storyline. */
+  playerSpotlight: string;
+  /** Authoritative narrative outcome and what could flip the result. */
+  verdict: string;
+  /** 3–4 short punchy tactical or contextual insights. */
+  keyInsights: string[];
 }
 
 // ─── User Preferences ────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Calendar, MapPin, Tv, Plus, ChevronDown } from 'lucide-react';
 
@@ -61,22 +61,41 @@ function formatDateHeading(representativeDate: Date, dateKey: string, userTz: st
   return full;
 }
 
-// ─── Competition badge ────────────────────────────────────────────────────────
+// ─── Fixture / league badge ───────────────────────────────────────────────────
 
-const COMPETITION_STYLE: Record<string, string> = {
-  'Champions League': 'text-amber-300 bg-amber-900/40 border-amber-600/40',
-  'Europa League':    'text-orange-300 bg-orange-900/40 border-orange-600/40',
-  'Conference League':'text-teal-300 bg-teal-900/40 border-teal-600/40',
-  'FA Cup':           'text-emerald-300 bg-emerald-900/40 border-emerald-600/40',
-  'EFL Cup':          'text-sky-300 bg-sky-900/40 border-sky-600/40',
+// Primary-league badge metadata
+const LEAGUE_BADGE: Record<string, { label: string; logoUrl?: string; cls: string }> = {
+  afl:         { label: 'AFL',         cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700/40' },
+  nrl:         { label: 'NRL',         logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',  cls: 'text-cyan-300 bg-cyan-900/30 border-cyan-700/40' },
+  epl:         { label: 'EPL',         logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',       cls: 'text-purple-300 bg-purple-900/30 border-purple-700/40' },
+  super_rugby: { label: 'Super Rugby', logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',    cls: 'text-blue-300 bg-blue-900/30 border-blue-700/40' },
+  rugby_int:   { label: 'Intl Rugby',  cls: 'text-slate-300 bg-slate-900/30 border-slate-700/40' },
 };
-const DEFAULT_COMPETITION_STYLE = 'text-indigo-300 bg-indigo-900/40 border-indigo-600/40';
 
-function CompetitionBadge({ name }: { name: string }) {
-  const cls = COMPETITION_STYLE[name] ?? DEFAULT_COMPETITION_STYLE;
+// Cup / European competition badge metadata
+const COMPETITION_BADGE: Record<string, { label: string; logoUrl?: string; cls: string }> = {
+  'Champions League':  { label: 'Champions League', logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', cls: 'text-amber-300 bg-amber-900/40 border-amber-600/40' },
+  'Europa League':     { label: 'Europa League',    cls: 'text-orange-300 bg-orange-900/40 border-orange-600/40' },
+  'Conference League': { label: 'Conference League',cls: 'text-teal-300 bg-teal-900/40 border-teal-600/40' },
+  'FA Cup':            { label: 'FA Cup',            cls: 'text-emerald-300 bg-emerald-900/40 border-emerald-600/40' },
+  'EFL Cup':           { label: 'EFL Cup',           cls: 'text-sky-300 bg-sky-900/40 border-sky-600/40' },
+};
+
+function FixtureBadge({ league, competition }: { league: string; competition?: string }) {
+  const meta = competition
+    ? (COMPETITION_BADGE[competition] ?? { label: competition, cls: 'text-indigo-300 bg-indigo-900/40 border-indigo-600/40' })
+    : (LEAGUE_BADGE[league]           ?? { label: league.toUpperCase(), cls: 'text-white/40 bg-white/8 border-white/20' });
   return (
-    <span className={`text-[10px] font-bold uppercase tracking-wide border rounded px-1.5 py-0.5 shrink-0 ${cls}`}>
-      {name}
+    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border rounded px-1.5 py-0.5 shrink-0 ${meta.cls}`}>
+      {meta.logoUrl && (
+        <img
+          src={meta.logoUrl}
+          alt=""
+          className="w-3 h-3 object-contain"
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      {meta.label}
     </span>
   );
 }
@@ -105,20 +124,27 @@ function ScheduleRow({
   const { team } = game;
   const displayTime = formatTimeInZone(game.date, userTz);
 
+  // Logo URLs for background watermarks
+  const teamLogoUrl   = TEAM_LOGOS[team.id];
+  const leagueLogoUrl = game.competition
+    ? COMPETITION_BADGE[game.competition]?.logoUrl
+    : LEAGUE_BADGE[team.league]?.logoUrl;
+
   return (
     <div
       className={[
-        'flex items-center gap-3 glass px-4 py-3 cursor-pointer',
-        'transition-all duration-200 select-none',
-        isExpanded ? 'rounded-t-2xl' : 'rounded-2xl float-hover',
-        isHighlighted && !isExpanded ? 'brightness-110' : '',
+        'relative overflow-hidden flex items-center gap-3 glass px-4 py-3 cursor-pointer',
+        'transition-all duration-300 ease-out select-none',
+        isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
+        isHighlighted && !isExpanded ? 'brightness-[1.06]' : '',
       ].join(' ')}
       style={{
         borderLeftColor: `${team.primaryColor}70`,
         borderLeftWidth: '2px',
-        ...(isHighlighted && !isExpanded
-          ? { boxShadow: `0 0 20px ${team.primaryColor}28, inset 0 0 0 1px ${team.primaryColor}22` }
-          : {}),
+        transition: 'box-shadow 0.4s ease-out',
+        boxShadow: isHighlighted && !isExpanded
+          ? `inset 0 0 0 1px ${team.primaryColor}22`
+          : undefined,
       }}
       onClick={onToggle}
       onMouseEnter={() => onHover(dateKey)}
@@ -128,6 +154,28 @@ function ScheduleRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
+      {/* ── Background watermarks (first in DOM = behind flex content) ── */}
+      {teamLogoUrl && (
+        <img
+          src={teamLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
+          style={{ right: '80px', opacity: 0.08 }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      {leagueLogoUrl && (
+        <img
+          src={leagueLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute top-1/2 -translate-y-1/2 h-[120%] w-auto object-contain pointer-events-none select-none"
+          style={{ right: '6px', opacity: 0.11 }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+
       {/* Team badge */}
       <TeamBadge
         logoUrl={TEAM_LOGOS[team.id]}
@@ -150,9 +198,7 @@ function ScheduleRow({
             className="rounded-md"
           />
           <span className="text-sm text-white/75">{game.opponent}</span>
-          {game.competition && (
-            <CompetitionBadge name={game.competition} />
-          )}
+          <FixtureBadge league={team.league} competition={game.competition} />
         </div>
 
         {/* Venue + broadcast */}
@@ -311,6 +357,10 @@ export default function SchedulePage() {
   // Expanded card state
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Calendar click — temporary glow on the clicked date's fixtures
+  const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Detect browser timezone once on mount
   useEffect(() => {
     try {
@@ -413,7 +463,15 @@ export default function SchedulePage() {
 
   const handleDayClick = useCallback((dk: string) => {
     const el = document.getElementById(`date-section-${dk}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) {
+      // Offset by navbar height + breathing room so the section heading is visible
+      const y = el.getBoundingClientRect().top + window.scrollY - 88;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    }
+    // Flash a glow on that date's fixtures for 2.5 s
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+    setClickedDateKey(dk);
+    clickTimerRef.current = setTimeout(() => setClickedDateKey(null), 2500);
   }, []);
 
   // Toggle expanded card
@@ -516,10 +574,12 @@ export default function SchedulePage() {
                           key={game.id}
                           className="rounded-2xl"
                           style={{
-                            transition: 'box-shadow 0.15s ease',
-                            boxShadow: isHighlighted
-                              ? `0 0 28px ${game.team.primaryColor}28`
-                              : undefined,
+                            transition: 'box-shadow 0.4s ease-out',
+                            boxShadow: clickedDateKey === dateKey
+                              ? `0 0 32px ${game.team.primaryColor}60, 0 0 0 1px ${game.team.primaryColor}40`
+                              : isHighlighted
+                                ? `0 0 20px ${game.team.primaryColor}25`
+                                : undefined,
                           }}
                         >
                           <ScheduleRow
