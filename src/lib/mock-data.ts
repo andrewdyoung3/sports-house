@@ -7,9 +7,9 @@
  * or Balldontlie (NBA).
  */
 
-import type { GameResult, GamePreview, NewsItem, UpcomingGame } from '@/types';
+import type { GameResult, GamePreview, NewsItem, UpcomingGame, PreviewContext } from '@/types';
 import type { Team } from '@/types';
-import { seededRandom } from '@/lib/utils';
+import { seededRandom, ordinal } from '@/lib/utils';
 
 // ─── Opponent pools (one per league) ─────────────────────────────────────────
 
@@ -410,6 +410,7 @@ export function getAIPreview(
   team: Team,
   opponentName: string,
   recentResults?: GameResult[],
+  context?: PreviewContext | null,
 ): { content: string; keyInsights: string[] } {
   const r1 = seededRandom(team.id + opponentName, 0);
 
@@ -419,57 +420,109 @@ export function getAIPreview(
   const draws   = hasReal ? recentResults!.filter(r => r.isDraw).length : 0;
   const losses  = total - wins - draws;
 
-  // Form narrative sentence — uses real data when available
-  let formText: string;
-  if (hasReal && draws > 0) {
-    formText = `on a run of ${wins}W-${draws}D-${losses}L from their last ${total}`;
+  const ts = context?.teamStanding;
+  const os = context?.opponentStanding;
+
+  // ── Opening: standings position + games played (when available)
+  let openingText: string;
+  if (ts) {
+    const pos = ordinal(ts.position);
+    const playedNote = ts.played > 0 ? ` after ${ts.played} games` : '';
+    openingText = `${team.shortName} sit ${pos} on the ladder${playedNote}`;
+  } else if (hasReal && draws > 0) {
+    openingText = `${team.shortName} head into this fixture on a run of ${wins}W-${draws}D-${losses}L from their last ${total}`;
   } else {
-    formText = FORM_INTROS[wins] ?? FORM_INTROS[3];
+    openingText = `${team.shortName} head into this fixture ${FORM_INTROS[wins] ?? FORM_INTROS[3]}`;
   }
 
-  // Mini-recap of last 3 actual results (real data only)
+  // ── Form detail
+  const formLabel = draws > 0
+    ? `${wins}W-${draws}D-${losses}L from last ${total}`
+    : `${wins}/${total} wins from their last ${total}`;
+  const formNote = hasReal ? ` (${formLabel})` : '';
+
+  // ── Mini-recap of last 3 actual results
   const recentStr = hasReal
-    ? ` Recent: ${recentResults!.slice(0, 3).map(r => {
+    ? ` Last results: ${recentResults!.slice(0, 3).map(r => {
         const label = r.isDraw ? 'D' : r.isWin ? 'W' : 'L';
         const comp  = r.competition ? ` [${r.competition}]` : '';
         return `${label} v ${r.opponentAbbr} ${r.teamScore}–${r.opponentScore}${comp}`;
       }).join(', ')}.`
     : '';
 
-  // Closing — form-based only, no fabricated opponent stats
+  // ── Opponent standing context
+  let opponentNote = '';
+  if (os) {
+    const oPos = ordinal(os.position);
+    opponentNote = ` They face ${opponentName}, who are ${oPos} on the table${os.played > 0 ? ` with ${os.played} games played` : ''}.`;
+  } else {
+    opponentNote = ` They face ${opponentName} in what promises to be a closely fought affair.`;
+  }
+
+  // ── Goals / scoring context (EPL)
+  let scoringNote = '';
+  if (ts?.goalsFor !== undefined && ts.played > 0) {
+    const gfAvg  = (ts.goalsFor / ts.played).toFixed(1);
+    const gcAvg  = ts.goalsAgainst !== undefined ? (ts.goalsAgainst / ts.played).toFixed(1) : null;
+    scoringNote = ` ${team.shortName} are averaging ${gfAvg} goals per game${gcAvg ? ` and conceding ${gcAvg}` : ''}.`;
+  } else if (ts?.percentage !== undefined) {
+    scoringNote = ` Their percentage of ${ts.percentage.toFixed(1)} reflects their season${ts.percentage >= 100 ? ' in the black' : ' with room to improve'}.`;
+  }
+
+  // ── Tips (AFL model consensus)
+  let tipsNote = '';
+  if (context?.tips) {
+    const t = context.tips;
+    const pct = Math.round((t.tipsFor / t.tipsTotal) * 100);
+    tipsNote = ` Squiggle models favour ${t.favouriteTeam} (${t.tipsFor}/${t.tipsTotal} tips, avg margin ${t.avgMargin} pts).`;
+  }
+
+  // ── Closing
   const closing = wins >= 4
     ? `${team.shortName} arrive in strong form and will be looking to extend that run.`
     : wins <= 1
-      ? `${team.shortName} will be eager to turn their form around in this one.`
-      : `With ${wins} win${wins !== 1 ? 's' : ''} from their last ${total}, this shapes up as a competitive fixture.`;
+      ? `${team.shortName} will be looking to turn their form around.`
+      : `This shapes up as a competitive fixture.`;
 
   const content = [
-    `${team.shortName} head into this fixture ${formText}.${recentStr}`,
-    `They face ${opponentName} in what promises to be a closely fought affair.`,
-    closing,
-  ].join(' ');
+    `${openingText}${formNote}.${recentStr}`,
+    opponentNote,
+    scoringNote,
+    tipsNote || closing,
+  ].filter(Boolean).join('');
 
-  // Key insights — only factual
-  const cups = hasReal
-    ? Array.from(new Set(recentResults!.filter(r => r.competition).map(r => r.competition!)))
-    : [];
+  // ── Key insights
+  const keyInsights: string[] = [];
 
-  const homeGames = hasReal ? recentResults!.filter(r => r.isHome) : [];
-  const homeWins  = homeGames.filter(r => r.isWin).length;
+  if (ts) {
+    keyInsights.push(`${team.shortName} ladder: ${ordinal(ts.position)} (${ts.wins}W-${ts.draws}D-${ts.losses}L, ${ts.played} played)`);
+  } else {
+    keyInsights.push(`${team.shortName}: ${formLabel}`);
+  }
 
-  const formLabel = draws > 0
-    ? `${wins}W ${draws}D ${losses}L from last ${total}${hasReal ? '' : ' (est.)'}`
-    : `${wins}/${total} wins${hasReal ? '' : ' (est.)'}`;
+  if (os) {
+    keyInsights.push(`${opponentName}: ${ordinal(os.position)} (${os.wins}W-${os.draws}D-${os.losses}L, ${os.played} played)`);
+  } else {
+    const cups = hasReal
+      ? Array.from(new Set(recentResults!.filter(r => r.competition).map(r => r.competition!)))
+      : [];
+    if (cups.length > 0) {
+      keyInsights.push(`Last ${total} spans ${cups.join(' + ')} + league fixtures`);
+    } else {
+      keyInsights.push(`Home advantage at ${team.venue} is a key factor`);
+    }
+  }
 
-  const keyInsights: string[] = [
-    `${team.shortName}: ${formLabel}`,
-    cups.length > 0
-      ? `Last ${total} spans ${cups.join(' + ')} alongside league fixtures`
-      : `Home advantage at ${team.venue} is a key factor`,
-    homeGames.length > 0
-      ? `${homeWins}/${homeGames.length} wins from recent home fixture${homeGames.length !== 1 ? 's' : ''}`
-      : `Venue and conditions will play a role in this one`,
-  ];
+  if (context?.tips) {
+    const t = context.tips;
+    keyInsights.push(`Models tip ${t.favouriteTeam} (${t.tipsFor}/${t.tipsTotal}, ~${t.avgMargin} pt margin)`);
+  } else {
+    const homeGames = hasReal ? recentResults!.filter(r => r.isHome) : [];
+    const homeWins  = homeGames.filter(r => r.isWin).length;
+    if (homeGames.length > 0) {
+      keyInsights.push(`${homeWins}/${homeGames.length} wins from recent home games`);
+    }
+  }
 
   return { content, keyInsights };
 }

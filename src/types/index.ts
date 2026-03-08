@@ -98,6 +98,42 @@ export interface GamePreview {
   generatedAt: string;
 }
 
+// ─── Season State / Preview Context ──────────────────────────────────────────
+
+export interface TeamStanding {
+  name: string;
+  position: number;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  points?: number;         // EPL: points; AFL: percentage used instead
+  goalsFor?: number;
+  goalsAgainst?: number;
+  percentage?: number;     // AFL: for/against percentage
+}
+
+export interface NewsHeadline {
+  headline: string;
+  description?: string;
+  published?: string;      // ISO string
+}
+
+export interface TipSummary {
+  favouriteTeam: string;
+  tipsFor: number;
+  tipsTotal: number;
+  avgMargin: number;
+}
+
+export interface PreviewContext {
+  teamStanding?: TeamStanding;
+  opponentStanding?: TeamStanding;
+  teamNews?: NewsHeadline[];
+  opponentNews?: NewsHeadline[];
+  tips?: TipSummary;
+}
+
 // ─── User Preferences ────────────────────────────────────────────────────────
 
 export interface UserPreferences {
