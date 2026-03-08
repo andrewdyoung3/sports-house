@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2 } from 'lucide-react';
 import { getAIPreview, getRecentResults } from '@/lib/mock-data';
 import { RecentForm } from '@/components/dashboard/recent-form';
-import { ordinal } from '@/lib/utils';
+import { cn, ordinal } from '@/lib/utils';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 interface GameExpandPanelProps {
   game: ScheduleEntry;
+  /** Override outer div className (e.g. to change bottom border-radius). */
+  className?: string;
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
@@ -85,7 +87,7 @@ function NewsItem({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GameExpandPanel({ game }: GameExpandPanelProps) {
+export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
   const { team } = game;
 
   const [results,  setResults]  = useState<GameResult[]>(() => getRecentResults(team, 5));
@@ -121,7 +123,7 @@ export function GameExpandPanel({ game }: GameExpandPanelProps) {
 
   return (
     <div
-      className="border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl"
+      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
       style={{ animation: 'slideDown 0.22s ease-out' }}
     >
       {/* ── Match Preview ── */}
