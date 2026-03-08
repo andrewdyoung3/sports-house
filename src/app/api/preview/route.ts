@@ -240,16 +240,13 @@ async function fetchEPLPreview(
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
-    const entries: any[] = data.standings?.[0]?.entries ?? [];
+    // ESPN v2 standings: data.children[0].standings.entries (not an array)
+    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
   }
 
   // ── News ──
-  function parseNews(res: Response | null): NewsHeadline[] {
-    return []; // will be filled after await
-  }
-
   const teamNews: NewsHeadline[] = [];
   const opponentNews: NewsHeadline[] = [];
 
