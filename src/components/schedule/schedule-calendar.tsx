@@ -2,7 +2,9 @@
 
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { datekeyInZone } from '@/lib/utils';
+import { datekeyInZone, formatTimeInZone } from '@/lib/utils';
+import { TeamBadge } from '@/components/ui/team-badge';
+import { TEAM_LOGOS } from '@/lib/team-logos';
 import type { Team, UpcomingGame } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -20,6 +22,16 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+/** Parse a YYYY-MM-DD key into a short label like "Tue 18 Mar" */
+function labelFromDateKey(dk: string): string {
+  const [y, m, d] = dk.split('-').map(Number);
+  return new Intl.DateTimeFormat('en-AU', {
+    weekday: 'short',
+    day:     'numeric',
+    month:   'short',
+  }).format(new Date(y, m - 1, d, 12));
+}
 
 export function ScheduleCalendar({
   games,
@@ -75,11 +87,13 @@ export function ScheduleCalendar({
     else setViewMonth(m => m + 1);
   }
 
-  // Jump forward to the first month that has a game if the current view is empty
   const viewHasGames = calendarDays.some(day => {
     if (day === null) return false;
     return gamesByDate.has(dateKeyForDay(day));
   });
+
+  // Games to preview — driven by hoveredDateKey from parent
+  const previewGames = hoveredDateKey ? (gamesByDate.get(hoveredDateKey) ?? []) : [];
 
   return (
     <div className="glass rounded-2xl p-4 select-none">
@@ -124,8 +138,6 @@ export function ScheduleCalendar({
           const isToday   = dk === todayKey;
           const isHovered = dk === hoveredDateKey;
           const hasGames  = !!dayGames?.length;
-
-          // Primary color of first game's team for glow
           const glowColor = dayGames?.[0]?.team.primaryColor;
 
           return (
@@ -149,11 +161,11 @@ export function ScheduleCalendar({
               style={isHovered && glowColor
                 ? { boxShadow: `0 0 14px ${glowColor}55`, background: `${glowColor}18` }
                 : undefined}
-              aria-label={hasGames ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayGames!.length} fixture${dayGames!.length > 1 ? 's' : ''}` : undefined}
+              aria-label={hasGames
+                ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayGames!.length} fixture${dayGames!.length > 1 ? 's' : ''}`
+                : undefined}
             >
               <span>{day}</span>
-
-              {/* Team-colour dots — one per game (max 3) */}
               {hasGames && (
                 <div className="flex gap-0.5 justify-center">
                   {dayGames!.slice(0, 3).map((g, gi) => (
@@ -170,16 +182,73 @@ export function ScheduleCalendar({
         })}
       </div>
 
-      {/* ── Empty-month nudge ── */}
-      {!viewHasGames && (
-        <p className="text-[9px] text-white/20 text-center mt-3">
-          No fixtures this month
-        </p>
-      )}
-
-      <p className="text-[9px] text-white/18 text-center mt-3 leading-tight">
-        Tap a coloured date to jump to fixture
-      </p>
+      {/* ── Hover preview panel ──────────────────────────────────────────────── */}
+      {/*
+        Shows when a day-with-games is hovered (from either the calendar or a
+        schedule row). Driven entirely by the hoveredDateKey prop so it reacts
+        to cross-highlights from the list too.
+      */}
+      <div
+        className="mt-3 pt-3 border-t border-white/10 overflow-hidden transition-all duration-200"
+        style={{ minHeight: '2.5rem' }}
+      >
+        {previewGames.length > 0 ? (
+          <div style={{ animation: 'slideDown 0.18s ease-out' }}>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 mb-2">
+              {labelFromDateKey(hoveredDateKey!)}
+            </p>
+            <div className="space-y-2">
+              {previewGames.map(game => (
+                <div
+                  key={game.id}
+                  className="flex items-center gap-1.5"
+                  style={{
+                    borderLeft: `2px solid ${game.team.primaryColor}60`,
+                    paddingLeft: '6px',
+                  }}
+                >
+                  {/* Followed-team badge */}
+                  <TeamBadge
+                    logoUrl={TEAM_LOGOS[game.team.id]}
+                    abbreviation={game.team.abbreviation}
+                    primaryColor={game.team.primaryColor}
+                    size={20}
+                    className="rounded-md shrink-0"
+                  />
+                  <span className="text-[11px] font-bold text-white leading-none">
+                    {game.team.shortName}
+                  </span>
+                  <span className="text-[10px] text-white/35 leading-none">
+                    {game.isHome ? 'vs' : 'at'}
+                  </span>
+                  {/* Opponent badge */}
+                  <TeamBadge
+                    logoUrl={game.opponentLogoUrl}
+                    abbreviation={game.opponentAbbr}
+                    primaryColor={game.opponentColor}
+                    size={20}
+                    className="rounded-md shrink-0"
+                  />
+                  <span className="text-[11px] text-white/70 leading-none flex-1 min-w-0 truncate">
+                    {game.opponent}
+                  </span>
+                  {/* Kick-off time */}
+                  <span
+                    className="text-[10px] font-bold shrink-0 leading-none"
+                    style={{ color: game.team.primaryColor }}
+                  >
+                    {formatTimeInZone(game.date, userTz)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[9px] text-white/18 text-center leading-tight">
+            {viewHasGames ? 'Hover a date · click to jump' : 'No fixtures this month'}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
