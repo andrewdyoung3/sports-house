@@ -108,7 +108,7 @@ function ScheduleRow({
       className={[
         'flex items-center gap-3 glass px-4 py-3 cursor-pointer',
         'transition-all duration-200 select-none',
-        isExpanded ? '' : 'rounded-2xl float-hover',
+        isExpanded ? 'rounded-t-2xl' : 'rounded-2xl float-hover',
         isHighlighted && !isExpanded ? 'brightness-110' : '',
       ].join(' ')}
       style={{
@@ -466,7 +466,7 @@ export default function SchedulePage() {
                       return (
                         <div
                           key={game.id}
-                          className="rounded-2xl overflow-hidden"
+                          className="rounded-2xl"
                           style={{
                             transition: 'box-shadow 0.15s ease',
                             boxShadow: isHighlighted

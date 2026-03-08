@@ -44,7 +44,7 @@ export function GameExpandPanel({ game }: GameExpandPanelProps) {
 
   return (
     <div
-      className="border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5"
+      className="border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl"
       style={{ animation: 'slideDown 0.22s ease-out' }}
     >
       {/* ── Match Preview ── */}

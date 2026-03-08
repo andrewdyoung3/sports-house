@@ -412,67 +412,64 @@ export function getAIPreview(
   recentResults?: GameResult[],
 ): { content: string; keyInsights: string[] } {
   const r1 = seededRandom(team.id + opponentName, 0);
-  const r2 = seededRandom(team.id + opponentName, 1);
-  const r3 = seededRandom(team.id + opponentName, 2);
 
-  // Use real results when available (AFL/EPL) for accurate form narrative
-  const hasReal  = Array.isArray(recentResults) && recentResults.length >= 1;
-  const homeWins = hasReal
-    ? recentResults!.filter(r => r.isWin).length
-    : Math.floor(r1 * 6);
-  const homeDraws = hasReal
-    ? recentResults!.filter(r => r.isDraw).length
-    : 0;
+  const hasReal = Array.isArray(recentResults) && recentResults.length >= 1;
+  const total   = hasReal ? recentResults!.length : 5;
+  const wins    = hasReal ? recentResults!.filter(r => r.isWin).length  : Math.floor(r1 * 6);
+  const draws   = hasReal ? recentResults!.filter(r => r.isDraw).length : 0;
+  const losses  = total - wins - draws;
 
-  const awayWins = Math.floor(r2 * 6); // opponent form still estimated
-  const homePos  = 1 + Math.floor(r1 * 12);
-  const awayPos  = 1 + Math.floor(r2 * 12);
-
-  // Build form description — include draws when data is real and draws exist
-  let homeFormText: string;
-  if (hasReal && homeDraws > 0) {
-    const homeLosses = recentResults!.length - homeWins - homeDraws;
-    homeFormText = `on a run of ${homeWins}W-${homeDraws}D-${homeLosses}L from their last ${recentResults!.length}`;
+  // Form narrative sentence — uses real data when available
+  let formText: string;
+  if (hasReal && draws > 0) {
+    formText = `on a run of ${wins}W-${draws}D-${losses}L from their last ${total}`;
   } else {
-    homeFormText = FORM_INTROS[homeWins] ?? FORM_INTROS[3];
+    formText = FORM_INTROS[wins] ?? FORM_INTROS[3];
   }
 
-  const awayFormText = FORM_INTROS[awayWins] ?? FORM_INTROS[3];
+  // Mini-recap of last 3 actual results (real data only)
+  const recentStr = hasReal
+    ? ` Recent: ${recentResults!.slice(0, 3).map(r => {
+        const label = r.isDraw ? 'D' : r.isWin ? 'W' : 'L';
+        const comp  = r.competition ? ` [${r.competition}]` : '';
+        return `${label} v ${r.opponentAbbr} ${r.teamScore}–${r.opponentScore}${comp}`;
+      }).join(', ')}.`
+    : '';
 
-  const s1 = `${team.shortName} head into this fixture ${homeFormText}.`;
+  // Closing — form-based only, no fabricated opponent stats
+  const closing = wins >= 4
+    ? `${team.shortName} arrive in strong form and will be looking to extend that run.`
+    : wins <= 1
+      ? `${team.shortName} will be eager to turn their form around in this one.`
+      : `With ${wins} win${wins !== 1 ? 's' : ''} from their last ${total}, this shapes up as a competitive fixture.`;
 
-  const posCompare = awayPos < homePos
-    ? `${opponentName}, who sit higher on the ladder, will arrive with genuine confidence.`
-    : `${opponentName} are ${awayFormText} heading into the contest.`;
+  const content = [
+    `${team.shortName} head into this fixture ${formText}.${recentStr}`,
+    `They face ${opponentName} in what promises to be a closely fought affair.`,
+    closing,
+  ].join(' ');
 
-  const scoreDiff = homeWins - awayWins + (awayPos - homePos) * 0.3 + 0.5;
-  const edgeTeam  = scoreDiff > 1 ? team.shortName : scoreDiff < -1 ? opponentName : 'neither side';
-  const s3 = edgeTeam === 'neither side'
-    ? `With both sides evenly matched on current form, this shapes up as a genuinely open contest.`
-    : `On current form and ladder position, ${edgeTeam} hold a slight advantage — but the margin could be tight.`;
+  // Key insights — only factual
+  const cups = hasReal
+    ? Array.from(new Set(recentResults!.filter(r => r.competition).map(r => r.competition!)))
+    : [];
 
-  const content = [s1, posCompare, s3].join(' ');
+  const homeGames = hasReal ? recentResults!.filter(r => r.isHome) : [];
+  const homeWins  = homeGames.filter(r => r.isWin).length;
 
-  // Key insights — use real data when available
-  const formLabel = hasReal && homeDraws > 0
-    ? `${homeWins}W ${homeDraws}D ${recentResults!.length - homeWins - homeDraws}L from last ${recentResults!.length}`
-    : `${homeWins} win${homeWins !== 1 ? 's' : ''} from last ${hasReal ? recentResults!.length : 5}`;
+  const formLabel = draws > 0
+    ? `${wins}W ${draws}D ${losses}L from last ${total}${hasReal ? '' : ' (est.)'}`
+    : `${wins}/${total} wins${hasReal ? '' : ' (est.)'}`;
 
-  const allInsights = [
-    `${team.shortName} — ${formLabel}`,
-    `${opponentName} — estimated ${awayWins} win${awayWins !== 1 ? 's' : ''} from last 5`,
-    `${team.shortName} are currently placed ${homePos}th on the ladder`,
-    `${opponentName} sit ${awayPos}th — ${awayPos < homePos ? 'above' : 'below'} ${team.shortName}`,
-    `Home advantage at ${team.venue} is a consistent factor in tight games`,
-    `The team with better recent form has won ${55 + Math.floor(r3 * 15)}% of recent H2H meetings`,
+  const keyInsights: string[] = [
+    `${team.shortName}: ${formLabel}`,
+    cups.length > 0
+      ? `Last ${total} spans ${cups.join(' + ')} alongside league fixtures`
+      : `Home advantage at ${team.venue} is a key factor`,
+    homeGames.length > 0
+      ? `${homeWins}/${homeGames.length} wins from recent home fixture${homeGames.length !== 1 ? 's' : ''}`
+      : `Venue and conditions will play a role in this one`,
   ];
-
-  const seen = new Set<string>();
-  const keyInsights = [0, 1, 4].map(i => allInsights[i]).filter(s => {
-    if (seen.has(s)) return false;
-    seen.add(s);
-    return true;
-  });
 
   return { content, keyInsights };
 }

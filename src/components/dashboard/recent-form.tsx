@@ -8,7 +8,7 @@ interface RecentFormProps {
 export function RecentForm({ results }: RecentFormProps) {
   return (
     <div className="flex items-center gap-1.5">
-      {results.map((r, i) => {
+      {[...results].reverse().map((r, i) => {
         const isDraw = r.isDraw === true;
         const label  = isDraw ? 'D' : r.isWin ? 'W' : 'L';
 
