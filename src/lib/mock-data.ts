@@ -26,8 +26,9 @@ const AFL_OPPONENTS = [
   { name: 'Essendon Bombers',      abbr: 'ESS', color: '#CC2031', logo: `${ESPN}/afl/500/ess.png`  },
 ];
 
-// NRL / Super Rugby / Rugby International — ESPN CDN doesn't serve these via
-// a reliable public slug pattern; logo falls back to coloured abbreviation badge.
+// NRL — ESPN CDN serves these via rugby/teams/500/{numericId}.png (see team-logos.ts)
+// Super Rugby — official logos from super.rugby/sites/sanzar/assets/teamlogos/
+// Opponent entries here don't need logos; the TEAM_LOGOS map covers followed teams.
 const NRL_OPPONENTS = [
   { name: 'Penrith Panthers',       abbr: 'PEN', color: '#1C1C1C' },
   { name: 'Melbourne Storm',        abbr: 'MEL', color: '#4B0082' },

@@ -1,20 +1,19 @@
 /**
- * Official team logo URLs sourced from ESPN CDN.
- * Keyed by our internal team ID (e.g. 'afl-lions', 'epl-arsenal').
+ * Official team logo URLs. Keyed by our internal team ID.
  *
- * ESPN CDN patterns (all verified March 2026):
- *   AFL  → https://a.espncdn.com/i/teamlogos/afl/500/{slug}.png
- *   EPL  → https://a.espncdn.com/i/teamlogos/soccer/500/{numericId}.png
- *   NFL  → https://a.espncdn.com/i/teamlogos/nfl/500/{abbr}.png
- *   NBA  → https://a.espncdn.com/i/teamlogos/nba/500/{abbr}.png
- *   MLB  → https://a.espncdn.com/i/teamlogos/mlb/500/{abbr}.png
- *   NHL  → https://a.espncdn.com/i/teamlogos/nhl/500/{abbr}.png
- *
- * NRL / Super Rugby / Rugby International are not reliably served via ESPN CDN
- * slug patterns — those teams fall back to the coloured abbreviation badge.
+ * ESPN CDN patterns (verified March 2026):
+ *   AFL        → https://a.espncdn.com/i/teamlogos/afl/500/{slug}.png
+ *   NRL        → https://a.espncdn.com/i/teamlogos/rugby/teams/500/{numericId}.png
+ *   EPL        → https://a.espncdn.com/i/teamlogos/soccer/500/{numericId}.png
+ *   NFL        → https://a.espncdn.com/i/teamlogos/nfl/500/{abbr}.png
+ *   NBA        → https://a.espncdn.com/i/teamlogos/nba/500/{abbr}.png
+ *   MLB        → https://a.espncdn.com/i/teamlogos/mlb/500/{abbr}.png
+ *   NHL        → https://a.espncdn.com/i/teamlogos/nhl/500/{abbr}.png
+ *   Super Rugby → https://super.rugby/sites/sanzar/assets/teamlogos/SRP_{Name}.png
  */
 
-const ESPN = 'https://a.espncdn.com/i/teamlogos';
+const ESPN  = 'https://a.espncdn.com/i/teamlogos';
+const SRP   = 'https://super.rugby/sites/sanzar/assets/teamlogos';
 
 export const TEAM_LOGOS: Record<string, string> = {
 
@@ -37,6 +36,39 @@ export const TEAM_LOGOS: Record<string, string> = {
   'afl-swans':     `${ESPN}/afl/500/syd.png`,
   'afl-eagles':    `${ESPN}/afl/500/wce.png`,
   'afl-dogs':      `${ESPN}/afl/500/wb.png`,
+
+  // ── NRL ────────────────────────────────────────────────────────────────────
+  // ESPN CDN: rugby/teams/500/{numericId}.png (IDs from ESPN rugby-league/3 teams endpoint)
+  'nrl-broncos':   `${ESPN}/rugby/teams/500/289195.png`,
+  'nrl-raiders':   `${ESPN}/rugby/teams/500/289198.png`,
+  'nrl-bulldogs':  `${ESPN}/rugby/teams/500/289197.png`,
+  'nrl-sharks':    `${ESPN}/rugby/teams/500/289203.png`,
+  'nrl-dolphins':  `${ESPN}/rugby/teams/500/289346.png`,
+  'nrl-titans':    `${ESPN}/rugby/teams/500/289206.png`,
+  'nrl-eels':      `${ESPN}/rugby/teams/500/289194.png`,
+  'nrl-panthers':  `${ESPN}/rugby/teams/500/289199.png`,
+  'nrl-seahawks':  `${ESPN}/rugby/teams/500/289196.png`,
+  'nrl-storm':     `${ESPN}/rugby/teams/500/289208.png`,
+  'nrl-knights':   `${ESPN}/rugby/teams/500/289207.png`,
+  'nrl-warriors':  `${ESPN}/rugby/teams/500/289201.png`,
+  'nrl-cowboys':   `${ESPN}/rugby/teams/500/289202.png`,
+  'nrl-rabbitohs': `${ESPN}/rugby/teams/500/289205.png`,
+  'nrl-dragons':   `${ESPN}/rugby/teams/500/289209.png`,
+  'nrl-roosters':  `${ESPN}/rugby/teams/500/289204.png`,
+  'nrl-tigers':    `${ESPN}/rugby/teams/500/289200.png`,
+
+  // ── Super Rugby Pacific ─────────────────────────────────────────────────────
+  // Official logos from super.rugby (SANZAR) — ESPN CDN doesn't serve these
+  'sru-brumbies':    `${SRP}/SRP_ACT_Brumbies.png`,
+  'sru-reds':        `${SRP}/SRP_Reds.png`,
+  'sru-waratahs':    `${SRP}/SRP_NSW_Waratahs.png`,
+  'sru-force':       `${SRP}/SRP_Western_Force.png`,
+  'sru-blues':       `${SRP}/SRP_Blues.png`,
+  'sru-chiefs':      `${SRP}/SRP_Chiefs.png`,
+  'sru-crusaders':   `${SRP}/SRP_Crusaders.png`,
+  'sru-highlanders': `${SRP}/SRP_Highlanders.png`,
+  'sru-hurricanes':  `${SRP}/SRP_Hurricanes.png`,
+  'sru-drua':        `${SRP}/SRP_Fijian_Drua_1.png`,
 
   // ── EPL ────────────────────────────────────────────────────────────────────
   'epl-arsenal':       `${ESPN}/soccer/500/359.png`,
