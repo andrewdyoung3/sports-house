@@ -65,11 +65,14 @@ export interface UpcomingGame {
 export interface GameResult {
   opponent: string;
   opponentAbbr: string;
+  opponentLogoUrl?: string;  // ESPN CDN / team logo when available
   isHome: boolean;
   isWin: boolean;
+  isDraw?: boolean;           // Football/soccer draws (score level at FT)
   teamScore: number;
   opponentScore: number;
   date: string;
+  competition?: string;       // Non-primary cup/CL competition label
 }
 
 // ─── News ─────────────────────────────────────────────────────────────────────

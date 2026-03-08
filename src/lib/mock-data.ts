@@ -274,12 +274,14 @@ export function getRecentResults(team: Team, count = 5): GameResult[] {
     const r1   = seededRandom(team.id, 100 + i * 3);
     const r2   = seededRandom(team.id, 101 + i * 3);
     const r3   = seededRandom(team.id, 102 + i * 3);
+    const r4   = seededRandom(team.id, 103 + i * 3); // used for draw roll (EPL only)
     const opp  = pool[Math.floor(r1 * pool.length)];
     const isWin  = r2 < winBias;
     const isHome = r3 > 0.5;
 
     let teamScore: number;
     let oppScore: number;
+    let isDraw: boolean | undefined;
 
     switch (team.league) {
       case 'afl': {
@@ -321,9 +323,18 @@ export function getRecentResults(team: Team, count = 5): GameResult[] {
         break;
       }
       default: {
-        // EPL / football
-        teamScore = Math.floor(r1 * 4);
-        oppScore  = isWin ? Math.max(0, teamScore - Math.floor(r2 * 2)) : teamScore + Math.floor(r2 * 2);
+        // EPL / football — draws are common (~25% of games in a real PL season)
+        if (!isWin && r4 > 0.45) {
+          // ~55% of non-wins are draws (realistic relative rate)
+          isDraw    = true;
+          teamScore = Math.floor(r1 * 3);   // 0–2 typical draw scoreline
+          oppScore  = teamScore;
+        } else {
+          teamScore = Math.floor(r1 * 4);
+          oppScore  = isWin
+            ? Math.max(0, teamScore - Math.floor(r2 * 2))
+            : teamScore + 1 + Math.floor(r2 * 2);
+        }
       }
     }
 
@@ -332,6 +343,7 @@ export function getRecentResults(team: Team, count = 5): GameResult[] {
       opponentAbbr:  opp.abbr,
       isHome,
       isWin,
+      isDraw:        isDraw || undefined,
       teamScore,
       opponentScore: Math.max(0, oppScore),
       date:          new Date(now - (i + 1) * 7 * dayMs).toISOString(),
@@ -394,48 +406,68 @@ const FORM_INTROS: Record<number, string> = {
   0: 'in poor form, having failed to win any of their last five contests',
 };
 
-export function getAIPreview(team: Team, opponentName: string): { content: string; keyInsights: string[] } {
-  const r1       = seededRandom(team.id + opponentName, 0);
-  const r2       = seededRandom(team.id + opponentName, 1);
-  const r3       = seededRandom(team.id + opponentName, 2);
+export function getAIPreview(
+  team: Team,
+  opponentName: string,
+  recentResults?: GameResult[],
+): { content: string; keyInsights: string[] } {
+  const r1 = seededRandom(team.id + opponentName, 0);
+  const r2 = seededRandom(team.id + opponentName, 1);
+  const r3 = seededRandom(team.id + opponentName, 2);
 
-  const homeWins = Math.floor(r1 * 6); // 0–5
-  const awayWins = Math.floor(r2 * 6);
+  // Use real results when available (AFL/EPL) for accurate form narrative
+  const hasReal  = Array.isArray(recentResults) && recentResults.length >= 1;
+  const homeWins = hasReal
+    ? recentResults!.filter(r => r.isWin).length
+    : Math.floor(r1 * 6);
+  const homeDraws = hasReal
+    ? recentResults!.filter(r => r.isDraw).length
+    : 0;
+
+  const awayWins = Math.floor(r2 * 6); // opponent form still estimated
   const homePos  = 1 + Math.floor(r1 * 12);
   const awayPos  = 1 + Math.floor(r2 * 12);
 
-  const homeFormText = FORM_INTROS[homeWins] ?? FORM_INTROS[3];
+  // Build form description — include draws when data is real and draws exist
+  let homeFormText: string;
+  if (hasReal && homeDraws > 0) {
+    const homeLosses = recentResults!.length - homeWins - homeDraws;
+    homeFormText = `on a run of ${homeWins}W-${homeDraws}D-${homeLosses}L from their last ${recentResults!.length}`;
+  } else {
+    homeFormText = FORM_INTROS[homeWins] ?? FORM_INTROS[3];
+  }
+
   const awayFormText = FORM_INTROS[awayWins] ?? FORM_INTROS[3];
 
-  // Sentence 1: home team form
   const s1 = `${team.shortName} head into this fixture ${homeFormText}.`;
 
-  // Sentence 2: away team context
   const posCompare = awayPos < homePos
     ? `${opponentName}, who sit higher on the ladder, will arrive with genuine confidence.`
     : `${opponentName} are ${awayFormText} heading into the contest.`;
-  const s2 = posCompare;
 
-  // Sentence 3: edge call
-  const scoreDiff = homeWins - awayWins + (awayPos - homePos) * 0.3 + 0.5; // home advantage
+  const scoreDiff = homeWins - awayWins + (awayPos - homePos) * 0.3 + 0.5;
   const edgeTeam  = scoreDiff > 1 ? team.shortName : scoreDiff < -1 ? opponentName : 'neither side';
   const s3 = edgeTeam === 'neither side'
-    ? `With both sides evenly matched on current form, this shaping up as a genuinely open contest.`
+    ? `With both sides evenly matched on current form, this shapes up as a genuinely open contest.`
     : `On current form and ladder position, ${edgeTeam} hold a slight advantage — but the margin could be tight.`;
 
-  const content = [s1, s2, s3].join(' ');
+  const content = [s1, posCompare, s3].join(' ');
 
-  // Key insights — deterministic, grounded only in available stats
+  // Key insights — use real data when available
+  const formLabel = hasReal && homeDraws > 0
+    ? `${homeWins}W ${homeDraws}D ${recentResults!.length - homeWins - homeDraws}L from last ${recentResults!.length}`
+    : `${homeWins} win${homeWins !== 1 ? 's' : ''} from last ${hasReal ? recentResults!.length : 5}`;
+
   const allInsights = [
-    `${team.shortName} have won ${homeWins} of their last 5 games`,
-    `${opponentName} have won ${awayWins} of their last 5 games`,
+    `${team.shortName} — ${formLabel}`,
+    `${opponentName} — estimated ${awayWins} win${awayWins !== 1 ? 's' : ''} from last 5`,
     `${team.shortName} are currently placed ${homePos}th on the ladder`,
     `${opponentName} sit ${awayPos}th — ${awayPos < homePos ? 'above' : 'below'} ${team.shortName}`,
     `Home advantage at ${team.venue} is a consistent factor in tight games`,
-    `The team with better recent form has won ${55 + Math.floor(r3 * 15)}% of recent head-to-head meetings`,
+    `The team with better recent form has won ${55 + Math.floor(r3 * 15)}% of recent H2H meetings`,
   ];
 
-  const seen    = new Set<string>();
+  const seen = new Set<string>();
   const keyInsights = [0, 1, 4].map(i => allInsights[i]).filter(s => {
     if (seen.has(s)) return false;
     seen.add(s);

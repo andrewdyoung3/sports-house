@@ -1,9 +1,10 @@
 'use client';
 
-import { Trophy, TrendingUp, Zap, CalendarPlus, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2 } from 'lucide-react';
 import { getAIPreview, getRecentResults } from '@/lib/mock-data';
 import { RecentForm } from '@/components/dashboard/recent-form';
-import type { Team, UpcomingGame } from '@/types';
+import type { Team, UpcomingGame, GameResult } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
@@ -11,11 +12,35 @@ interface GameExpandPanelProps {
   game: ScheduleEntry;
 }
 
+/** Leagues with a real /api/results backend; all others use mock data. */
+const REAL_DATA_LEAGUES = new Set(['afl', 'epl']);
+
 export function GameExpandPanel({ game }: GameExpandPanelProps) {
   const { team } = game;
-  const preview = getAIPreview(team, game.opponent);
-  const results = getRecentResults(team, 5);
-  const wins    = results.filter(r => r.isWin).length;
+
+  const [results, setResults] = useState<GameResult[]>(() => getRecentResults(team, 5));
+  const [loadingResults, setLoadingResults] = useState(REAL_DATA_LEAGUES.has(team.league));
+
+  useEffect(() => {
+    if (!REAL_DATA_LEAGUES.has(team.league)) return;
+
+    fetch(`/api/results?league=${team.league}&teamId=${team.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((data: GameResult[] | null) => {
+        if (Array.isArray(data) && data.length > 0) setResults(data);
+      })
+      .catch(() => { /* keep mock on error */ })
+      .finally(() => setLoadingResults(false));
+  }, [team.id, team.league]);
+
+  // These re-derive whenever results state changes (mock → real)
+  const wins   = results.filter(r => r.isWin).length;
+  const draws  = results.filter(r => r.isDraw).length;
+  const preview = getAIPreview(team, game.opponent, results);
+
+  const formLabel = draws > 0
+    ? `${wins}W ${draws}D ${results.length - wins - draws}L`
+    : `${wins}/${results.length} wins`;
 
   return (
     <div
@@ -31,19 +56,29 @@ export function GameExpandPanel({ game }: GameExpandPanelProps) {
         <p className="text-sm text-white/65 leading-relaxed">{preview.content}</p>
       </div>
 
-      {/* ── Form + Insights row ── */}
+      {/* ── Form + Key Factors ── */}
       <div className="grid grid-cols-2 gap-5">
 
         {/* Recent form */}
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
             <Trophy className="h-3 w-3" />
-            {team.shortName} — Last 5
+            {team.shortName} — Last {results.length}
           </p>
-          <RecentForm results={results} />
-          <p className="text-[10px] text-white/30 mt-1.5">
-            {wins}/5 wins · hover dots for scores
-          </p>
+
+          {loadingResults ? (
+            <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading real results…
+            </div>
+          ) : (
+            <>
+              <RecentForm results={results} />
+              <p className="text-[10px] text-white/30 mt-1.5">
+                {formLabel} · hover for details
+              </p>
+            </>
+          )}
         </div>
 
         {/* Key insights */}
@@ -66,7 +101,7 @@ export function GameExpandPanel({ game }: GameExpandPanelProps) {
         </div>
       </div>
 
-      {/* ── Footer row: odds + add-to-calendar ── */}
+      {/* ── Footer: odds + add-to-calendar ── */}
       <div className="flex items-center justify-between pt-3 border-t border-white/6">
         {game.odds ? (
           <div className="flex items-center gap-5">
