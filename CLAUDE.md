@@ -39,9 +39,20 @@ src/
 - Server components: `app/layout.tsx`, `app/page.tsx` (landing), all `ui/` components
 - Client components (`'use client'`): all pages with state/localStorage, navbar, TeamFeedCard, TeamSelectorCard
 
+## Real data sources (live)
+| League | Results | Standings | News/Tips |
+|--------|---------|-----------|-----------|
+| AFL | Squiggle `?q=games;year=YEAR` (complete=100) | Squiggle `?q=standings` | Squiggle `?q=tips;game=ID` |
+| NRL | ESPN `rugby-league/3/scoreboard?dates=RANGE` | ESPN `v2/rugby-league/3/standings` (children[0].standings.entries, stat names: gamesWon/gamesLost/gamesDrawn) | ESPN `rugby-league/3/teams/{id}/news` |
+| EPL | ESPN `soccer/eng.1/scoreboard` (fan-out across 5 comps) | ESPN `v2/soccer/eng.1/standings` (children[0].standings.entries, stat names: wins/losses/ties) | ESPN `soccer/eng.1/teams/{id}/news` |
+
+**All other leagues use mock data** — see `src/lib/mock-data.ts`.
+
+## Planned future leagues
+- **Cricket** — Australian (BBL/Sheffield Shield) + international. Best free source: Cricinfo API or ESPNcricinfo public endpoints. On radar, not yet started.
+
 ## Upgrade Path (in priority order)
-1. **Real sports data** — replace functions in `mock-data.ts` with TheSportsDB v1 API (free, test key `"3"`)
-2. **Persistence** — swap `localStorage` in `user-prefs.ts` with Supabase client calls
-3. **Auth** — add NextAuth; protect `/dashboard` with a session check
-4. **AI previews** — add `src/lib/ai.ts` calling OpenAI `gpt-4o-mini` to replace mock preview text
-5. **News** — fetch Google News RSS or ESPN feeds in a Route Handler (`src/app/api/news/[teamId]/route.ts`)
+1. **Persistence** — swap `localStorage` in `user-prefs.ts` with Supabase client calls
+2. **Auth** — add NextAuth; protect `/dashboard` with a session check
+3. **AI previews** — add `src/lib/ai.ts` calling OpenAI `gpt-4o-mini` to replace mock preview text
+4. **More leagues** — Cricket next; then NBA/NFL/NHL/MLB via their official APIs

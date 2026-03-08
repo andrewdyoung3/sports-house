@@ -124,6 +124,83 @@ async function fetchAFLResults(teamId: string): Promise<GameResult[]> {
   });
 }
 
+// ─── NRL — ESPN public API (league ID: 3) ────────────────────────────────────
+
+/** Maps our team ID → ESPN displayName (short name used in scoreboard). */
+const NRL_ESPN_NAME: Record<string, string> = {
+  'nrl-broncos':   'Broncos',
+  'nrl-raiders':   'Raiders',
+  'nrl-bulldogs':  'Bulldogs',
+  'nrl-sharks':    'Sharks',
+  'nrl-dolphins':  'Dolphins',
+  'nrl-titans':    'Titans',
+  'nrl-eels':      'Eels',
+  'nrl-panthers':  'Panthers',
+  'nrl-seahawks':  'Sea Eagles',
+  'nrl-storm':     'Storm',
+  'nrl-knights':   'Knights',
+  'nrl-warriors':  'Warriors',
+  'nrl-cowboys':   'Cowboys',
+  'nrl-rabbitohs': 'Rabbitohs',
+  'nrl-dragons':   'Dragons',
+  'nrl-roosters':  'Roosters',
+  'nrl-tigers':    'Wests Tigers',
+};
+
+async function fetchNRLResults(teamId: string): Promise<GameResult[]> {
+  const teamName = NRL_ESPN_NAME[teamId];
+  if (!teamName) return [];
+
+  // 120-day lookback — NRL only has one competition so no fanout needed
+  const now   = new Date();
+  const start = new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
+  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(start)}-${fmt(now)}`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const events = ((data.events ?? []) as any[]).filter(e => {
+    const completed    = e.status?.type?.completed === true;
+    const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+    return completed && competitors.some((c: any) => c.team?.displayName === teamName);
+  });
+
+  return events
+    .map((e: any): GameResult => {
+      const comp:        any   = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const home = competitors.find((c: any) => c.homeAway === 'home');
+      const away = competitors.find((c: any) => c.homeAway === 'away');
+
+      const homeTeamName = home?.team?.displayName ?? '';
+      const isHome       = homeTeamName === teamName;
+      const ourComp      = isHome ? home : away;
+      const oppComp      = isHome ? away : home;
+
+      const oppName   = oppComp?.team?.displayName ?? 'Unknown';
+      const teamScore = Number(ourComp?.score ?? 0);
+      const oppScore  = Number(oppComp?.score ?? 0);
+
+      return {
+        opponent:        oppName,
+        opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
+        opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined),
+        isHome,
+        isWin:           teamScore > oppScore,
+        teamScore,
+        opponentScore:   oppScore,
+        date:            new Date(e.date).toISOString(),
+      };
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
 // ─── EPL — ESPN public API ────────────────────────────────────────────────────
 
 const ESPN_TEAM_NAME: Record<string, string> = {
@@ -262,8 +339,8 @@ async function fetchEPLResults(teamId: string): Promise<GameResult[]> {
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl']);
-const TEAMID_RE = /^[a-z]+-[a-z0-9]+$/;
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl']);
+const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -276,6 +353,7 @@ export async function GET(req: NextRequest) {
   try {
     let results: GameResult[] = [];
     if (league === 'afl') results = await fetchAFLResults(teamId);
+    else if (league === 'nrl') results = await fetchNRLResults(teamId);
     else if (league === 'epl') results = await fetchEPLResults(teamId);
 
     return NextResponse.json(results);

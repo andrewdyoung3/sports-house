@@ -140,6 +140,156 @@ async function fetchAFLPreview(
   return { teamStanding, opponentStanding, tips };
 }
 
+// ─── NRL — ESPN (league ID: 3) ────────────────────────────────────────────────
+
+const NRL_ESPN_NAME: Record<string, string> = {
+  'nrl-broncos':   'Broncos',
+  'nrl-raiders':   'Raiders',
+  'nrl-bulldogs':  'Bulldogs',
+  'nrl-sharks':    'Sharks',
+  'nrl-dolphins':  'Dolphins',
+  'nrl-titans':    'Titans',
+  'nrl-eels':      'Eels',
+  'nrl-panthers':  'Panthers',
+  'nrl-seahawks':  'Sea Eagles',
+  'nrl-storm':     'Storm',
+  'nrl-knights':   'Knights',
+  'nrl-warriors':  'Warriors',
+  'nrl-cowboys':   'Cowboys',
+  'nrl-rabbitohs': 'Rabbitohs',
+  'nrl-dragons':   'Dragons',
+  'nrl-roosters':  'Roosters',
+  'nrl-tigers':    'Wests Tigers',
+};
+
+const NRL_ESPN_ID: Record<string, string> = {
+  'nrl-broncos':   '289195',
+  'nrl-raiders':   '289198',
+  'nrl-bulldogs':  '289197',
+  'nrl-sharks':    '289203',
+  'nrl-dolphins':  '289346',
+  'nrl-titans':    '289206',
+  'nrl-eels':      '289194',
+  'nrl-panthers':  '289199',
+  'nrl-seahawks':  '289196',
+  'nrl-storm':     '289208',
+  'nrl-knights':   '289207',
+  'nrl-warriors':  '289201',
+  'nrl-cowboys':   '289202',
+  'nrl-rabbitohs': '289205',
+  'nrl-dragons':   '289209',
+  'nrl-roosters':  '289204',
+  'nrl-tigers':    '289200',
+};
+
+/**
+ * Mock opponent names in NRL_OPPONENTS use full names; ESPN standings use short
+ * names. This map translates so the standings lookup can match.
+ */
+const NRL_FULL_TO_ESPN: Record<string, string> = {
+  'Penrith Panthers':          'Panthers',
+  'Melbourne Storm':           'Storm',
+  'Brisbane Broncos':          'Broncos',
+  'Sydney Roosters':           'Roosters',
+  'South Sydney Rabbitohs':    'Rabbitohs',
+  'Newcastle Knights':         'Knights',
+  'Cronulla Sharks':           'Sharks',
+  'Parramatta Eels':           'Eels',
+  'Canberra Raiders':          'Raiders',
+  'Canterbury Bulldogs':       'Bulldogs',
+  'Dolphins':                  'Dolphins',
+  'Gold Coast Titans':         'Titans',
+  'Manly-Warringah Sea Eagles':'Sea Eagles',
+  'New Zealand Warriors':      'Warriors',
+  'North Queensland Cowboys':  'Cowboys',
+  'St George Illawarra Dragons':'Dragons',
+  'Wests Tigers':              'Wests Tigers',
+};
+
+/** NRL ESPN standings use gamesWon/gamesLost/gamesDrawn, not wins/losses/ties. */
+function parseNRLStandings(entries: any[], displayName: string): TeamStanding | undefined {
+  const e = entries.find((x: any) => x.team?.displayName === displayName);
+  if (!e) return undefined;
+  const stats = e.stats ?? [];
+  return {
+    name:         displayName,
+    position:     statVal(stats, 'rank'),
+    played:       statVal(stats, 'gamesPlayed'),
+    wins:         statVal(stats, 'gamesWon'),
+    draws:        statVal(stats, 'gamesDrawn'),
+    losses:       statVal(stats, 'gamesLost'),
+    points:       statVal(stats, 'points'),
+    goalsFor:     statVal(stats, 'pointsFor'),
+    goalsAgainst: statVal(stats, 'pointsAgainst'),
+  };
+}
+
+async function fetchNRLPreview(
+  teamId: string,
+  opponentName: string,
+): Promise<PreviewContext> {
+  const teamESPNName = NRL_ESPN_NAME[teamId];
+  const teamESPNId   = NRL_ESPN_ID[teamId];
+  if (!teamESPNName) return {};
+
+  // Opponent may be a full name (from mock data) — translate to ESPN short name
+  const oppESPNName = NRL_FULL_TO_ESPN[opponentName] ?? opponentName;
+  const oppId       = Object.entries(NRL_ESPN_NAME).find(([, v]) => v === oppESPNName)?.[0];
+  const oppESPNId   = oppId ? NRL_ESPN_ID[oppId] : undefined;
+
+  const [standingsRes, teamNewsRes, oppNewsRes] = await Promise.allSettled([
+    fetchTimeout(
+      'https://site.api.espn.com/apis/v2/sports/rugby-league/3/standings',
+      { next: { revalidate: 3600 } },
+    ),
+    teamESPNId
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/teams/${teamESPNId}/news?limit=4`,
+          { next: { revalidate: 1800 } },
+        )
+      : Promise.resolve(null),
+    oppESPNId
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/teams/${oppESPNId}/news?limit=4`,
+          { next: { revalidate: 1800 } },
+        )
+      : Promise.resolve(null),
+  ]);
+
+  let teamStanding: TeamStanding | undefined;
+  let opponentStanding: TeamStanding | undefined;
+
+  if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
+    const data = await standingsRes.value.json();
+    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+    teamStanding     = parseNRLStandings(entries, teamESPNName);
+    opponentStanding = parseNRLStandings(entries, oppESPNName);
+  }
+
+  const teamNews: NewsHeadline[] = [];
+  const opponentNews: NewsHeadline[] = [];
+
+  if (teamNewsRes.status === 'fulfilled' && teamNewsRes.value?.ok) {
+    const data = await teamNewsRes.value.json();
+    for (const a of (data.articles ?? []) as any[]) {
+      teamNews.push({ headline: a.headline, description: a.description, published: a.published });
+    }
+  }
+  if (oppNewsRes.status === 'fulfilled' && oppNewsRes.value?.ok) {
+    const data = await oppNewsRes.value.json();
+    for (const a of (data.articles ?? []) as any[]) {
+      opponentNews.push({ headline: a.headline, description: a.description, published: a.published });
+    }
+  }
+
+  return {
+    teamStanding,
+    opponentStanding,
+    teamNews:     teamNews.length > 0 ? teamNews : undefined,
+    opponentNews: opponentNews.length > 0 ? opponentNews : undefined,
+  };
+}
+
 // ─── EPL — ESPN ───────────────────────────────────────────────────────────────
 
 const ESPN_TEAM_ID: Record<string, string> = {
@@ -274,8 +424,8 @@ async function fetchEPLPreview(
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl']);
-const TEAMID_RE = /^[a-z]+-[a-z0-9]+$/;
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl']);
+const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
   const league       = req.nextUrl.searchParams.get('league') ?? '';
@@ -290,6 +440,7 @@ export async function GET(req: NextRequest) {
   try {
     let ctx: PreviewContext = {};
     if (league === 'afl') ctx = await fetchAFLPreview(teamId, opponentName, gameId);
+    else if (league === 'nrl') ctx = await fetchNRLPreview(teamId, opponentName);
     else if (league === 'epl') ctx = await fetchEPLPreview(teamId, opponentName);
     return NextResponse.json(ctx);
   } catch (err) {

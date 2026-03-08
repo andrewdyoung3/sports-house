@@ -16,7 +16,7 @@ interface GameExpandPanelProps {
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES = new Set(['afl', 'epl']);
+const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl']);
 
 // ── Standings row ─────────────────────────────────────────────────────────────
 
@@ -36,7 +36,7 @@ function StandingRow({
 
   const statLine =
     standing.points !== undefined
-      ? `${standing.points} pts · GF ${standing.goalsFor ?? '—'} GA ${standing.goalsAgainst ?? '—'}`
+      ? `${standing.points} pts · F ${standing.goalsFor ?? '—'} A ${standing.goalsAgainst ?? '—'}`
       : standing.percentage !== undefined
         ? `${standing.percentage.toFixed(1)}%`
         : '';
