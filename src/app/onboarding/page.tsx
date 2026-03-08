@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, X, Search } from 'lucide-react';
 
 import { LEAGUES, filterTeams } from '@/lib/teams';
-import { saveFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,12 @@ export default function OnboardingPage() {
   const [activeSport, setActiveSport] = useState<SportKey | 'all'>('all');
   const [query, setQuery]             = useState('');
   const [selected, setSelected]       = useState<Team[]>([]);
+
+  // Pre-populate with any teams already saved so additions don't wipe existing selections
+  useEffect(() => {
+    const existing = getFollowedTeams();
+    if (existing.length > 0) setSelected(existing);
+  }, []);
 
   const filteredTeams = useMemo(
     () => filterTeams(activeSport === 'all' ? 'all' : activeSport, query),
