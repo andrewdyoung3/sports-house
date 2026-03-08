@@ -21,7 +21,7 @@ import type { Team, UpcomingGame, SportKey } from '@/types';
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** Leagues backed by real APIs — all others use deterministic mock data. */
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby']);
 
 const MOCK_GAMES_PER_TEAM = 10;
 
@@ -300,6 +300,7 @@ export default function SchedulePage() {
 
   const [activeLeague,   setActiveLeague]   = useState<SportKey | 'all'>('all');
   const [homeAwayFilter, setHomeAwayFilter] = useState<'all' | 'home' | 'away'>('all');
+  const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
 
   // Cross-highlight state: shared between calendar and schedule rows
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
@@ -349,10 +350,28 @@ export default function SchedulePage() {
     });
   }, [allGames, activeLeague, homeAwayFilter]);
 
+  // "This Round": 7 days from the first upcoming game in the current filtered set.
+  // One game per (team, competition) pair — prevents cup + league double-ups.
+  const displayedGames = useMemo<ScheduleEntry[]>(() => {
+    if (gameRangeFilter !== 'this_round' || filteredGames.length === 0) {
+      return filteredGames;
+    }
+    const roundStart = new Date(filteredGames[0].date);
+    const roundEnd   = new Date(roundStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const seen = new Set<string>();
+    return filteredGames.filter(g => {
+      if (new Date(g.date) >= roundEnd) return false;
+      const key = `${g.team.id}:${g.competition ?? g.team.league}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [filteredGames, gameRangeFilter]);
+
   // Group by calendar date in the user's timezone
   const groupedByDate = useMemo(() => {
     const groups: { dateKey: string; representativeDate: Date; games: ScheduleEntry[] }[] = [];
-    for (const game of filteredGames) {
+    for (const game of displayedGames) {
       const dateKey = datekeyInZone(game.date, userTz);
       const last = groups[groups.length - 1];
       if (last?.dateKey === dateKey) {
@@ -362,7 +381,7 @@ export default function SchedulePage() {
       }
     }
     return groups;
-  }, [filteredGames, userTz]);
+  }, [displayedGames, userTz]);
 
   // Only show league tabs for leagues the user actually follows
   const presentLeagues = LEAGUES.filter(l => teams.some(t => t.league === l.id));
@@ -394,13 +413,13 @@ export default function SchedulePage() {
         <p className="text-white/40 text-sm">
           {loading
             ? 'Loading fixtures…'
-            : `${filteredGames.length} upcoming fixture${filteredGames.length !== 1 ? 's' : ''} · times in your local timezone`}
+            : `${displayedGames.length} upcoming fixture${displayedGames.length !== 1 ? 's' : ''} · times in your local timezone`}
         </p>
       </div>
 
       {/* ── Next Game Hero ── */}
-      {!loading && allGames.length > 0 && (
-        <NextGameHero game={allGames[0]} userTz={userTz} />
+      {!loading && displayedGames.length > 0 && (
+        <NextGameHero game={displayedGames[0]} userTz={userTz} />
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}
@@ -423,6 +442,13 @@ export default function SchedulePage() {
                 ))}
               </div>
               <div className="flex gap-1.5 shrink-0">
+                <FilterPill
+                  label="This Round"
+                  active={gameRangeFilter === 'this_round'}
+                  onClick={() => setGameRangeFilter(prev => prev === 'this_round' ? 'all' : 'this_round')}
+                  muted
+                />
+                <div className="w-px bg-white/10 self-stretch" />
                 {(['all', 'home', 'away'] as const).map(opt => (
                   <FilterPill
                     key={opt}
@@ -439,7 +465,7 @@ export default function SchedulePage() {
           {/* Schedule content */}
           {loading ? (
             <ScheduleSkeleton />
-          ) : filteredGames.length === 0 ? (
+          ) : displayedGames.length === 0 ? (
             <div className="text-center py-20 text-white/40">
               <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No fixtures match this filter.</p>
@@ -500,7 +526,7 @@ export default function SchedulePage() {
           {/* Calendar */}
           {!loading && (
             <ScheduleCalendar
-              games={filteredGames}
+              games={displayedGames}
               userTz={userTz}
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
