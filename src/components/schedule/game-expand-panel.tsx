@@ -52,28 +52,39 @@ interface PreviewCache {
 }
 
 /**
- * Fingerprint the adaptable news context so we can detect changes.
- * Uses sorted headlines (order from API varies) joined and base64-encoded.
+ * Fingerprint the adaptable context so we can detect changes that warrant
+ * a background AI re-generation.
+ * Covers: news headlines (injury/squad news) + recent form results (scores).
+ * A change in either will trigger a silent background update.
  */
-function fingerprintNews(
-  teamNews: { headline: string }[] | undefined,
-  oppNews:  { headline: string }[] | undefined,
+function buildFingerprint(
+  teamNews:   { headline: string }[] | undefined,
+  oppNews:    { headline: string }[] | undefined,
+  teamResults: GameResult[],
+  oppResults:  GameResult[],
 ): string {
   const headlines = [
     ...(teamNews ?? []).map(n => n.headline),
     ...(oppNews  ?? []).map(n => n.headline),
-  ].sort().join('\x00');
-  try { return btoa(encodeURIComponent(headlines)).slice(0, 48); }
-  catch { return headlines.slice(0, 48); }
+  ].sort();
+  // Include last-3 results for each team as a compact form string
+  const formStr = (rs: GameResult[]) =>
+    rs.slice(0, 3).map(r => `${r.opponent}:${r.teamScore}-${r.opponentScore}`).join(',');
+  const parts = [...headlines, formStr(teamResults), formStr(oppResults)].join('\x00');
+  try { return btoa(encodeURIComponent(parts)).slice(0, 48); }
+  catch { return parts.slice(0, 48); }
 }
+
+// v3: bumped from v2 to evict caches generated with mock opponent form data.
+const CACHE_KEY = (gameId: string) => `ai-preview-v3:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
-    const raw = localStorage.getItem(`ai-preview-v2:${gameId}`);
+    const raw = localStorage.getItem(CACHE_KEY(gameId));
     if (!raw) return null;
     const entry = JSON.parse(raw) as PreviewCache;
     if (Date.now() - entry.generatedAt > PREVIEW_MAX_AGE_MS) {
-      localStorage.removeItem(`ai-preview-v2:${gameId}`);
+      localStorage.removeItem(CACHE_KEY(gameId));
       return null;
     }
     return entry;
@@ -82,7 +93,7 @@ function loadPreviewCache(gameId: string): PreviewCache | null {
 
 function savePreviewCache(gameId: string, entry: PreviewCache): void {
   try {
-    localStorage.setItem(`ai-preview-v2:${gameId}`, JSON.stringify(entry));
+    localStorage.setItem(CACHE_KEY(gameId), JSON.stringify(entry));
   } catch { /* storage full — fail silently */ }
 }
 
@@ -229,6 +240,62 @@ function getTrend(
   return 'same';
 }
 
+// ── AI loading card ───────────────────────────────────────────────────────────
+
+const AI_TAGLINES = [
+  'Sending out the journalists…',
+  'Briefing the pundits…',
+  'Reviewing the match tape…',
+  'Reading the form guide…',
+  'Consulting the analysts…',
+  'Checking the team sheets…',
+  'Calling the press box…',
+  'Sharpening the pencils…',
+];
+
+function AILoadingCard({ color }: { color: string }) {
+  const [idx,     setIdx]     = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIdx(i => (i + 1) % AI_TAGLINES.length);
+        setVisible(true);
+      }, 300);
+    }, 2400);
+    return () => clearInterval(cycle);
+  }, []);
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-6">
+      {/* Pulsing dot ring */}
+      <div className="relative w-8 h-8">
+        <div
+          className="absolute inset-0 rounded-full animate-ping opacity-20"
+          style={{ backgroundColor: color }}
+        />
+        <div
+          className="absolute inset-1 rounded-full animate-pulse"
+          style={{ backgroundColor: color + '55' }}
+        />
+        <Newspaper
+          className="absolute inset-0 m-auto h-4 w-4"
+          style={{ color }}
+        />
+      </div>
+      {/* Cycling tagline */}
+      <p
+        className="text-[11px] font-semibold text-white/40 tracking-wide transition-opacity duration-300"
+        style={{ opacity: visible ? 1 : 0 }}
+      >
+        {AI_TAGLINES[idx]}
+      </p>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
@@ -288,9 +355,13 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
     const resultsUrl  = `/api/results?league=${team.league}&teamId=${team.id}`;
     const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}`;
     const standingsUrl = `/api/standings?league=${team.league}`;
-    const oppUrl      = game.opponentId
+    // If the opponent has a known internal id, use the fast league-specific path.
+    // Otherwise fall back to the cross-league name lookup (e.g. Bundesliga side in UCL).
+    const oppUrl = game.opponentId
       ? `/api/results?league=${team.league}&teamId=${game.opponentId}`
-      : null;
+      : game.opponent
+        ? `/api/results?teamName=${encodeURIComponent(game.opponent)}`
+        : null;
 
     Promise.all([
       fetch(resultsUrl).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -324,7 +395,7 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
 
       // Fingerprint the adaptable news context.
       const liveCtx     = liveContext as PreviewContext;
-      const fingerprint = fingerprintNews(liveCtx.teamNews, liveCtx.opponentNews);
+      const fingerprint = buildFingerprint(liveCtx.teamNews, liveCtx.opponentNews, liveResults, liveOppResults);
       const cached      = loadPreviewCache(game.id);
 
       if (cached) {
@@ -395,30 +466,50 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
       className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
       style={{ animation: 'slideDown 0.22s ease-out' }}
     >
+      {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
+      {aiLoading && aiEnabled && (
+        <AILoadingCard color={team.primaryColor} />
+      )}
+
       {/* ── Match Preview ── */}
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-          <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-          Match Preview
-        </p>
-        {aiUpdating && (
-          <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mt-0.5">
-            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-            Refreshing with latest news…
+      {!aiLoading && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
+            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
+            Match Preview
           </p>
-        )}
-        {aiLoading ? (
-          <div className="space-y-1.5 animate-pulse">
-            <div className="h-2.5 bg-white/8 rounded w-full" />
-            <div className="h-2.5 bg-white/8 rounded w-11/12" />
-            <div className="h-2.5 bg-white/8 rounded w-4/5" />
-          </div>
-        ) : (
+          {aiUpdating && (
+            <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mt-0.5 mb-1">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              Refreshing with latest news…
+            </p>
+          )}
           <p className="text-sm text-white/65 leading-relaxed">
             {aiPreview?.context ?? preview.content}
           </p>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ── Quick Take (AI only) ── */}
+      {!aiLoading && aiPreview?.keyInsights && aiPreview.keyInsights.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
+            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
+            Quick Take
+          </p>
+          <ul className="space-y-1.5">
+            {aiPreview.keyInsights.map((ins, i) => (
+              <li key={i} className="text-[12px] text-white/65 flex items-start gap-2 leading-snug">
+                <span
+                  className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
+                  style={{ backgroundColor: team.primaryColor }}
+                />
+                {ins}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* ── Tactical Battle (AI only) ── */}
       {!aiLoading && aiPreview && (

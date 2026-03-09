@@ -100,13 +100,13 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   epl: {
     // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
     symbol: '♛\uFE0E', symbolColor: '#e8a200',
-    label: 'PL',
+    label: 'Premier League',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
-    label: 'SR Pacific',
+    label: 'Super Rugby',
     bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
   },
@@ -123,20 +123,20 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   'Champions League': {
     // UCL: ★ (the iconic starball mark) in official gold on UCL dark navy
     symbol: '★\uFE0E', symbolColor: '#ffd700',
-    label: 'UCL',
+    label: 'Champions League',
     bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
   },
   'Europa League': {
     // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
     symbol: '◎\uFE0E', symbolColor: '#f57320',
-    label: 'UEL',
+    label: 'Europa League',
     bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
   },
   'Conference League': {
     // UECL: ◉ (inner circle = target / conference identity) in brand teal
     symbol: '◉\uFE0E', symbolColor: '#00c87a',
-    label: 'UECL',
+    label: 'Conference League',
     bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
   },
   'FA Cup': {

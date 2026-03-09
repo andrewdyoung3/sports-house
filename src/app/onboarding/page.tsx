@@ -150,7 +150,7 @@ export default function OnboardingPage() {
             className="gap-2 shrink-0"
           >
             <Check className="h-4 w-4" />
-            Add / Select Teams
+            Select Teams
           </Button>
         </div>
       </div>

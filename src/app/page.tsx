@@ -99,14 +99,14 @@ export default function LandingPage() {
           {/* Pill label */}
           <div className="inline-flex items-center gap-2 bg-white/6 border border-white/14 backdrop-blur-sm rounded-full px-3.5 py-1.5 mb-8">
             <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="text-xs font-semibold text-indigo-300 tracking-wide">Sports House</span>
+            <span className="text-xs font-semibold text-indigo-300 tracking-wide">SportHouse</span>
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.05] mb-6">
-            Your teams.
+            Your teams. In one place.
             <br />
             <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-400 bg-clip-text text-transparent">
-              Always in the know.
+              That&apos;s SportHouse.
             </span>
           </h1>
 
@@ -139,7 +139,7 @@ export default function LandingPage() {
       <section className="max-w-6xl mx-auto px-4 py-24">
         <div className="text-center mb-14">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">
-            Everything you need to follow your teams.
+            Every whistle in one feed. Absolutely SportHouse.
           </h2>
           <p className="text-white/55 max-w-xl mx-auto">
             A clean, personalised view of what matters — when games are on, where to watch, and how your team is travelling.
@@ -171,7 +171,7 @@ export default function LandingPage() {
       <section className="border-t border-white/8 bg-white/3">
         <div className="max-w-3xl mx-auto px-4 py-24 text-center">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Ready to set up your schedule?
+            Grab life by the ball.
           </h2>
           <p className="text-white/55 mb-8 text-lg">
             Pick your teams and your personalised fixture list is ready in seconds. No account required.
@@ -188,7 +188,7 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="border-t border-white/8 bg-black/25">
         <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/30">
-          <p>© {new Date().getFullYear()} Sports House. Built for fans.</p>
+          <p>© {new Date().getFullYear()} SportHouse. Built for fans.</p>
           <p>Fixtures &amp; schedules for entertainment purposes only.</p>
         </div>
       </footer>

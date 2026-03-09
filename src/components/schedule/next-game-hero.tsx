@@ -11,6 +11,18 @@ import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
+// Human-readable competition names — acronym where conventional, full name otherwise
+const LEAGUE_DISPLAY: Record<string, string> = {
+  afl:         'AFL',
+  nrl:         'NRL',
+  nba:         'NBA',
+  nfl:         'NFL',
+  nhl:         'NHL',
+  epl:         'Premier League',
+  super_rugby: 'Super Rugby',
+  rugby_int:   'Test Rugby',
+};
+
 // Logo URLs for background watermarks — mirrors the maps in schedule/page.tsx
 const LEAGUE_LOGO: Record<string, string> = {
   nrl:         'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
@@ -133,7 +145,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             </span>
             <span className="text-white/15">·</span>
             <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
-              {game.competition ?? team.league.toUpperCase()}
+              {game.competition ?? LEAGUE_DISPLAY[team.league] ?? team.league.toUpperCase()}
             </span>
           </div>
           {/* Countdown pill */}

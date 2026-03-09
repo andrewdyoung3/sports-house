@@ -11,8 +11,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Sports House',
-    template: '%s | Sports House',
+    default: 'SportHouse',
+    template: '%s | SportHouse',
   },
   description: 'Your teams. Your sports. All in one place. Personalized schedules, live scores, AI matchup previews, and breaking news.',
   keywords: ['sports', 'NFL', 'NBA', 'MLB', 'NHL', 'Premier League', 'scores', 'schedule'],

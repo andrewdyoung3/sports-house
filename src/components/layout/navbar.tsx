@@ -22,7 +22,7 @@ export function Navbar() {
             SH
           </div>
           <span className="font-bold text-white text-sm tracking-tight hidden sm:block">
-            Sports House
+            SportHouse
           </span>
         </Link>
 

@@ -542,14 +542,76 @@ async function fetchInternationalRugbyResults(teamId: string): Promise<GameResul
     .slice(0, 5);
 }
 
+// ─── Cross-league soccer results (by team display name) ──────────────────────
+//
+// Used when an EPL/UCL/UEL opponent is from a foreign domestic league (e.g.
+// Bayer Leverkusen in the UCL). Fans out across major European competitions
+// by filtering ESPN scoreboards for the team's display name — the same name
+// that appeared in the fixture, so no extra mapping is needed.
+
+const CROSS_SOCCER_COMPS = [
+  { slug: 'ger.1',          label: 'Bundesliga' },
+  { slug: 'esp.1',          label: 'La Liga' },
+  { slug: 'fra.1',          label: 'Ligue 1' },
+  { slug: 'ita.1',          label: 'Serie A' },
+  { slug: 'por.1',          label: 'Primeira Liga' },
+  { slug: 'ned.1',          label: 'Eredivisie' },
+  { slug: 'sco.1',          label: 'Scottish Prem' },
+  { slug: 'uefa.champions', label: 'Champions League' },
+  { slug: 'uefa.europa',    label: 'Europa League' },
+];
+
+async function fetchCrossLeagueSoccerResults(teamName: string): Promise<GameResult[]> {
+  const now   = new Date();
+  const start = new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
+  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(start)}-${fmt(now)}`;
+
+  const settled = await Promise.allSettled(
+    CROSS_SOCCER_COMPS.map(({ slug, label }) =>
+      fetchESPNResultsForSlug(teamName, slug, label, range),
+    ),
+  );
+
+  const all = settled.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+
+  const seen   = new Set<string>();
+  const unique = all.filter(r => {
+    const key = `${r.date.slice(0, 10)}-${r.opponent}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return unique
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
-  const league = req.nextUrl.searchParams.get('league') ?? '';
-  const teamId = req.nextUrl.searchParams.get('teamId') ?? '';
+  const league   = req.nextUrl.searchParams.get('league') ?? '';
+  const teamId   = req.nextUrl.searchParams.get('teamId') ?? '';
+  const teamName = req.nextUrl.searchParams.get('teamName') ?? '';
+
+  // Cross-league soccer: look up any European club by display name.
+  // Triggered when opponentId is unknown (opponent is from a foreign domestic league).
+  if (teamName && !teamId) {
+    if (teamName.length > 80 || /[\n\r\0<>{}|\\^`]/.test(teamName)) {
+      return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
+    }
+    try {
+      const results = await fetchCrossLeagueSoccerResults(teamName);
+      return NextResponse.json(results);
+    } catch (err) {
+      console.error('[/api/results cross-league]', err);
+      return NextResponse.json([]);
+    }
+  }
 
   if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 });

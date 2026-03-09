@@ -1,4 +1,4 @@
-# CLAUDE.md — Sports House
+# CLAUDE.md — SportHouse
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
