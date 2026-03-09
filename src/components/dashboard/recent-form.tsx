@@ -6,11 +6,16 @@ interface RecentFormProps {
 }
 
 export function RecentForm({ results }: RecentFormProps) {
+  // Oldest game on the LEFT, most recent on the RIGHT.
+  const ordered = [...results].reverse();
+  const lastIdx = ordered.length - 1;
+
   return (
     <div className="flex items-center gap-1.5">
-      {[...results].reverse().map((r, i) => {
-        const isDraw = r.isDraw === true;
-        const label  = isDraw ? 'D' : r.isWin ? 'W' : 'L';
+      {ordered.map((r, i) => {
+        const isDraw    = r.isDraw === true;
+        const label     = isDraw ? 'D' : r.isWin ? 'W' : 'L';
+        const isLatest  = i === lastIdx;
 
         const dotCls = isDraw
           ? 'bg-amber-900/50 text-amber-300 border border-amber-600/50'
@@ -28,11 +33,12 @@ export function RecentForm({ results }: RecentFormProps) {
 
         return (
           <div key={i} className="flex flex-col items-center gap-1 group relative">
-            {/* W / D / L dot */}
+            {/* W / D / L dot — rightmost (most recent) gets a subtle white ring */}
             <div
               className={cn(
-                'w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black transition-transform group-hover:scale-110',
+                'w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-black transition-transform group-hover:scale-110',
                 dotCls,
+                isLatest && 'ring-2 ring-white/25 ring-offset-1 ring-offset-black/60',
               )}
             >
               {label}
@@ -41,11 +47,8 @@ export function RecentForm({ results }: RecentFormProps) {
             {/* Tooltip — appears above the dot */}
             <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
               <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-[11px] whitespace-nowrap shadow-xl">
-                {/* Opponent name (full) */}
                 <p className="text-zinc-200 font-bold mb-0.5 leading-none">{r.opponent}</p>
-                {/* Score */}
                 <p className={cn('font-black leading-none', scoreCls)}>{scoreStr}</p>
-                {/* Home/Away + competition */}
                 <p className="text-zinc-500 mt-0.5 leading-none">
                   {r.isHome ? 'Home' : 'Away'}
                   {r.competition ? ` · ${r.competition}` : ''}

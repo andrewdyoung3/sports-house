@@ -3,6 +3,7 @@ import type { ComponentType } from 'react';
 import { ArrowRight, Calendar, Newspaper, Sparkles, Tv, Trophy, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HeroCTA } from '@/components/landing/hero-cta';
+import { SportBall } from '@/components/schedule/sport-ball';
 
 // ─── Feature cards ────────────────────────────────────────────────────────────
 
@@ -72,14 +73,14 @@ const FEATURES: Feature[] = [
 // ─── League badges ─────────────────────────────────────────────────────────────
 
 const LEAGUES = [
-  { name: 'AFL',         icon: '🏉' },
-  { name: 'NRL',         icon: '🏉' },
-  { name: 'Super Rugby', icon: '🏉' },
-  { name: 'EPL',         icon: '⚽' },
-  { name: 'NBA',         icon: '🏀' },
-  { name: 'NFL',         icon: '🏈' },
-  { name: 'MLB',         icon: '⚾' },
-  { name: 'NHL',         icon: '🏒' },
+  { id: 'afl',         name: 'AFL' },
+  { id: 'nrl',         name: 'NRL' },
+  { id: 'super_rugby', name: 'Super Rugby' },
+  { id: 'epl',         name: 'EPL' },
+  { id: 'nba',         name: 'NBA' },
+  { id: 'nfl',         name: 'NFL' },
+  { id: 'mlb',         name: 'MLB' },
+  { id: 'nhl',         name: 'NHL' },
 ];
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ export default function LandingPage() {
               key={l.name}
               className="inline-flex items-center gap-1.5 bg-white/8 border border-white/12 rounded-lg px-3 py-1.5 text-sm font-semibold text-white/65"
             >
-              <span>{l.icon}</span> {l.name}
+              <SportBall league={l.id} size={14} /> {l.name}
             </span>
           ))}
         </div>

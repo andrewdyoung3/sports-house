@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, X, Search } from 'lucide-react';
 
 import { LEAGUES, filterTeams } from '@/lib/teams';
+import { SportBall } from '@/components/schedule/sport-ball';
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
 import { Input } from '@/components/ui/input';
@@ -67,7 +68,7 @@ export default function OnboardingPage() {
                   : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white',
               ].join(' ')}
             >
-              <span>{league.icon}</span>
+              <SportBall league={league.id} size={14} />
               {league.name}
             </button>
           ))}

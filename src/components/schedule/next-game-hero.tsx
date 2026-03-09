@@ -167,7 +167,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
           <div className="flex-1 min-w-0">
             {/* Oversized matchup typography */}
             <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
-              <span className="text-[22px] font-black tracking-tight text-white leading-none">
+              <span className="text-[22px] font-black tracking-tight text-white/85 leading-none">
                 {team.shortName}
               </span>
               <span className="text-white/30 text-sm font-medium">{game.isHome ? 'vs' : '@'}</span>
@@ -186,7 +186,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             <p className="text-white/40 text-sm">
               {dateLabel}
               <span className="text-white/20 mx-1.5">·</span>
-              <span className="font-bold text-[15px] text-white">
+              <span className="font-bold text-[15px] text-white/85">
                 {displayTime}
               </span>
             </p>

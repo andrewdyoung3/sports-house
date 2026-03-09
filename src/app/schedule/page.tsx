@@ -274,7 +274,7 @@ function ScheduleRow({
       <div className="flex-1 min-w-0 relative z-10">
         {/* Primary line: team vs opponent */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[15px] font-black tracking-tight text-white leading-none">
+          <span className="text-[15px] font-black tracking-tight text-white/85 leading-none">
             {team.shortName}
           </span>
           <span className="text-[11px] font-medium text-white/30">
@@ -311,7 +311,7 @@ function ScheduleRow({
       {/* ── Time + chevron ── */}
       <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
         <div>
-          <p className="text-[17px] font-bold leading-none tabular-nums text-white">
+          <p className="text-[17px] font-bold leading-none tabular-nums text-white/85">
             {displayTime}
           </p>
           <p className="text-[10px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
@@ -625,7 +625,7 @@ export default function SchedulePage() {
 
       {/* ── Header ── */}
       <div className="mb-6">
-        <h1 className="text-2xl font-black text-white flex items-center gap-2 mb-1">
+        <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
           <Calendar className="h-6 w-6 text-indigo-400" />
           Your Schedule
         </h1>

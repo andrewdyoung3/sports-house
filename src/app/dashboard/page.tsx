@@ -6,6 +6,7 @@ import { Plus, Settings, LayoutGrid } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 import { LEAGUES } from '@/lib/teams';
+import { SportBall } from '@/components/schedule/sport-ball';
 import { TeamFeedCard } from '@/components/dashboard/team-feed-card';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -70,7 +71,7 @@ export default function DashboardPage() {
             {leagueGroups.map(({ league, teams: lt }) => (
               <div key={league.id}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2 flex items-center gap-1">
-                  {league.icon} {league.name}
+                  <SportBall league={league.id} size={12} /> {league.name}
                 </p>
                 <ul className="space-y-0.5">
                   {lt.map(team => (

@@ -75,8 +75,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v3: bumped from v2 to evict caches generated with mock opponent form data.
-const CACHE_KEY = (gameId: string) => `ai-preview-v3:${gameId}`;
+// v4: evict caches generated before the no-redundancy prompt update.
+const CACHE_KEY = (gameId: string) => `ai-preview-v4:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -105,12 +105,11 @@ const AI_PREVIEW_DAYS = 14;
 
 function StandingRow({
   standing,
-  color,
   label,
   trend,
 }: {
   standing: TeamStanding;
-  color: string;
+  color?: string;
   label: string;
   trend?: 'up' | 'down' | 'same' | null;
 }) {
@@ -127,26 +126,19 @@ function StandingRow({
         : '';
 
   return (
-    <div className="flex items-start gap-2.5">
-      {/* Position circle with last-result trend badge */}
-      <div className="relative shrink-0">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black"
-          style={{ background: color + '33', color, border: `1px solid ${color}55` }}
-        >
+    <div className="flex items-start gap-2">
+      {/* Position number + movement arrow — fixed width keeps both rows aligned */}
+      <div className="flex items-center gap-0.5 shrink-0 w-8">
+        <span className="text-[15px] font-black text-white/85 tabular-nums leading-none">
           {standing.position}
-        </div>
-        {trend && (
-          <div className="absolute -bottom-0.5 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center bg-black/70">
-            {trend === 'up'   && <ArrowUp   className="h-2.5 w-2.5 text-emerald-400" />}
-            {trend === 'down' && <ArrowDown className="h-2.5 w-2.5 text-red-400" />}
-            {trend === 'same' && <Minus     className="h-2.5 w-2.5 text-amber-400" />}
-          </div>
-        )}
+        </span>
+        {trend === 'up'   && <ArrowUp   className="h-3 w-3 text-emerald-400 shrink-0" />}
+        {trend === 'down' && <ArrowDown className="h-3 w-3 text-red-400 shrink-0" />}
+        {trend === 'same' && <Minus     className="h-2.5 w-2.5 text-white/25 shrink-0" />}
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-bold text-white/80 leading-none truncate">{label}</p>
-        <p className="text-[10px] text-white/45 mt-0.5 leading-none">{record} · {standing.played} played</p>
+        <p className="text-[11px] font-bold text-white/75 leading-none truncate">{label}</p>
+        <p className="text-[10px] text-white/40 mt-0.5 leading-none">{record} · {standing.played} played</p>
         {statLine && <p className="text-[10px] text-white/30 mt-0.5 leading-none">{statLine}</p>}
       </div>
     </div>
@@ -186,11 +178,15 @@ function CompactForm({ results }: { results: GameResult[] }) {
   if (results.length === 0) {
     return <p className="text-[10px] text-white/25 italic">No results yet</p>;
   }
+  // Oldest game on the LEFT, most recent on the RIGHT.
+  const ordered = [...results].reverse();
+  const lastIdx = ordered.length - 1;
   return (
     <div className="flex gap-1 flex-wrap">
-      {results.map((r, i) => {
+      {ordered.map((r, i) => {
         const isDraw   = r.isDraw === true;
         const outcome  = isDraw ? 'D' : r.isWin ? 'W' : 'L';
+        const isLatest = i === lastIdx;
         const badgeCls = isDraw
           ? 'bg-amber-400/20 text-amber-300 border border-amber-600/30'
           : r.isWin
@@ -201,7 +197,11 @@ function CompactForm({ results }: { results: GameResult[] }) {
           <span
             key={i}
             title={tooltip}
-            className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 cursor-default', badgeCls)}
+            className={cn(
+              'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 cursor-default',
+              badgeCls,
+              isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
+            )}
           >
             {outcome}
           </span>
@@ -215,10 +215,10 @@ function CompactForm({ results }: { results: GameResult[] }) {
 
 function LogoThumb({ src, abbr }: { src?: string; abbr: string }) {
   return (
-    <div className="w-4 h-4 rounded-sm overflow-hidden bg-white/5 shrink-0 flex items-center justify-center">
+    <div className="w-6 h-6 rounded-md overflow-hidden bg-white/5 shrink-0 flex items-center justify-center">
       {src
         ? <img src={src} alt="" className="w-full h-full object-contain" />
-        : <span className="text-[7px] font-bold text-white/40">{abbr.slice(0, 2)}</span>
+        : <span className="text-[9px] font-bold text-white/40">{abbr.slice(0, 2)}</span>
       }
     </div>
   );
@@ -353,7 +353,7 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
     }
 
     const resultsUrl  = `/api/results?league=${team.league}&teamId=${team.id}`;
-    const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}`;
+    const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}${game.competition ? `&competition=${encodeURIComponent(game.competition)}` : ''}`;
     const standingsUrl = `/api/standings?league=${team.league}`;
     // If the opponent has a known internal id, use the fast league-specific path.
     // Otherwise fall back to the cross-league name lookup (e.g. Bundesliga side in UCL).
@@ -542,14 +542,14 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <LogoThumb src={TEAM_LOGOS[team.id]} abbr={team.abbreviation} />
-                  <span className="text-[10px] text-white/50 font-semibold truncate">{team.shortName}</span>
+                  <span className="text-[12px] text-white/70 font-semibold truncate">{team.shortName}</span>
                 </div>
                 <CompactForm results={results} />
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <LogoThumb src={game.opponentLogoUrl} abbr={game.opponentAbbr} />
-                  <span className="text-[10px] text-white/50 font-semibold truncate" title={game.opponent}>
+                  <span className="text-[12px] text-white/70 font-semibold truncate" title={game.opponent}>
                     {game.opponent}
                   </span>
                 </div>
@@ -559,20 +559,68 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
           )}
         </div>
 
-        {/* Standings comparison OR key insights fallback */}
+        {/* Standings / Cup Stage / Key Factors */}
         <div>
           {loading ? (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
                 <BarChart2 className="h-3 w-3" />
-                Ladder
+                {game.competition ?? 'Ladder'}
               </p>
               <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading standings…
+                Loading…
               </div>
             </>
+          ) : context?.competitionStage ? (
+            // ── Cup / European competition ─────────────────────────────────
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+                <Trophy className="h-3 w-3" />
+                {game.competition}
+              </p>
+              {context.competitionStage.isGroupPhase ? (
+                // Group / league phase — show standings table
+                <div className="space-y-3">
+                  {context.competitionStage.groupName && (
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-white/25">
+                      {context.competitionStage.groupName}
+                    </p>
+                  )}
+                  {context.competitionStage.teamStanding && (
+                    <StandingRow
+                      standing={context.competitionStage.teamStanding}
+                      label={team.shortName}
+                      trend={null}
+                    />
+                  )}
+                  {context.competitionStage.opponentStanding && (
+                    <StandingRow
+                      standing={context.competitionStage.opponentStanding}
+                      label={game.opponent}
+                      trend={null}
+                    />
+                  )}
+                  {!context.competitionStage.teamStanding && !context.competitionStage.opponentStanding && (
+                    <p className="text-[12px] font-black text-white/75">
+                      {context.competitionStage.roundName}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                // Knockout stage — show round name prominently, no table
+                <div className="bg-white/4 rounded-xl px-3 py-3.5">
+                  <p className="text-[14px] font-black text-white/85 leading-none">
+                    {context.competitionStage.roundName || game.competition}
+                  </p>
+                  <p className="text-[10px] text-white/35 mt-1.5 leading-snug">
+                    {team.shortName} · {game.opponent}
+                  </p>
+                </div>
+              )}
+            </>
           ) : hasStandings ? (
+            // ── Regular league ladder ──────────────────────────────────────
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
                 <BarChart2 className="h-3 w-3" />
@@ -582,22 +630,21 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
                 {context?.teamStanding && (
                   <StandingRow
                     standing={context.teamStanding}
-                    color={team.primaryColor}
                     label={team.shortName}
-                    trend={!game.competition ? getTrend(standings, team.id) : null}
+                    trend={getTrend(standings, team.id)}
                   />
                 )}
                 {context?.opponentStanding && (
                   <StandingRow
                     standing={context.opponentStanding}
-                    color="#9CA3AF"
                     label={game.opponent}
-                    trend={!game.competition ? getTrend(standings, game.opponentId) : null}
+                    trend={getTrend(standings, game.opponentId)}
                   />
                 )}
               </div>
             </>
           ) : (
+            // ── Key Factors fallback ───────────────────────────────────────
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
                 <TrendingUp className="h-3 w-3" />

@@ -57,10 +57,16 @@ LANGUAGE RULES — strictly enforced:
 
 DATA INTEGRITY — non-negotiable:
 • Use ONLY the data provided. Do NOT invent statistics, player names, scorelines, or results not mentioned.
-• If standings are provided, reference positions and records precisely.
 • If team news mentions injuries or absences, weave them naturally into the narrative.
 • If a section has no data (e.g., no news, no tips), write authoritatively in general terms — never expose the absence with phrases like "no data available".
 • Do not fabricate head-to-head records or historical facts.
+
+INFORMATION ECONOMY — avoid redundancy:
+• The app already displays W/D/L form icons, ladder positions, exact scores, and win/loss records graphically. Never recite these back verbatim.
+• Forbidden patterns: "won 4 of their last 5", "sitting 6th with 31 points", "their W-W-L-W record", "beat Arsenal 2–1 last week", "7 wins 3 draws 2 losses", "ranked 3rd on the table".
+• Instead, translate numbers into narrative meaning and stakes: "building serious momentum", "wobbling at the wrong end of the season", "a side that cannot be trusted on the road", "the ladder flatters them — xG tells a different story", "the table tightens with every round", "fighting to stay in the conversation for top four".
+• Directional cues (recency without the tally) are acceptable: "fresh off a convincing derby win", "arriving on the back of successive defeats", "unbeaten in six". Count-based recitations are not: "won three of their last four".
+• For standings: convey the stakes and narrative weight — "locked in a title race", "deep in a relegation battle", "chasing Champions League football" — not the coordinates.
 
 COMPETITION CONTEXT — critical:
 • The COMPETITION field tells you what is actually being played. The PRIMARY LEAGUE field (when present) is background only.
@@ -129,8 +135,33 @@ function buildDataBlock(
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
   }
+  // Competition stage (cup/European competitions only)
+  if (context.competitionStage) {
+    const { competitionStage: cs } = context;
+    if (cs.isGroupPhase) {
+      lines.push(`COMPETITION STAGE: ${cs.groupName ?? 'Group/League Phase'}`);
+    } else {
+      lines.push(`COMPETITION STAGE: ${cs.roundName}`);
+    }
+  }
   lines.push(`SPORT: ${sportCtx}`);
   lines.push('');
+
+  // Cup/European competition group/league-phase standings (highest relevance)
+  const cs = context.competitionStage;
+  if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
+    lines.push(`${(competition ?? 'COMPETITION').toUpperCase()} STANDINGS (${cs.groupName ?? 'League Phase'}):`);
+    for (const [name, s] of [
+      [teamName, cs.teamStanding],
+      [opponentName, cs.opponentStanding],
+    ] as const) {
+      if (!s) continue;
+      const draws = s.draws > 0 ? ` ${s.draws}D` : '';
+      const record = `${s.wins}W${draws} ${s.losses}L`;
+      lines.push(`  ${name}: ${ordinalSuffix(s.position)} — played ${s.played}, ${record}, ${s.points ?? 0} pts`);
+    }
+    lines.push('');
+  }
 
   // Ladder/Table positions
   if (context.teamStanding || context.opponentStanding) {
@@ -252,7 +283,7 @@ async function callClaude(prompt: string): Promise<AIPreview> {
 // Using Next.js unstable_cache so the same fixture isn't regenerated on every request.
 const getCachedPreview = unstable_cache(
   async (_gameId: string, prompt: string): Promise<AIPreview> => callClaude(prompt),
-  ['ai-preview-v1'],
+  ['ai-preview-v2'],
   { revalidate: 21600 }, // 6 hours
 );
 

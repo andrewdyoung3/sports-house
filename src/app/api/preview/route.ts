@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary } from '@/types';
+import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage } from '@/types';
 
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
@@ -290,6 +290,147 @@ async function fetchNRLPreview(
   };
 }
 
+// ─── Cup / European competition stage detection ───────────────────────────────
+
+/** ESPN soccer slug for each tracked cup/European competition. */
+const COMP_ESPN_SLUG: Record<string, string> = {
+  'Champions League':  'uefa.champions',
+  'Europa League':     'uefa.europa',
+  'Conference League': 'uefa.conference.league',
+  'FA Cup':            'eng.fa',
+  'EFL Cup':           'eng.league_cup',
+};
+
+/** Normalise raw ESPN event-note text to a clean round label. */
+function normaliseRoundName(raw: string): string {
+  // Strip leading competition name prefixes ESPN sometimes includes
+  const stripped = raw.replace(
+    /^(UEFA Champions League|UEFA Europa League|UEFA Conference League|FA Cup|EFL Cup|Carabao Cup)\s*[-–]?\s*/i,
+    '',
+  ).trim();
+  // Strip leg suffix: "Round of 16 - 1st Leg" → "Round of 16"
+  const noLeg = stripped.includes(' - ') ? stripped.split(' - ')[0].trim() : stripped;
+  // Normalise common variants to consistent labels
+  const lower = noLeg.toLowerCase();
+  if (lower.includes('quarter'))                           return 'Quarter-finals';
+  if (lower.includes('semi'))                              return 'Semi-finals';
+  if (/\bfinal\b/.test(lower) && !lower.includes('semi')) return 'Final';
+  if (lower === 'round of 16')                             return 'Round of 16';
+  return noLeg;
+}
+
+/**
+ * Fetch the current stage (knockout round or group phase) for a cup/European
+ * competition from the ESPN API.
+ *
+ * Strategy:
+ *  1. Scoreboard — event notes give the round name (e.g. "Round of 16 - 1st Leg")
+ *  2. Standings  — if entries exist it's a group/league phase; extract team rows
+ */
+async function fetchCompetitionStage(
+  slug:         string,
+  teamName:     string,
+  opponentName: string,
+): Promise<CompetitionStage | undefined> {
+  const [standingsRes, boardRes] = await Promise.allSettled([
+    fetchTimeout(
+      `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`,
+      { next: { revalidate: 3600 } },
+    ),
+    fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`,
+      { next: { revalidate: 1800 } },
+    ),
+  ]);
+
+  // ── Round name from scoreboard event notes ──
+  let roundName = '';
+  if (boardRes.status === 'fulfilled' && boardRes.value.ok) {
+    const data = await boardRes.value.json();
+    for (const ev of (data.events ?? []) as any[]) {
+      const note = (ev.notes?.[0]?.headline ?? '') as string;
+      if (note) { roundName = normaliseRoundName(note); break; }
+    }
+    // Fallback: season type text (e.g. "Knockout Rounds")
+    if (!roundName) {
+      const typeText = (data.leagues?.[0]?.season?.type?.text ?? '') as string;
+      if (typeText && typeText !== 'Regular Season') roundName = typeText;
+    }
+  }
+
+  // ── Group / league-phase standings ──
+  let isGroupPhase = false;
+  let groupName: string | undefined;
+  let teamStanding:  TeamStanding | undefined;
+  let opponentStanding: TeamStanding | undefined;
+
+  if (standingsRes.status === 'fulfilled' && standingsRes.value.ok) {
+    const data = await standingsRes.value.json();
+
+    const sv = (e: any, ...names: string[]): number =>
+      Number((e.stats as any[])?.find((s: any) => names.includes(s.name))?.value ?? 0);
+
+    const parseEntry = (e: any, pos: number): TeamStanding => ({
+      name:         e.team?.displayName ?? '',
+      position:     pos + 1,
+      played:       sv(e, 'gamesPlayed'),
+      wins:         sv(e, 'wins', 'gamesWon'),
+      draws:        sv(e, 'ties', 'gamesDrawn'),
+      losses:       sv(e, 'losses', 'gamesLost'),
+      points:       sv(e, 'points'),
+      goalsFor:     sv(e, 'pointsFor'),
+      goalsAgainst: sv(e, 'pointsAgainst'),
+    });
+
+    // Multiple groups (classic UCL group stage)
+    const groups: any[] = data.children ?? [];
+    if (groups.length > 0) {
+      for (const group of groups) {
+        const entries: any[] = group.standings?.entries ?? [];
+        const ti = entries.findIndex((e: any) =>
+          e.team?.displayName === teamName || e.team?.name === teamName,
+        );
+        const oi = entries.findIndex((e: any) =>
+          e.team?.displayName === opponentName || e.team?.name === opponentName,
+        );
+        if (ti >= 0 || oi >= 0) {
+          isGroupPhase = true;
+          groupName    = group.name as string | undefined;
+          if (ti >= 0) teamStanding     = parseEntry(entries[ti], ti);
+          if (oi >= 0) opponentStanding = parseEntry(entries[oi], oi);
+          break;
+        }
+      }
+    }
+
+    // Single-table league phase (new UCL format from 2024-25)
+    if (!isGroupPhase) {
+      const entries: any[] =
+        data.standings?.entries ??
+        data.children?.[0]?.standings?.entries ?? [];
+      if (entries.length > 0) {
+        const ti = entries.findIndex((e: any) => e.team?.displayName === teamName);
+        const oi = entries.findIndex((e: any) => e.team?.displayName === opponentName);
+        if (ti >= 0 || oi >= 0) {
+          isGroupPhase = true;
+          if (ti >= 0) teamStanding     = parseEntry(entries[ti], ti);
+          if (oi >= 0) opponentStanding = parseEntry(entries[oi], oi);
+        }
+      }
+    }
+  }
+
+  if (!roundName && !isGroupPhase) return undefined;
+
+  return {
+    roundName:         roundName || (groupName ?? 'Group/League Phase'),
+    isGroupPhase,
+    groupName,
+    teamStanding,
+    opponentStanding,
+  };
+}
+
 // ─── EPL — ESPN ───────────────────────────────────────────────────────────────
 
 const ESPN_TEAM_ID: Record<string, string> = {
@@ -356,6 +497,7 @@ function parseESPNStandings(entries: any[], displayName: string): TeamStanding |
 async function fetchEPLPreview(
   teamId: string,
   opponentName: string,
+  competition?: string,
 ): Promise<PreviewContext> {
   const teamName   = ESPN_TEAM_NAME[teamId];
   const espnTeamId = ESPN_TEAM_ID[teamId];
@@ -414,11 +556,21 @@ async function fetchEPLPreview(
     }
   }
 
+  // ── Cup / European competition stage (when applicable) ──
+  let competitionStage: CompetitionStage | undefined;
+  if (competition) {
+    const slug = COMP_ESPN_SLUG[competition];
+    if (slug) {
+      competitionStage = await fetchCompetitionStage(slug, teamName, opponentName).catch(() => undefined);
+    }
+  }
+
   return {
     teamStanding,
     opponentStanding,
     teamNews:     teamNews.length > 0 ? teamNews : undefined,
     opponentNews: opponentNews.length > 0 ? opponentNews : undefined,
+    competitionStage,
   };
 }
 
@@ -569,6 +721,7 @@ export async function GET(req: NextRequest) {
   const teamId       = req.nextUrl.searchParams.get('teamId') ?? '';
   const opponentName = req.nextUrl.searchParams.get('opponentName') ?? '';
   const gameId       = req.nextUrl.searchParams.get('gameId') ?? '';
+  const competition  = req.nextUrl.searchParams.get('competition') || undefined;
 
   if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
@@ -578,7 +731,7 @@ export async function GET(req: NextRequest) {
     let ctx: PreviewContext = {};
     if      (league === 'afl')         ctx = await fetchAFLPreview(teamId, opponentName, gameId);
     else if (league === 'nrl')         ctx = await fetchNRLPreview(teamId, opponentName);
-    else if (league === 'epl')         ctx = await fetchEPLPreview(teamId, opponentName);
+    else if (league === 'epl')         ctx = await fetchEPLPreview(teamId, opponentName, competition);
     else if (league === 'super_rugby') ctx = await fetchSRUPreview(teamId, opponentName);
     else if (league === 'rugby_int')   ctx = await fetchRINTPreview(teamId, opponentName);
     return NextResponse.json(ctx);

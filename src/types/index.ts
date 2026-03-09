@@ -128,12 +128,26 @@ export interface TipSummary {
   avgMargin: number;
 }
 
+export interface CompetitionStage {
+  /** Human-readable stage label — e.g. "Round of 16", "Quarter-finals", "Group A" */
+  roundName: string;
+  /** True for group/league phases that have a standings table; false for knockout. */
+  isGroupPhase: boolean;
+  /** Group or conference name during a group phase — e.g. "Group B" */
+  groupName?: string;
+  /** Team's position within this competition phase (group/league phase only) */
+  teamStanding?: TeamStanding;
+  opponentStanding?: TeamStanding;
+}
+
 export interface PreviewContext {
   teamStanding?: TeamStanding;
   opponentStanding?: TeamStanding;
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
   tips?: TipSummary;
+  /** Cup/European competitions — current stage info and optional group standings. */
+  competitionStage?: CompetitionStage;
 }
 
 // ─── AI Match Preview ────────────────────────────────────────────────────────
