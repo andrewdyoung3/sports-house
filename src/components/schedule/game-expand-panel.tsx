@@ -3,11 +3,10 @@
 import { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 import { getAIPreview, getRecentResults } from '@/lib/mock-data';
-import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { cn, ordinal } from '@/lib/utils';
-import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, SportKey } from '@/types';
+import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
@@ -20,38 +19,76 @@ interface GameExpandPanelProps {
 /** Leagues with a real /api/results + /api/preview backend. */
 const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 
-// ── Client-side AI preview cache ──────────────────────────────────────────────
-// Persists results in localStorage for 6 hours so closing/reopening a card
-// or refreshing the page doesn't re-call Claude.
+// ── In-memory panel data cache ────────────────────────────────────────────────
+// Shared across all GameExpandPanel instances for the same page lifetime.
+// When the hero card pre-loads a game's data, the matching schedule-list card
+// reads from this cache on mount and skips its API calls entirely.
 
-const AI_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+interface PanelData {
+  results:    GameResult[];
+  oppResults: GameResult[];
+  context:    PreviewContext;
+  standings:  StandingRow[] | null;
+}
+
+const panelDataCache = new Map<string, PanelData>();
+
+// ── Client-side AI preview cache ──────────────────────────────────────────────
+// v2: fingerprint-based cache keyed by news content, not time.
+// • Immutable context (fixture, standings, form) is stored permanently.
+// • Adaptable context (team news, injuries, statements) drives incremental updates.
+// • When news is unchanged the cached preview loads instantly with zero API calls.
+// • When news changes the old preview is shown immediately while Claude updates
+//   it silently in the background — no blank loading state after the first visit.
+
+const PREVIEW_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000; // evict after 14 days
+
+interface PreviewCache {
+  preview: AIPreview;
+  /** Sorted hash of news headlines — change triggers a background update. */
+  newsFingerprint: string;
+  /** When the preview was first generated (for age-based eviction). */
+  generatedAt: number;
+}
+
+/**
+ * Fingerprint the adaptable news context so we can detect changes.
+ * Uses sorted headlines (order from API varies) joined and base64-encoded.
+ */
+function fingerprintNews(
+  teamNews: { headline: string }[] | undefined,
+  oppNews:  { headline: string }[] | undefined,
+): string {
+  const headlines = [
+    ...(teamNews ?? []).map(n => n.headline),
+    ...(oppNews  ?? []).map(n => n.headline),
+  ].sort().join('\x00');
+  try { return btoa(encodeURIComponent(headlines)).slice(0, 48); }
+  catch { return headlines.slice(0, 48); }
+}
+
+function loadPreviewCache(gameId: string): PreviewCache | null {
+  try {
+    const raw = localStorage.getItem(`ai-preview-v2:${gameId}`);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as PreviewCache;
+    if (Date.now() - entry.generatedAt > PREVIEW_MAX_AGE_MS) {
+      localStorage.removeItem(`ai-preview-v2:${gameId}`);
+      return null;
+    }
+    return entry;
+  } catch { return null; }
+}
+
+function savePreviewCache(gameId: string, entry: PreviewCache): void {
+  try {
+    localStorage.setItem(`ai-preview-v2:${gameId}`, JSON.stringify(entry));
+  } catch { /* storage full — fail silently */ }
+}
 
 /** Generate AI previews only for fixtures within this many days.
  *  Too far out and form, injuries, and selection are all unknowns. */
 const AI_PREVIEW_DAYS = 14;
-
-function loadCachedPreview(gameId: string): AIPreview | null {
-  try {
-    const raw = localStorage.getItem(`ai-preview:${gameId}`);
-    if (!raw) return null;
-    const { data, ts } = JSON.parse(raw) as { data: AIPreview; ts: number };
-    if (Date.now() - ts > AI_CACHE_TTL_MS) {
-      localStorage.removeItem(`ai-preview:${gameId}`);
-      return null;
-    }
-    return data;
-  } catch {
-    return null; // localStorage unavailable (SSR or private mode)
-  }
-}
-
-function saveCachedPreview(gameId: string, preview: AIPreview): void {
-  try {
-    localStorage.setItem(`ai-preview:${gameId}`, JSON.stringify({ data: preview, ts: Date.now() }));
-  } catch {
-    // Storage full or unavailable — fail silently
-  }
-}
 
 // ── Standings row ─────────────────────────────────────────────────────────────
 
@@ -148,8 +185,13 @@ function CompactForm({ results }: { results: GameResult[] }) {
           : r.isWin
             ? 'bg-emerald-400/20 text-emerald-400 border border-emerald-600/30'
             : 'bg-red-400/20 text-red-400 border border-red-700/30';
+        const tooltip = `vs ${r.opponent}  ${r.teamScore}–${r.opponentScore}`;
         return (
-          <span key={i} className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0', badgeCls)}>
+          <span
+            key={i}
+            title={tooltip}
+            className={cn('w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 cursor-default', badgeCls)}
+          >
             {outcome}
           </span>
         );
@@ -203,15 +245,45 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
   const [context,   setContext]   = useState<PreviewContext | null>(null);
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
   const [loading,   setLoading]   = useState(REAL_DATA_LEAGUES.has(team.league));
-  const [aiPreview, setAiPreview] = useState<AIPreview | null>(
-    () => aiEnabled ? loadCachedPreview(game.id) : null,
-  );
-  const [aiLoading, setAiLoading] = useState<boolean>(
-    () => aiEnabled && loadCachedPreview(game.id) === null,
-  );
+  // Plain defaults — localStorage is unavailable during SSR so we never read it
+  // in useState. A separate mount-effect reads it instantly on the client.
+  const [aiPreview,  setAiPreview]  = useState<AIPreview | null>(null);
+  const [aiLoading,  setAiLoading]  = useState(aiEnabled);
+  const [aiUpdating, setAiUpdating] = useState(false);
+
+  // ── Immediate cache read on mount ─────────────────────────────────────────
+  // Runs client-side only. Reads both caches before any API round-trips so the
+  // panel shows full content instantly when another instance already loaded it.
+  useEffect(() => {
+    // Panel data (results, context, standings) — populated by any prior instance
+    const mem = panelDataCache.get(game.id);
+    if (mem) {
+      setResults(mem.results);
+      setOppResults(mem.oppResults);
+      setContext(mem.context);
+      setStandings(mem.standings);
+      setLoading(false);
+    }
+
+    // AI preview — persisted in localStorage across sessions
+    if (!aiEnabled) { setAiLoading(false); return; }
+    const aiCached = loadPreviewCache(game.id);
+    if (aiCached) {
+      setAiPreview(aiCached.preview);
+      setAiLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!REAL_DATA_LEAGUES.has(team.league)) return;
+
+    // Fast path: panel data was pre-loaded by another instance (e.g. the hero card).
+    // State is already set by the mount effect; just ensure AI loading clears.
+    if (panelDataCache.has(game.id)) {
+      setAiLoading(false);
+      return;
+    }
 
     const resultsUrl  = `/api/results?league=${team.league}&teamId=${team.id}`;
     const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}`;
@@ -237,35 +309,55 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
       if (Array.isArray(standingsData) && standingsData.length > 0) setStandings(standingsData);
       setLoading(false);
 
-      // Don't generate AI previews for distant fixtures — too much can change.
+      // Populate in-memory cache so other panel instances for this game skip fetching.
+      panelDataCache.set(game.id, {
+        results:    liveResults,
+        oppResults: liveOppResults,
+        context:    liveContext as PreviewContext,
+        standings:  Array.isArray(standingsData) && standingsData.length > 0 ? standingsData : null,
+      });
+
       if (!aiEnabled) {
         setAiLoading(false);
         return;
       }
 
-      // Check localStorage before hitting the API — avoids any Claude call if
-      // the same fixture was already previewed within the last 6 hours.
-      const cached = loadCachedPreview(game.id);
-      if (cached) {
-        setAiPreview(cached);
-        setAiLoading(false);
-        return;
-      }
+      // Fingerprint the adaptable news context.
+      const liveCtx     = liveContext as PreviewContext;
+      const fingerprint = fingerprintNews(liveCtx.teamNews, liveCtx.opponentNews);
+      const cached      = loadPreviewCache(game.id);
 
-      // Cache miss — call Claude, then persist the result locally.
+      if (cached) {
+        // Show cached preview immediately — user sees content at once.
+        setAiPreview(cached.preview);
+        setAiLoading(false);
+
+        if (cached.newsFingerprint === fingerprint) {
+          // News unchanged — nothing to do.
+          return;
+        }
+
+        // News has changed — update silently in background while old preview stays visible.
+        setAiUpdating(true);
+      }
+      // If no cache: aiLoading is already true → show skeleton.
+
       fetch('/api/ai-preview', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          league:       team.league,
-          teamId:       team.id,
-          teamName:     team.name,
-          opponentName: game.opponent,
-          gameId:       game.id,
-          competition:  game.competition,
-          context:      liveContext,
-          teamResults:  liveResults,
-          oppResults:   liveOppResults,
+          league:          team.league,
+          teamId:          team.id,
+          teamName:        team.name,
+          opponentName:    game.opponent,
+          gameId:          game.id,
+          competition:     game.competition,
+          context:         liveContext,
+          teamResults:     liveResults,
+          oppResults:      liveOppResults,
+          // Pass existing preview + fingerprint so the API can do a targeted update.
+          previousPreview: cached?.preview,
+          newsFingerprint: cached ? fingerprint : undefined,
         }),
       })
         .then(r => r.ok ? r.json() : null)
@@ -273,10 +365,17 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
         .then((aiData: AIPreview | null) => {
           if (aiData) {
             setAiPreview(aiData);
-            saveCachedPreview(game.id, aiData);
+            savePreviewCache(game.id, {
+              preview:         aiData,
+              newsFingerprint: fingerprint,
+              generatedAt:     cached?.generatedAt ?? Date.now(),
+            });
           }
         })
-        .finally(() => setAiLoading(false));
+        .finally(() => {
+          setAiLoading(false);
+          setAiUpdating(false);
+        });
     }).catch(() => {
       setLoading(false);
       setAiLoading(false);
@@ -302,6 +401,12 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
           <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
           Match Preview
         </p>
+        {aiUpdating && (
+          <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mt-0.5">
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            Refreshing with latest news…
+          </p>
+        )}
         {aiLoading ? (
           <div className="space-y-1.5 animate-pulse">
             <div className="h-2.5 bg-white/8 rounded w-full" />
@@ -422,15 +527,6 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
           )}
         </div>
       </div>
-
-      {/* ── Full league table ── */}
-      {!loading && standings && (
-        <LeagueTable
-          league={team.league as SportKey}
-          rows={standings}
-          followedTeamIds={new Set([team.id, ...(game.opponentId ? [game.opponentId] : [])])}
-        />
-      )}
 
       {/* ── Player Spotlight + Verdict (AI only) ── */}
       {!aiLoading && aiPreview && (

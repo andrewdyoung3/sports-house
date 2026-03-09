@@ -6,7 +6,6 @@ import { Calendar, MapPin, Tv, Plus, ChevronDown } from 'lucide-react';
 
 import { getFollowedTeams } from '@/lib/user-prefs';
 import { getUpcomingGames } from '@/lib/mock-data';
-import { LEAGUES } from '@/lib/teams';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { contrastColor, formatTimeInZone, datekeyInZone } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -14,6 +13,7 @@ import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
+import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
 import type { Team, UpcomingGame, SportKey } from '@/types';
@@ -62,40 +62,117 @@ function formatDateHeading(representativeDate: Date, dateKey: string, userTz: st
 }
 
 // ─── Fixture / league badge ───────────────────────────────────────────────────
+// Each entry uses exact brand colours and a Unicode symbol that evokes the
+// official logo's iconography — no image required.
+// \uFE0E (Variation Selector-15) forces text presentation so CSS color applies.
 
-// Primary-league badge metadata
-const LEAGUE_BADGE: Record<string, { label: string; logoUrl?: string; cls: string }> = {
-  afl:         { label: 'AFL',         cls: 'text-yellow-300 bg-yellow-900/30 border-yellow-700/40' },
-  nrl:         { label: 'NRL',         logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',  cls: 'text-cyan-300 bg-cyan-900/30 border-cyan-700/40' },
-  epl:         { label: 'EPL',         logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',       cls: 'text-purple-300 bg-purple-900/30 border-purple-700/40' },
-  super_rugby: { label: 'Super Rugby', logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',    cls: 'text-blue-300 bg-blue-900/30 border-blue-700/40' },
-  rugby_int:   { label: 'Intl Rugby',  cls: 'text-slate-300 bg-slate-900/30 border-slate-700/40' },
+interface BadgeMeta {
+  /** Unicode glyph prefix. \uFE0E appended to force text (not emoji) rendering. */
+  symbol?: string;
+  /** Colour override for the symbol when it differs from the label colour. */
+  symbolColor?: string;
+  /** Short display label. */
+  label: string;
+  /** Badge background — official brand colour, darkened for legibility. */
+  bg: string;
+  /** Label text colour. */
+  color: string;
+  /** Border colour. */
+  border: string;
+  /** Kept for the watermark <img> in ScheduleRow — not shown in the badge. */
+  logoUrl?: string;
+}
+
+// ── Primary-league badges ─────────────────────────────────────────────────────
+const LEAGUE_BADGE: Record<string, BadgeMeta> = {
+  afl: {
+    // AFL: navy + gold — no symbol, "AFL" reads cleanly on its own
+    label: 'AFL',
+    bg: '#001d3d', color: '#f4ac20', border: 'rgba(244,172,32,0.30)',
+  },
+  nrl: {
+    // NRL: ◆ (diamond from the NRL shield mark) in brand red on navy
+    symbol: '◆\uFE0E', symbolColor: '#e21b23',
+    label: 'NRL',
+    bg: '#002955', color: '#ffffff', border: 'rgba(226,27,35,0.40)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
+  },
+  epl: {
+    // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
+    symbol: '♛\uFE0E', symbolColor: '#e8a200',
+    label: 'PL',
+    bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
+  },
+  super_rugby: {
+    // Super Rugby Pacific: "SR" abbreviated, electric blue palette
+    label: 'SR Pacific',
+    bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
+  },
+  rugby_int: {
+    // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
+    symbol: '✦\uFE0E', symbolColor: '#8899bb',
+    label: 'Test',
+    bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
+  },
 };
 
-// Cup / European competition badge metadata
-const COMPETITION_BADGE: Record<string, { label: string; logoUrl?: string; cls: string }> = {
-  'Champions League':  { label: 'Champions League', logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', cls: 'text-amber-300 bg-amber-900/40 border-amber-600/40' },
-  'Europa League':     { label: 'Europa League',    cls: 'text-orange-300 bg-orange-900/40 border-orange-600/40' },
-  'Conference League': { label: 'Conference League',cls: 'text-teal-300 bg-teal-900/40 border-teal-600/40' },
-  'FA Cup':            { label: 'FA Cup',            cls: 'text-emerald-300 bg-emerald-900/40 border-emerald-600/40' },
-  'EFL Cup':           { label: 'EFL Cup',           cls: 'text-sky-300 bg-sky-900/40 border-sky-600/40' },
+// ── Cup / European competition badges ─────────────────────────────────────────
+const COMPETITION_BADGE: Record<string, BadgeMeta> = {
+  'Champions League': {
+    // UCL: ★ (the iconic starball mark) in official gold on UCL dark navy
+    symbol: '★\uFE0E', symbolColor: '#ffd700',
+    label: 'UCL',
+    bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+  },
+  'Europa League': {
+    // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
+    symbol: '◎\uFE0E', symbolColor: '#f57320',
+    label: 'UEL',
+    bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
+  },
+  'Conference League': {
+    // UECL: ◉ (inner circle = target / conference identity) in brand teal
+    symbol: '◉\uFE0E', symbolColor: '#00c87a',
+    label: 'UECL',
+    bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
+  },
+  'FA Cup': {
+    // FA Cup: Three Lions abstracted as ◆ ◆ ◆ is complex — use ✦ on FA red
+    symbol: '✦\uFE0E', symbolColor: '#ffffff',
+    label: 'FA Cup',
+    bg: '#1a0005', color: '#ff2244', border: 'rgba(255,34,68,0.38)',
+  },
+  'EFL Cup': {
+    // EFL Cup / Carabao Cup: official green palette, "EFL" abbreviation
+    label: 'EFL Cup',
+    bg: '#0d1f00', color: '#78be20', border: 'rgba(120,190,32,0.38)',
+  },
 };
 
 function FixtureBadge({ league, competition }: { league: string; competition?: string }) {
   const meta = competition
-    ? (COMPETITION_BADGE[competition] ?? { label: competition, cls: 'text-indigo-300 bg-indigo-900/40 border-indigo-600/40' })
-    : (LEAGUE_BADGE[league]           ?? { label: league.toUpperCase(), cls: 'text-white/40 bg-white/8 border-white/20' });
+    ? (COMPETITION_BADGE[competition] ?? null)
+    : (LEAGUE_BADGE[league] ?? null);
+
+  const label    = meta?.label ?? (competition ?? league.toUpperCase());
+  const bg       = meta?.bg      ?? 'rgba(255,255,255,0.06)';
+  const color    = meta?.color   ?? 'rgba(255,255,255,0.40)';
+  const border   = meta?.border  ?? 'rgba(255,255,255,0.12)';
+
   return (
-    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide border rounded px-1.5 py-0.5 shrink-0 ${meta.cls}`}>
-      {meta.logoUrl && (
-        <img
-          src={meta.logoUrl}
-          alt=""
-          className="w-3 h-3 object-contain"
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
+    <span
+      className="inline-flex items-center gap-[3px] text-[10px] font-black uppercase tracking-wide rounded border px-[5px] py-[3px] shrink-0 leading-none"
+      style={{ background: bg, color, borderColor: border }}
+    >
+      {meta?.symbol && (
+        <span aria-hidden="true" style={{ color: meta.symbolColor ?? color, fontSize: '8px' }}>
+          {meta.symbol}
+        </span>
       )}
-      {meta.label}
+      {label}
     </span>
   );
 }
@@ -124,7 +201,6 @@ function ScheduleRow({
   const { team } = game;
   const displayTime = formatTimeInZone(game.date, userTz);
 
-  // Logo URLs for background watermarks
   const teamLogoUrl   = TEAM_LOGOS[team.id];
   const leagueLogoUrl = game.competition
     ? COMPETITION_BADGE[game.competition]?.logoUrl
@@ -133,17 +209,16 @@ function ScheduleRow({
   return (
     <div
       className={[
-        'relative overflow-hidden flex items-center gap-3 glass px-4 py-3 cursor-pointer',
+        'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer',
         'transition-all duration-300 ease-out select-none',
         isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
-        isHighlighted && !isExpanded ? 'brightness-[1.06]' : '',
       ].join(' ')}
       style={{
-        borderLeftColor: `${team.primaryColor}70`,
-        borderLeftWidth: '2px',
+        borderLeftColor: `${team.primaryColor}cc`,
+        borderLeftWidth: '3px',
         transition: 'box-shadow 0.4s ease-out',
         boxShadow: isHighlighted && !isExpanded
-          ? `inset 0 0 0 1px ${team.primaryColor}22`
+          ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
           : undefined,
       }}
       onClick={onToggle}
@@ -154,14 +229,20 @@ function ScheduleRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      {/* ── Background watermarks (first in DOM = behind flex content) ── */}
+      {/* ── Team-colour ambient tint (sits above glass, below content) ── */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }}
+      />
+
+      {/* ── Background watermarks ── */}
       {teamLogoUrl && (
         <img
           src={teamLogoUrl}
           alt=""
           aria-hidden="true"
           className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
-          style={{ right: '80px', opacity: 0.08 }}
+          style={{ right: '88px', opacity: 0.10 }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
@@ -170,62 +251,75 @@ function ScheduleRow({
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
-          className="absolute top-1/2 -translate-y-1/2 h-[120%] w-auto object-contain pointer-events-none select-none"
-          style={{ right: '6px', opacity: 0.11 }}
+          className="absolute top-1/2 -translate-y-1/2 h-[160%] w-auto object-contain pointer-events-none select-none"
+          style={{ left: '-6px', opacity: 0.42, mixBlendMode: 'screen' as const }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
 
-      {/* Team badge */}
-      <TeamBadge
-        logoUrl={TEAM_LOGOS[team.id]}
-        abbreviation={team.abbreviation}
-        primaryColor={team.primaryColor}
-        size={40}
-      />
+      {/* ── Team badge — oversized with neon glow ── */}
+      <div
+        className="relative shrink-0 z-10"
+        style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}
+      >
+        <TeamBadge
+          logoUrl={teamLogoUrl}
+          abbreviation={team.abbreviation}
+          primaryColor={team.primaryColor}
+          size={52}
+        />
+      </div>
 
-      {/* Matchup + metadata */}
-      <div className="flex-1 min-w-0">
-        {/* Matchup */}
+      {/* ── Matchup + metadata ── */}
+      <div className="flex-1 min-w-0 relative z-10">
+        {/* Primary line: team vs opponent */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-sm font-bold text-white">{team.shortName}</span>
-          <span className="text-xs text-white/35">{game.isHome ? 'vs' : 'at'}</span>
+          <span className="text-[15px] font-black tracking-tight text-white leading-none">
+            {team.shortName}
+          </span>
+          <span className="text-[11px] font-medium text-white/30">
+            {game.isHome ? 'vs' : '@'}
+          </span>
           <TeamBadge
             logoUrl={game.opponentLogoUrl}
             abbreviation={game.opponentAbbr}
             primaryColor={game.opponentColor}
-            size={22}
+            size={24}
             className="rounded-md"
           />
-          <span className="text-sm text-white/75">{game.opponent}</span>
+          <span className="text-[13px] font-semibold text-white/70 leading-none">
+            {game.opponent}
+          </span>
           <FixtureBadge league={team.league} competition={game.competition} />
         </div>
 
-        {/* Venue + broadcast */}
-        <div className="flex items-center gap-3 mt-1 flex-wrap">
+        {/* Secondary line: venue + broadcast */}
+        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
           {game.venue && (
-            <span className="flex items-center gap-1 text-xs text-white/35">
+            <span className="flex items-center gap-1 text-[11px] text-white/30">
               <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate max-w-[160px]">{game.venue}</span>
+              <span className="truncate max-w-[150px]">{game.venue}</span>
             </span>
           )}
-          <span className="flex items-center gap-1 text-xs text-white/35">
+          <span className="flex items-center gap-1 text-[11px] text-white/30">
             <Tv className="h-3 w-3 shrink-0" />
             {[...game.broadcast, ...game.streaming].join(' · ')}
           </span>
         </div>
       </div>
 
-      {/* Time + home/away + expand toggle */}
-      <div className="text-right shrink-0 flex items-center gap-2.5">
+      {/* ── Time + chevron ── */}
+      <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
         <div>
-          <p className="text-sm font-bold" style={{ color: team.primaryColor }}>
+          <p className="text-[17px] font-bold leading-none tabular-nums text-white">
             {displayTime}
           </p>
-          <p className="text-xs text-white/35 mt-0.5">{game.isHome ? 'Home' : 'Away'}</p>
+          <p className="text-[10px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
+            {game.isHome ? 'Home' : 'Away'}
+          </p>
         </div>
         <ChevronDown
-          className={`h-4 w-4 text-white/25 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 text-white/20 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
         />
       </div>
     </div>
@@ -283,13 +377,53 @@ function FilterPill({
   return (
     <button
       onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
         active
           ? muted ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white'
           : 'bg-white/8 text-white/50 hover:text-white hover:bg-white/12'
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+// ─── TeamFilterPill ────────────────────────────────────────────────────────────
+
+function TeamFilterPill({
+  label, logoUrl, primaryColor, league, active, onClick,
+}: {
+  label: string; logoUrl?: string; primaryColor?: string; league?: string; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+      style={active && primaryColor ? {
+        background: `${primaryColor}22`,
+        color: primaryColor,
+        border: `1px solid ${primaryColor}55`,
+        boxShadow: `0 0 12px ${primaryColor}30`,
+      } : active ? {
+        background: 'rgba(99,102,241,0.25)',
+        color: 'white',
+        border: '1px solid rgba(99,102,241,0.5)',
+      } : {
+        background: 'rgba(255,255,255,0.06)',
+        color: 'rgba(255,255,255,0.45)',
+        border: '1px solid transparent',
+      }}
+    >
+      {logoUrl && (
+        <img
+          src={logoUrl}
+          alt=""
+          className="w-4 h-4 object-contain shrink-0"
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      {label}
+      {league && <SportBall league={league} size={11} />}
     </button>
   );
 }
@@ -346,7 +480,7 @@ export default function SchedulePage() {
   const [loading,  setLoading]  = useState(true);
   const [userTz,   setUserTz]   = useState('Australia/Brisbane');
 
-  const [activeLeague,    setActiveLeague]    = useState<SportKey | 'all'>('all');
+  const [activeTeamId,    setActiveTeamId]    = useState<string>('all');
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
   const [standings,       setStandings]       = useState<StandingRow[] | null>(null);
@@ -355,7 +489,8 @@ export default function SchedulePage() {
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
 
   // Expanded card state
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId,      setExpandedId]      = useState<string | null>(null);
+  const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
 
   // Calendar click — temporary glow on the clicked date's fixtures
   const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
@@ -370,18 +505,22 @@ export default function SchedulePage() {
     }
   }, []);
 
-  // Fetch standings whenever the active league changes (only for real-data leagues)
+  // Fetch standings for the selected team's league, or for the expanded card's league.
   useEffect(() => {
-    if (activeLeague === 'all' || !REAL_DATA_LEAGUES.has(activeLeague)) {
+    const league = activeTeamId !== 'all'
+      ? teams.find(t => t.id === activeTeamId)?.league ?? null
+      : allGames.find(g => g.id === expandedId)?.team.league ?? null;
+
+    if (!league || !REAL_DATA_LEAGUES.has(league)) {
       setStandings(null);
       return;
     }
-    setStandings(null); // clear stale data while loading
-    fetch(`/api/standings?league=${activeLeague}`)
+    setStandings(null);
+    fetch(`/api/standings?league=${league}`)
       .then(r => r.ok ? r.json() : [])
       .then((rows: StandingRow[]) => setStandings(rows.length > 0 ? rows : null))
       .catch(() => setStandings(null));
-  }, [activeLeague]);
+  }, [activeTeamId, expandedId, teams]);
 
   useEffect(() => {
     const followed = getFollowedTeams();
@@ -406,21 +545,23 @@ export default function SchedulePage() {
     });
   }, []);
 
-  // IDs of followed teams in the currently active league (for standings highlight)
-  const followedTeamIds = useMemo(
-    () => new Set(teams.filter(t => activeLeague === 'all' || t.league === activeLeague).map(t => t.id)),
-    [teams, activeLeague],
-  );
+  // IDs to highlight in the sidebar standings table.
+  const followedTeamIds = useMemo(() => {
+    const ids = teams.map(t => t.id);
+    const eg = allGames.find(g => g.id === expandedId);
+    if (eg?.opponentId) ids.push(eg.opponentId);
+    return new Set(ids);
+  }, [teams, expandedId, allGames]);
 
-  // League + home/away filters
+  // Team + home/away filters
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
     return allGames.filter(g => {
-      if (activeLeague !== 'all' && g.team.league !== activeLeague) return false;
+      if (activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
       return true;
     });
-  }, [allGames, activeLeague, homeAwayFilter]);
+  }, [allGames, activeTeamId, homeAwayFilter]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -455,9 +596,6 @@ export default function SchedulePage() {
     return groups;
   }, [displayedGames, userTz]);
 
-  // Only show league tabs for leagues the user actually follows
-  const presentLeagues = LEAGUES.filter(l => teams.some(t => t.league === l.id));
-
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
 
@@ -477,6 +615,7 @@ export default function SchedulePage() {
   // Toggle expanded card
   const toggleExpand = useCallback((id: string) => {
     setExpandedId(prev => prev === id ? null : id);
+    setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
   if (!loading && teams.length === 0) return <EmptyState />;
@@ -490,11 +629,7 @@ export default function SchedulePage() {
           <Calendar className="h-6 w-6 text-indigo-400" />
           Your Schedule
         </h1>
-        <p className="text-white/40 text-sm">
-          {loading
-            ? 'Loading fixtures…'
-            : `${displayedGames.length} upcoming fixture${displayedGames.length !== 1 ? 's' : ''} · times in your local timezone`}
-        </p>
+        {loading && <p className="text-white/40 text-sm">Loading fixtures…</p>}
       </div>
 
       {/* ── Next Game Hero ── */}
@@ -509,26 +644,35 @@ export default function SchedulePage() {
         <div>
           {/* Filters */}
           {!loading && (
-            <div className="flex flex-wrap items-center gap-2 mb-8">
-              <div className="flex flex-wrap gap-1.5 flex-1">
-                <FilterPill label="All"  active={activeLeague === 'all'} onClick={() => setActiveLeague('all')} />
-                {presentLeagues.map(l => (
-                  <FilterPill
-                    key={l.id}
-                    label={`${l.icon} ${l.name}`}
-                    active={activeLeague === l.id}
-                    onClick={() => setActiveLeague(l.id)}
+            <div className="mb-8 space-y-2">
+              {/* Row 1: Team pills — single scrollable row */}
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <TeamFilterPill
+                  label="All"
+                  active={activeTeamId === 'all'}
+                  onClick={() => setActiveTeamId('all')}
+                />
+                {teams.map(team => (
+                  <TeamFilterPill
+                    key={team.id}
+                    label={team.abbreviation}
+                    logoUrl={TEAM_LOGOS[team.id]}
+                    primaryColor={team.primaryColor}
+                    league={team.league}
+                    active={activeTeamId === team.id}
+                    onClick={() => setActiveTeamId(team.id)}
                   />
                 ))}
               </div>
-              <div className="flex gap-1.5 shrink-0">
+              {/* Row 2: Secondary filters */}
+              <div className="flex gap-1.5 items-center">
                 <FilterPill
                   label="This Round"
                   active={gameRangeFilter === 'this_round'}
                   onClick={() => setGameRangeFilter(prev => prev === 'this_round' ? 'all' : 'this_round')}
                   muted
                 />
-                <div className="w-px bg-white/10 self-stretch" />
+                <div className="w-px h-4 bg-white/10" />
                 {(['all', 'home', 'away'] as const).map(opt => (
                   <FilterPill
                     key={opt}
@@ -555,12 +699,12 @@ export default function SchedulePage() {
               {groupedByDate.map(({ dateKey, representativeDate, games }) => (
                 <section key={dateKey} id={`date-section-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <p className="text-sm font-bold text-white/80 shrink-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-white/50 shrink-0">
                       {formatDateHeading(representativeDate, dateKey, userTz)}
                     </p>
-                    <div className="flex-1 h-px bg-white/10" />
-                    <span className="text-xs text-white/30 shrink-0">
-                      {games.length} game{games.length !== 1 ? 's' : ''}
+                    <div className="flex-1 h-px bg-white/8" />
+                    <span className="text-[10px] font-semibold text-white/25 shrink-0 uppercase tracking-wide">
+                      {games.length} {games.length !== 1 ? 'fixtures' : 'fixture'}
                     </span>
                   </div>
 
@@ -576,9 +720,9 @@ export default function SchedulePage() {
                           style={{
                             transition: 'box-shadow 0.4s ease-out',
                             boxShadow: clickedDateKey === dateKey
-                              ? `0 0 32px ${game.team.primaryColor}60, 0 0 0 1px ${game.team.primaryColor}40`
+                              ? `0 0 48px ${game.team.primaryColor}70, 0 0 0 1px ${game.team.primaryColor}50`
                               : isHighlighted
-                                ? `0 0 20px ${game.team.primaryColor}25`
+                                ? `0 0 28px ${game.team.primaryColor}30`
                                 : undefined,
                           }}
                         >
@@ -591,7 +735,11 @@ export default function SchedulePage() {
                             onHover={handleCalendarHover}
                             onToggle={() => toggleExpand(game.id)}
                           />
-                          {isExpanded && <GameExpandPanel game={game} />}
+                          {everExpandedIds.has(game.id) && (
+                            <div style={{ display: isExpanded ? 'block' : 'none' }}>
+                              <GameExpandPanel game={game} />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -616,10 +764,14 @@ export default function SchedulePage() {
             />
           )}
 
-          {/* League standings (only when a specific league tab is active) */}
-          {!loading && standings && activeLeague !== 'all' && (
+          {/* League standings — shown when a team is selected OR a card is expanded */}
+          {!loading && standings && (activeTeamId !== 'all' || expandedId !== null) && (
             <LeagueTable
-              league={activeLeague}
+              league={(
+                activeTeamId !== 'all'
+                  ? teams.find(t => t.id === activeTeamId)?.league
+                  : allGames.find(g => g.id === expandedId)?.team.league
+              ) as SportKey}
               rows={standings}
               followedTeamIds={followedTeamIds}
             />

@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Keyframes — defined at root so inline style animations can reference them ── */
+/* ── Keyframes ── */
 
 @keyframes drift {
   0%,  100% { transform: translate(0, 0) scale(1); }
@@ -22,7 +22,7 @@
 }
 
 @keyframes slideDown {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -34,88 +34,84 @@
   html {
     @apply antialiased text-white;
     scroll-behavior: smooth;
-    background-color: #03031a;
+    /* Obsidian — near-pure black with a barely-perceptible warm undertone */
+    background-color: #080809;
   }
 
   body {
     min-height: 100vh;
-    background-color: #03031a;
+    background-color: #080809;
     /*
-     * Five ambient gradient blobs — read by backdrop-filter on glass cards.
-     * Cool indigo at the top, warm violet+orange mid-canvas, electric blue far-left.
-     * Keep opacity moderate so they illuminate rather than overpower.
+     * Minimal ambient atmosphere — just enough depth to feed backdrop-filter
+     * without competing with team-color neon accents on the cards.
+     * Opacities kept deliberately low so the obsidian base dominates.
      */
     background-image:
-      /* Top-centre — electric indigo crown */
-      radial-gradient(ellipse 130% 70% at 50% -20%, rgba(109,  40, 217, 0.40) 0%, transparent 65%),
-      /* Bottom-right — deep violet warmth */
-      radial-gradient(ellipse  75% 70% at 105% 100%, rgba(192,  38, 211, 0.22) 0%, transparent 65%),
-      /* Mid-right — sunset amber pulse */
-      radial-gradient(ellipse  50% 50% at  92%  42%, rgba(251, 146,  60, 0.12) 0%, transparent 60%),
-      /* Left-centre — electric blue */
-      radial-gradient(ellipse  55% 60% at  -8%  60%, rgba( 37,  99, 235, 0.16) 0%, transparent 65%),
-      /* Bottom-left — rose undertone */
-      radial-gradient(ellipse  40% 40% at  10% 100%, rgba(219,  39, 119, 0.09) 0%, transparent 60%);
+      /* Top crown — deep indigo halo */
+      radial-gradient(ellipse 120% 55% at 50% -15%, rgba(99, 40, 210, 0.22) 0%, transparent 60%),
+      /* Bottom-right — faint violet warmth */
+      radial-gradient(ellipse 65% 55% at 108% 100%, rgba(160, 32, 200, 0.10) 0%, transparent 60%),
+      /* Left-centre — cool blue edge */
+      radial-gradient(ellipse 45% 55% at -5% 58%,  rgba(30, 80, 220, 0.08)  0%, transparent 60%);
   }
 
-  /* Frosted scrollbar */
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  /* Slim obsidian scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.10);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.26);
+    background: rgba(255, 255, 255, 0.22);
   }
 }
 
 @layer utilities {
-  /* Hero section — transparent so body gradient shows through */
   .hero-gradient {
     background: transparent;
   }
 
-  /* ── Glass surface utilities ────────────────────────────────────────────────
-   * saturate(180%) makes the blurred background colours more vivid — the
-   * "real glass" effect where what's behind is amplified, not washed out.
+  /* ── Glass surfaces ─────────────────────────────────────────────────────────
+   * Slightly more opaque than before — the near-black base needs a bit more
+   * surface colour to register as "glass" rather than "transparent".
    */
   .glass {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.055);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .glass-strong {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(32px) saturate(200%);
-    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    background: rgba(255, 255, 255, 0.09);
+    backdrop-filter: blur(36px) saturate(220%);
+    -webkit-backdrop-filter: blur(36px) saturate(220%);
     border: 1px solid rgba(255, 255, 255, 0.13);
   }
 
   .glass-hero {
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(48px) saturate(200%);
-    -webkit-backdrop-filter: blur(48px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.065);
+    backdrop-filter: blur(52px) saturate(220%);
+    -webkit-backdrop-filter: blur(52px) saturate(220%);
+    border: 1px solid rgba(255, 255, 255, 0.10);
     box-shadow:
       0 0  0  1px rgba(255, 255, 255, 0.04),
-      0 20px 80px rgba(0, 0, 0, 0.50),
-      inset 0 1px 0 rgba(255, 255, 255, 0.14),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.10);
+      0 24px 80px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.13),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.12);
   }
 
-  /* ── Float animation for hover effects ─────────────────────────────────── */
+  /* ── Float animation ────────────────────────────────────────────────────── */
   .float-hover {
     transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
   }
   .float-hover:hover {
     transform: translateY(-3px);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.40);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.50);
   }
 
-  /* ── Gradient text — Electric Purple → Sunset Orange ───────────────────── */
+  /* ── Gradient text ──────────────────────────────────────────────────────── */
   .gradient-warm {
     background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f97316 100%);
     -webkit-background-clip: text;
@@ -123,7 +119,6 @@
     background-clip: text;
   }
 
-  /* ── Card surface — kept for backwards compat ──────────────────────────── */
   .card-surface {
     @apply glass rounded-2xl;
   }

@@ -17,22 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
-import type { PreviewContext, GameResult } from '@/types';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface AIPreview {
-  /** Big-picture season story — where each side sits and what's at stake. */
-  context: string;
-  /** The specific tactical clash or key area where the fixture will be decided. */
-  tacticalBattle: string;
-  /** One player (or key position/role) whose form is the pivotal storyline. */
-  playerSpotlight: string;
-  /** Authoritative narrative outcome — what the most likely story looks like. */
-  verdict: string;
-  /** 3–4 short punchy tactical or contextual insights (max ~12 words each). */
-  keyInsights: string[];
-}
+import type { PreviewContext, GameResult, AIPreview } from '@/types';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
@@ -215,6 +200,37 @@ function buildDataBlock(
   return lines.join('\n');
 }
 
+function buildUpdatePrompt(
+  previous: AIPreview,
+  teamName: string,
+  opponentName: string,
+  teamNews: { headline: string; description?: string }[],
+  oppNews:  { headline: string; description?: string }[],
+): string {
+  const lines: string[] = [
+    'The following match preview was generated earlier. It remains accurate for the fixture context, tactical analysis, and ladder positions.',
+    '',
+    'EXISTING PREVIEW:',
+    JSON.stringify(previous),
+    '',
+    'NEW INFORMATION has emerged since this preview was written:',
+    'UPDATED TEAM NEWS & HEADLINES:',
+  ];
+  teamNews.slice(0, 4).forEach(n => {
+    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
+    lines.push(`  ${teamName}: "${n.headline}"${desc}`);
+  });
+  oppNews.slice(0, 4).forEach(n => {
+    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
+    lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
+  });
+  lines.push('');
+  lines.push(
+    'Return the same JSON structure. Update only the sections directly affected by this new information (e.g. playerSpotlight if an injury is mentioned, verdict if significant news shifts the outlook). Preserve the tactical analysis, historical form narrative, and ladder context where it remains accurate. Do not invent new facts beyond what is provided above.'
+  );
+  return lines.join('\n');
+}
+
 // ─── Claude call ──────────────────────────────────────────────────────────────
 
 async function callClaude(prompt: string): Promise<AIPreview> {
@@ -252,26 +268,46 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json() as {
-      league:       string;
-      teamId:       string;
-      teamName:     string;
-      opponentName: string;
-      gameId:       string;
-      context:      PreviewContext;
-      teamResults:  GameResult[];
-      oppResults:   GameResult[];
-      competition?: string;
+      league:          string;
+      teamId:          string;
+      teamName:        string;
+      opponentName:    string;
+      gameId:          string;
+      context:         PreviewContext;
+      teamResults:     GameResult[];
+      oppResults:      GameResult[];
+      competition?:    string;
+      previousPreview?: AIPreview;
+      newsFingerprint?: string;
     };
 
-    const { league, teamId, teamName, opponentName, gameId, context, teamResults, oppResults, competition } = body;
+    const {
+      league, teamId, teamName, opponentName, gameId,
+      context, teamResults, oppResults, competition,
+      previousPreview, newsFingerprint,
+    } = body;
 
     if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
       return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
     }
 
-    const prompt  = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition);
-    const preview = await getCachedPreview(gameId, prompt);
+    let prompt: string;
+    let cacheKey: string;
 
+    if (previousPreview && newsFingerprint) {
+      // Update mode — news has changed since last generation.
+      // Build a compact prompt that shows Claude the old preview + only the new news.
+      const teamNews = context.teamNews ?? [];
+      const oppNews  = context.opponentNews ?? [];
+      prompt   = buildUpdatePrompt(previousPreview, teamName, opponentName, teamNews, oppNews);
+      cacheKey = `update:${gameId}:${newsFingerprint}`;
+    } else {
+      // Full generation mode.
+      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition);
+      cacheKey = gameId;
+    }
+
+    const preview = await getCachedPreview(cacheKey, prompt);
     return NextResponse.json(preview);
   } catch (err) {
     console.error('[/api/ai-preview]', err);

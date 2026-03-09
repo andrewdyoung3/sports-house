@@ -19,6 +19,10 @@ const LEAGUE_LOGO: Record<string, string> = {
 };
 const COMPETITION_LOGO: Record<string, string> = {
   'Champions League': 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+  'Europa League':    'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
+  'Conference League':'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
+  'FA Cup':           'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+  'EFL Cup':          'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
 };
 
 interface NextGameHeroProps {
@@ -26,23 +30,34 @@ interface NextGameHeroProps {
   userTz: string;
 }
 
-/** How long until kickoff, as a short human string. */
-function timeUntil(isoDate: string): string {
+/** How long until kickoff, as a short human string.
+ *  Uses calendar-day counting in the user's timezone so "Thursday" is always
+ *  3 days from Monday regardless of the time of day. */
+function timeUntil(isoDate: string, userTz: string): string {
   const diff  = new Date(isoDate).getTime() - Date.now();
   const hours = diff / 3_600_000;
-  if (hours < 0.5)  return 'Starting soon';
-  if (hours < 24)   return `In ${Math.floor(hours)}h`;
-  const days = Math.floor(hours / 24);
-  if (days === 1)   return 'Tomorrow';
+  if (hours < 0.5) return 'Starting soon';
+  if (hours < 24)  return `In ${Math.floor(hours)}h`;
+
+  // Compare calendar dates in the user's timezone (en-CA → YYYY-MM-DD, safe to parse)
+  const toDateStr = (d: Date) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: userTz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+
+  const days = Math.round(
+    (new Date(toDateStr(new Date(isoDate))).getTime() - new Date(toDateStr(new Date())).getTime()) / 86_400_000,
+  );
+
+  if (days === 1) return 'Tomorrow';
   return `In ${days} days`;
 }
 
 export function NextGameHero({ game, userTz }: NextGameHeroProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded,     setExpanded]     = useState(false);
+  const [everExpanded, setEverExpanded] = useState(false);
 
   const { team } = game;
   const displayTime   = formatTimeInZone(game.date, userTz);
-  const countdown     = timeUntil(game.date);
+  const countdown     = timeUntil(game.date, userTz);
   const teamLogoUrl   = TEAM_LOGOS[team.id];
   const leagueLogoUrl = game.competition
     ? COMPETITION_LOGO[game.competition]
@@ -59,123 +74,139 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
     .concat(game.streaming)
     .filter((ch, i, arr) => arr.indexOf(ch) === i);
 
-  const glow = `0 0 80px ${team.primaryColor}28, 0 24px 80px rgba(0,0,0,0.55)`;
+  const outerGlow = `0 0 120px ${team.primaryColor}30, 0 32px 80px rgba(0,0,0,0.70)`;
 
   return (
-    /**
-     * Outer wrapper: no overflow-hidden, so GameExpandPanel's absolutely-
-     * positioned tooltips (W/D/L hover) are not clipped.
-     */
-    <div className="mb-8" style={{ boxShadow: glow }}>
+    <div className="mb-8" style={{ boxShadow: outerGlow }}>
 
-      {/* ── Collapsed header card — overflow-hidden clips the colour strip ── */}
+      {/* ── Hero card ── */}
       <div
         className={`relative overflow-hidden glass-hero ${expanded ? 'rounded-t-3xl' : 'rounded-3xl'}`}
-        style={{
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.13)',
-          borderColor: `${team.primaryColor}30`,
-        }}
+        style={{ borderColor: `${team.primaryColor}25` }}
       >
-        {/* ── Background watermarks ── */}
-        {teamLogoUrl && (
-          <img
-            src={teamLogoUrl}
-            alt=""
-            aria-hidden="true"
-            className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
-            style={{ right: '110px', height: '180px', opacity: 0.09 }}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        )}
+        {/* Cinematic team-colour backdrop — large radial glow behind content */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background: `radial-gradient(ellipse 80% 60% at 100% 50%, ${team.primaryColor}18 0%, transparent 65%),
+                         radial-gradient(ellipse 50% 80% at 0% 0%, ${team.primaryColor}0c 0%, transparent 60%)`,
+          }}
+        />
+
+        {/* Competition / league logo — right side, screen-blended so dark pixels vanish */}
         {leagueLogoUrl && (
           <img
             src={leagueLogoUrl}
             alt=""
             aria-hidden="true"
             className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
-            style={{ right: '8px', height: '140px', opacity: 0.12 }}
+            style={{ right: '-4px', height: '210px', opacity: 0.55, mixBlendMode: 'screen' as const }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
+        {/* Team logo — subtle aura behind the badge on the right */}
+        {teamLogoUrl && (
+          <img
+            src={teamLogoUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
+            style={{ right: '-12px', height: '220%', opacity: 0.07, mixBlendMode: 'screen' as const }}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}
 
-        {/* Team-colour gradient top edge */}
+        {/* Neon accent line at top */}
         <div
           className="h-[2px] w-full"
-          style={{ background: `linear-gradient(90deg, transparent 0%, ${team.primaryColor}90 40%, ${team.primaryColor}90 60%, transparent 100%)` }}
+          style={{ background: `linear-gradient(90deg, transparent 0%, ${team.primaryColor}cc 35%, ${team.primaryColor}cc 65%, transparent 100%)` }}
         />
 
         {/* ── Label bar ── */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-0">
+        <div className="relative z-10 flex items-center justify-between px-6 pt-4 pb-0">
           <div className="flex items-center gap-2">
             <span
-              className="text-[10px] font-bold uppercase tracking-widest"
+              className="text-[10px] font-black uppercase tracking-[0.18em]"
               style={{ color: team.primaryColor }}
             >
               Next Game
             </span>
-            <span className="text-[10px] text-white/25">·</span>
-            <span className="text-[10px] font-semibold text-white/35 uppercase tracking-wide">
+            <span className="text-white/15">·</span>
+            <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
               {game.competition ?? team.league.toUpperCase()}
             </span>
           </div>
+          {/* Countdown pill */}
           <span
-            className="text-xs font-bold rounded-full px-2.5 py-0.5 border"
+            className="text-[11px] font-black rounded-full px-3 py-1 border"
             style={{
               color: team.primaryColor,
-              background: `${team.primaryColor}18`,
-              borderColor: `${team.primaryColor}40`,
+              background: `${team.primaryColor}15`,
+              borderColor: `${team.primaryColor}45`,
+              textShadow: `0 0 12px ${team.primaryColor}80`,
             }}
           >
             {countdown}
           </span>
         </div>
 
-        {/* ── Teams ── */}
-        <div className="px-5 py-5 flex items-center gap-5">
-          <TeamBadge
-            logoUrl={TEAM_LOGOS[team.id]}
-            abbreviation={team.abbreviation}
-            primaryColor={team.primaryColor}
-            size={64}
-            className="rounded-2xl shadow-xl"
-          />
-
+        {/* ── Teams — editorial matchup ── */}
+        <div className="relative z-10 px-6 py-6 flex items-center gap-5">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-xl font-black text-white">{team.shortName}</span>
-              <span className="text-white/40 text-sm font-medium">{game.isHome ? 'vs' : 'at'}</span>
-              <TeamBadge
-                logoUrl={game.opponentLogoUrl}
-                abbreviation={game.opponentAbbr}
-                primaryColor={game.opponentColor}
-                size={36}
-                className="rounded-xl"
-              />
-              <span className="text-lg font-bold text-white/85">{game.opponent}</span>
+            {/* Oversized matchup typography */}
+            <div className="flex items-center gap-2.5 flex-wrap mb-1.5">
+              <span className="text-[22px] font-black tracking-tight text-white leading-none">
+                {team.shortName}
+              </span>
+              <span className="text-white/30 text-sm font-medium">{game.isHome ? 'vs' : '@'}</span>
+              <div style={{ filter: `drop-shadow(0 0 8px ${game.opponentColor}50)` }}>
+                <TeamBadge
+                  logoUrl={game.opponentLogoUrl}
+                  abbreviation={game.opponentAbbr}
+                  primaryColor={game.opponentColor}
+                  size={40}
+                  className="rounded-xl"
+                />
+              </div>
+              <span className="text-[18px] font-bold text-white/80 leading-none">{game.opponent}</span>
             </div>
-            <p className="text-white/50 text-sm">
+            {/* Date + time */}
+            <p className="text-white/40 text-sm">
               {dateLabel}
-              <span className="text-white/25 mx-1.5">·</span>
-              <span className="font-bold text-white">{displayTime}</span>
+              <span className="text-white/20 mx-1.5">·</span>
+              <span className="font-bold text-[15px] text-white">
+                {displayTime}
+              </span>
             </p>
+          </div>
+
+          {/* Team badge — moved to RIGHT with neon glow */}
+          <div className="shrink-0" style={{ filter: `drop-shadow(0 0 24px ${team.primaryColor}60)` }}>
+            <TeamBadge
+              logoUrl={TEAM_LOGOS[team.id]}
+              abbreviation={team.abbreviation}
+              primaryColor={team.primaryColor}
+              size={72}
+              className="rounded-2xl"
+            />
           </div>
         </div>
 
         {/* ── Venue ── */}
         {game.venue && (
-          <div className="px-5 pb-3 flex items-center gap-2 text-xs text-white/40">
+          <div className="relative z-10 px-6 pb-3 flex items-center gap-2 text-[11px] text-white/35">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span>{game.venue}</span>
-            <span className="text-white/20">·</span>
-            <span>{game.isHome ? 'Home' : 'Away'}</span>
+            <span className="text-white/15">·</span>
+            <span className="font-semibold">{game.isHome ? 'Home' : 'Away'}</span>
           </div>
         )}
 
         {/* ── Where to watch ── */}
-        <div className="px-5 pb-4 flex items-center gap-2 flex-wrap border-b border-white/8">
-          <span className="flex items-center gap-1.5 text-xs text-white/40 shrink-0">
+        <div className="relative z-10 px-6 pb-5 flex items-center gap-2 flex-wrap border-b border-white/6">
+          <span className="flex items-center gap-1.5 text-[11px] text-white/35 shrink-0">
             <Tv className="h-3.5 w-3.5" />
-            <span className="font-medium">Watch on</span>
+            <span className="font-semibold uppercase tracking-wide">Watch</span>
           </span>
           {allBroadcast.map(ch => (
             <Badge
@@ -183,7 +214,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
               className={
                 game.streaming.includes(ch)
                   ? 'bg-indigo-900/40 text-indigo-300 border-indigo-800/50'
-                  : 'bg-white/8 text-white/65 border-white/12'
+                  : 'bg-white/6 text-white/60 border-white/10'
               }
             >
               {ch}
@@ -193,22 +224,24 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
 
         {/* ── Expand toggle ── */}
         <button
-          onClick={() => setExpanded(v => !v)}
-          className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-white/35 hover:text-white/70 transition-colors"
+          onClick={() => { setExpanded(v => !v); setEverExpanded(true); }}
+          className="relative z-10 w-full flex items-center justify-center gap-1.5 py-3 text-[11px] font-semibold text-white/30 hover:text-white/65 transition-colors uppercase tracking-widest"
           aria-expanded={expanded}
           aria-label={expanded ? 'Collapse match details' : 'Show match details'}
         >
           {expanded ? (
-            <>Less detail <ChevronUp className="h-3.5 w-3.5" /></>
+            <>Collapse <ChevronUp className="h-3.5 w-3.5" /></>
           ) : (
-            <>Match details <ChevronDown className="h-3.5 w-3.5" /></>
+            <>Match Details <ChevronDown className="h-3.5 w-3.5" /></>
           )}
         </button>
       </div>
 
-      {/* ── Expanded panel — sibling to the header card, not inside overflow-hidden ── */}
-      {expanded && (
-        <GameExpandPanel game={game} className="rounded-b-3xl" />
+      {/* ── Expanded panel — mounted once then kept alive; hidden with CSS so state is preserved ── */}
+      {everExpanded && (
+        <div style={{ display: expanded ? 'block' : 'none' }}>
+          <GameExpandPanel game={game} className="rounded-b-3xl" />
+        </div>
       )}
     </div>
   );

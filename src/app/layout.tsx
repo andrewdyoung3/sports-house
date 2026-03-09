@@ -29,11 +29,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
          * All elements are pointer-events-none and aria-hidden.
          */}
         <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden select-none" aria-hidden>
-          {/* Large drifting orbs */}
-          <div style={{ position:'absolute', top:'5%',  left:'8%',  width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle, rgba(109,40,217,0.14) 0%, transparent 70%)', filter:'blur(72px)', animation:'drift 20s ease-in-out infinite' }} />
-          <div style={{ position:'absolute', top:'50%', right:'6%', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle, rgba(192,38,211,0.12) 0%, transparent 70%)', filter:'blur(60px)', animation:'drift 14s ease-in-out infinite reverse' }} />
-          <div style={{ position:'absolute', bottom:'8%', left:'22%', width:'360px', height:'360px', borderRadius:'50%', background:'radial-gradient(circle, rgba(251,146,60,0.09) 0%, transparent 70%)', filter:'blur(50px)', animation:'drift-slow 26s ease-in-out infinite 4s' }} />
-          <div style={{ position:'absolute', top:'28%', left:'50%', width:'280px', height:'280px', borderRadius:'50%', background:'radial-gradient(circle, rgba(37,99,235,0.10) 0%, transparent 70%)', filter:'blur(48px)', animation:'drift 18s ease-in-out infinite 8s reverse' }} />
+          {/* Large drifting orbs — kept subtle so obsidian base dominates */}
+          <div style={{ position:'absolute', top:'5%',  left:'8%',  width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle, rgba(99,36,200,0.07) 0%, transparent 70%)', filter:'blur(80px)', animation:'drift 20s ease-in-out infinite' }} />
+          <div style={{ position:'absolute', top:'50%', right:'6%', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle, rgba(160,30,200,0.06) 0%, transparent 70%)', filter:'blur(70px)', animation:'drift 14s ease-in-out infinite reverse' }} />
+          <div style={{ position:'absolute', bottom:'8%', left:'22%', width:'360px', height:'360px', borderRadius:'50%', background:'radial-gradient(circle, rgba(220,120,40,0.04) 0%, transparent 70%)', filter:'blur(60px)', animation:'drift-slow 26s ease-in-out infinite 4s' }} />
+          <div style={{ position:'absolute', top:'28%', left:'50%', width:'280px', height:'280px', borderRadius:'50%', background:'radial-gradient(circle, rgba(30,80,220,0.05) 0%, transparent 70%)', filter:'blur(56px)', animation:'drift 18s ease-in-out infinite 8s reverse' }} />
 
           {/* Sharp bokeh dots — mimic camera lens out-of-focus highlights */}
           <div style={{ position:'absolute', top:'17%', right:'32%', width:'7px', height:'7px', borderRadius:'50%', background:'rgba(167,139,250,0.70)', filter:'blur(3px)' }} />
