@@ -192,19 +192,35 @@ function CompactForm({ results }: { results: GameResult[] }) {
           : r.isWin
             ? 'bg-emerald-400/20 text-emerald-400 border border-emerald-600/30'
             : 'bg-red-400/20 text-red-400 border border-red-700/30';
-        const tooltip = `vs ${r.opponent}  ${r.teamScore}–${r.opponentScore}`;
+        const scoreCls = isDraw ? 'text-amber-300' : r.isWin ? 'text-emerald-400' : 'text-red-400';
+        const scoreStr = isDraw
+          ? `D ${r.teamScore}–${r.opponentScore}`
+          : `${r.isWin ? 'W' : 'L'} ${r.teamScore}–${r.opponentScore}`;
         return (
-          <span
-            key={i}
-            title={tooltip}
-            className={cn(
-              'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 cursor-default',
-              badgeCls,
-              isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
-            )}
-          >
-            {outcome}
-          </span>
+          <div key={i} className="relative group shrink-0">
+            {/* W / D / L dot */}
+            <span
+              className={cn(
+                'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black cursor-default',
+                badgeCls,
+                isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
+              )}
+            >
+              {outcome}
+            </span>
+            {/* Hover tooltip */}
+            <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap shadow-xl">
+                <p className="text-zinc-200 font-bold leading-none mb-0.5">{r.opponent}</p>
+                <p className={cn('font-black leading-none', scoreCls)}>{scoreStr}</p>
+                <p className="text-zinc-500 mt-0.5 leading-none">
+                  {r.isHome ? 'Home' : 'Away'}
+                  {r.competition ? ` · ${r.competition}` : ''}
+                </p>
+              </div>
+              <div className="w-2 h-2 bg-zinc-900 border-r border-b border-zinc-700 rotate-45 mx-auto -mt-1" />
+            </div>
+          </div>
         );
       })}
     </div>

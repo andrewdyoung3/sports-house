@@ -19,7 +19,7 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
     <button
       onClick={() => onToggle(team)}
       className={cn(
-        'relative flex flex-col items-center gap-2.5 p-4 rounded-2xl border-2 transition-all duration-200 text-center w-full cursor-pointer group',
+        'relative flex flex-col items-center gap-3 p-4 rounded-2xl border-2 transition-all duration-200 text-center w-full cursor-pointer group',
         selected
           ? 'border-transparent shadow-lg scale-[1.02]'
           : 'border-white/10 bg-white/5 backdrop-blur-sm hover:border-white/22 hover:bg-white/8',
@@ -48,20 +48,20 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
         logoUrl={logoUrl}
         abbreviation={team.abbreviation}
         primaryColor={team.primaryColor}
-        size={56}
+        size={72}
         className="rounded-2xl"
       />
 
       {/* Name */}
       <div className="min-w-0 w-full">
         <p className={cn(
-          'text-xs font-bold leading-tight truncate',
+          'text-sm font-bold leading-tight truncate',
           selected ? 'text-white' : 'text-white/85',
         )}>
           {team.shortName}
         </p>
         <p className={cn(
-          'text-[10px] leading-tight mt-0.5 truncate',
+          'text-xs leading-tight mt-0.5 truncate',
           selected ? 'text-white/70' : 'text-white/40',
         )}>
           {team.city}

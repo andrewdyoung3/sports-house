@@ -47,16 +47,16 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen">
-      <div className="max-w-6xl mx-auto px-4 pt-10 pb-32">
+      <div className="max-w-6xl mx-auto px-4 pt-6 pb-32">
 
         {/* Heading */}
-        <div className="mb-8">
-          <h1 className="text-3xl sm:text-4xl font-black text-white mb-2">Which teams do you follow?</h1>
+        <div className="mb-5">
+          <h1 className="text-3xl sm:text-4xl font-black text-white mb-1.5">Which teams do you follow?</h1>
           <p className="text-white/55">Select as many as you like across any sport. You can update this any time.</p>
         </div>
 
         {/* Sport filter tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-none">
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
           {[{ id: 'all' as const, name: 'All', icon: '🏆' }, ...LEAGUES].map(league => (
             <button
               key={league.id}
@@ -75,7 +75,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Search */}
-        <div className="mb-6 max-w-md">
+        <div className="mb-5 max-w-md">
           <Input
             icon
             placeholder="Search teams, cities…"
@@ -92,7 +92,7 @@ export default function OnboardingPage() {
             <p className="text-sm mt-1">Try a different name or clear the search</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {filteredTeams.map(team => (
               <TeamSelectorCard
                 key={team.id}

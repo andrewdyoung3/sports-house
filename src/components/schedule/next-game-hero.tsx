@@ -23,18 +23,20 @@ const LEAGUE_DISPLAY: Record<string, string> = {
   rugby_int:   'Test Rugby',
 };
 
-// Logo URLs for background watermarks — mirrors the maps in schedule/page.tsx
-const LEAGUE_LOGO: Record<string, string> = {
-  nrl:         'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
-  epl:         'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
-  super_rugby: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
+// Logo URLs + per-logo opacity for background watermarks
+type LogoMeta = { url: string; opacity: number };
+const LEAGUE_LOGO: Record<string, LogoMeta> = {
+  afl:         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png',              opacity: 0.12 },
+  nrl:         { url: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',         opacity: 0.25 },
+  epl:         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',              opacity: 0.30 },
+  super_rugby: { url: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',           opacity: 0.25 },
 };
-const COMPETITION_LOGO: Record<string, string> = {
-  'Champions League': 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
-  'Europa League':    'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
-  'Conference League':'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
-  'FA Cup':           'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
-  'EFL Cup':          'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+const COMPETITION_LOGO: Record<string, LogoMeta> = {
+  'Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',   opacity: 0.55 },
+  'Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', opacity: 0.45 },
+  'Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.45 },
+  'FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',  opacity: 0.38 },
+  'EFL Cup':           { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',  opacity: 0.28 },
 };
 
 interface NextGameHeroProps {
@@ -70,10 +72,12 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
   const { team } = game;
   const displayTime   = formatTimeInZone(game.date, userTz);
   const countdown     = timeUntil(game.date, userTz);
-  const teamLogoUrl   = TEAM_LOGOS[team.id];
-  const leagueLogoUrl = game.competition
+  const teamLogoUrl  = TEAM_LOGOS[team.id];
+  const leagueMeta   = game.competition
     ? COMPETITION_LOGO[game.competition]
     : LEAGUE_LOGO[team.league];
+  const leagueLogoUrl     = leagueMeta?.url;
+  const leagueLogoOpacity = leagueMeta?.opacity ?? 0.25;
 
   const dateLabel = new Intl.DateTimeFormat('en-AU', {
     timeZone: userTz,
@@ -112,7 +116,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             alt=""
             aria-hidden="true"
             className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
-            style={{ right: '-4px', height: '210px', opacity: 0.55, mixBlendMode: 'screen' as const }}
+            style={{ right: '-4px', height: '210px', opacity: leagueLogoOpacity }}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}

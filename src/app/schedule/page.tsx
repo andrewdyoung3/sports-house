@@ -81,6 +81,8 @@ interface BadgeMeta {
   border: string;
   /** Kept for the watermark <img> in ScheduleRow — not shown in the badge. */
   logoUrl?: string;
+  /** Opacity for the watermark logo — defaults to 0.18 if omitted. */
+  logoOpacity?: number;
 }
 
 // ── Primary-league badges ─────────────────────────────────────────────────────
@@ -89,6 +91,8 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     // AFL: navy + gold — no symbol, "AFL" reads cleanly on its own
     label: 'AFL',
     bg: '#001d3d', color: '#f4ac20', border: 'rgba(244,172,32,0.30)',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png',
+    logoOpacity: 0.25,
   },
   nrl: {
     // NRL: ◆ (diamond from the NRL shield mark) in brand red on navy
@@ -96,6 +100,7 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'NRL',
     bg: '#002955', color: '#ffffff', border: 'rgba(226,27,35,0.40)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
+    logoOpacity: 0.18,
   },
   epl: {
     // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
@@ -103,12 +108,14 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'Premier League',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
+    logoOpacity: 0.22,
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
     label: 'Super Rugby',
     bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
+    logoOpacity: 0.18,
   },
   rugby_int: {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
@@ -126,29 +133,38 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'Champions League',
     bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
+    logoOpacity: 0.42,
   },
   'Europa League': {
     // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
     symbol: '◎\uFE0E', symbolColor: '#f57320',
     label: 'Europa League',
     bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
+    logoOpacity: 0.35,
   },
   'Conference League': {
     // UECL: ◉ (inner circle = target / conference identity) in brand teal
     symbol: '◉\uFE0E', symbolColor: '#00c87a',
     label: 'Conference League',
     bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
+    logoOpacity: 0.35,
   },
   'FA Cup': {
     // FA Cup: Three Lions abstracted as ◆ ◆ ◆ is complex — use ✦ on FA red
     symbol: '✦\uFE0E', symbolColor: '#ffffff',
     label: 'FA Cup',
     bg: '#1a0005', color: '#ff2244', border: 'rgba(255,34,68,0.38)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',
+    logoOpacity: 0.30,
   },
   'EFL Cup': {
     // EFL Cup / Carabao Cup: official green palette, "EFL" abbreviation
     label: 'EFL Cup',
     bg: '#0d1f00', color: '#78be20', border: 'rgba(120,190,32,0.38)',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',
+    logoOpacity: 0.22,
   },
 };
 
@@ -201,10 +217,12 @@ function ScheduleRow({
   const { team } = game;
   const displayTime = formatTimeInZone(game.date, userTz);
 
-  const teamLogoUrl   = TEAM_LOGOS[team.id];
-  const leagueLogoUrl = game.competition
-    ? COMPETITION_BADGE[game.competition]?.logoUrl
-    : LEAGUE_BADGE[team.league]?.logoUrl;
+  const teamLogoUrl    = TEAM_LOGOS[team.id];
+  const leagueMeta     = game.competition
+    ? COMPETITION_BADGE[game.competition]
+    : LEAGUE_BADGE[team.league];
+  const leagueLogoUrl  = leagueMeta?.logoUrl;
+  const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
 
   return (
     <div
@@ -251,8 +269,8 @@ function ScheduleRow({
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
-          className="absolute top-1/2 -translate-y-1/2 h-[160%] w-auto object-contain pointer-events-none select-none"
-          style={{ left: '-6px', opacity: 0.42, mixBlendMode: 'screen' as const }}
+          className="absolute top-1/2 -translate-y-1/2 h-[140%] w-auto object-contain pointer-events-none select-none"
+          style={{ right: '-8px', opacity: leagueLogoOpacity }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
