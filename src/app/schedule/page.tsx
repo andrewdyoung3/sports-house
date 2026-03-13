@@ -778,47 +778,50 @@ export default function SchedulePage() {
         <div>
           {/* Filters */}
           {!activeLoading && (
-            <div className="mb-8 space-y-2">
-              {/* Row 1: Team pills + league browse pills */}
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {/* "All my teams" pill */}
-                <TeamFilterPill
-                  label="All"
-                  active={!isLeagueMode && activeTeamId === 'all'}
-                  onClick={() => { setActiveLeagueId(null); setActiveTeamId('all'); }}
-                />
-                {/* Individual followed-team pills */}
-                {teams.map(team => (
+            <div className="mb-8 space-y-3">
+
+              {/* Row 1: My teams */}
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">My Teams</p>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   <TeamFilterPill
-                    key={team.id}
-                    label={team.abbreviation}
-                    logoUrl={TEAM_LOGOS[team.id]}
-                    primaryColor={team.primaryColor}
-                    league={team.league}
-                    active={!isLeagueMode && activeTeamId === team.id}
-                    onClick={() => { setActiveLeagueId(null); setActiveTeamId(team.id); }}
+                    label="All"
+                    active={!isLeagueMode && activeTeamId === 'all'}
+                    onClick={() => { setActiveLeagueId(null); setActiveTeamId('all'); }}
                   />
-                ))}
-                {/* Divider */}
-                {teams.length > 0 && (
-                  <div className="flex items-center px-0.5">
-                    <div className="w-px h-5 bg-white/12" />
-                  </div>
-                )}
-                {/* League browse pills */}
-                {BROWSABLE_LEAGUES.map(league => (
-                  <LeagueFilterPill
-                    key={league.id}
-                    leagueId={league.id}
-                    active={activeLeagueId === league.id}
-                    onClick={() => {
-                      setActiveLeagueId(prev => prev === league.id ? null : league.id);
-                      setActiveTeamId('all');
-                    }}
-                  />
-                ))}
+                  {teams.map(team => (
+                    <TeamFilterPill
+                      key={team.id}
+                      label={team.abbreviation}
+                      logoUrl={TEAM_LOGOS[team.id]}
+                      primaryColor={team.primaryColor}
+                      league={team.league}
+                      active={!isLeagueMode && activeTeamId === team.id}
+                      onClick={() => { setActiveLeagueId(null); setActiveTeamId(team.id); }}
+                    />
+                  ))}
+                </div>
               </div>
-              {/* Row 2: Secondary filters */}
+
+              {/* Row 2: Browse by league */}
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse League</p>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  {BROWSABLE_LEAGUES.map(league => (
+                    <LeagueFilterPill
+                      key={league.id}
+                      leagueId={league.id}
+                      active={activeLeagueId === league.id}
+                      onClick={() => {
+                        setActiveLeagueId(prev => prev === league.id ? null : league.id);
+                        setActiveTeamId('all');
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Row 3: Secondary filters */}
               <div className="flex gap-1.5 items-center">
                 <FilterPill
                   label="This Round"
@@ -826,7 +829,6 @@ export default function SchedulePage() {
                   onClick={() => setGameRangeFilter(prev => prev === 'this_round' ? 'all' : 'this_round')}
                   muted
                 />
-                {/* Home/Away only meaningful for my-teams mode */}
                 {!isLeagueMode && (
                   <>
                     <div className="w-px h-4 bg-white/10" />
@@ -841,19 +843,8 @@ export default function SchedulePage() {
                     ))}
                   </>
                 )}
-                {/* League mode: quick context label */}
-                {isLeagueMode && (
-                  <span className="text-[10px] text-white/25 font-medium ml-1">
-                    Showing all fixtures ·{' '}
-                    <button
-                      className="text-white/40 hover:text-white/70 transition-colors underline underline-offset-2"
-                      onClick={() => setActiveLeagueId(null)}
-                    >
-                      back to my teams
-                    </button>
-                  </span>
-                )}
               </div>
+
             </div>
           )}
 
