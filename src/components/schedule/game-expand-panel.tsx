@@ -14,6 +14,11 @@ interface GameExpandPanelProps {
   game: ScheduleEntry;
   /** Override outer div className (e.g. to change bottom border-radius). */
   className?: string;
+  /**
+   * Compact mode — used in league-browse view.
+   * Requests shorter AI output and hides detailed sections (tactical, spotlight, verdict, news).
+   */
+  compact?: boolean;
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
@@ -314,7 +319,7 @@ function AILoadingCard({ color }: { color: string }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
+export function GameExpandPanel({ game, className, compact = false }: GameExpandPanelProps) {
   const { team } = game;
 
   // AI only makes sense for imminent fixtures — too much changes further out.
@@ -439,6 +444,7 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
           opponentName:    game.opponent,
           gameId:          game.id,
           competition:     game.competition,
+          compact,
           context:         liveContext,
           teamResults:     liveResults,
           oppResults:      liveOppResults,
@@ -527,8 +533,8 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
         </div>
       )}
 
-      {/* ── Tactical Battle (AI only) ── */}
-      {!aiLoading && aiPreview && (
+      {/* ── Tactical Battle (AI only, full mode) ── */}
+      {!compact && !aiLoading && aiPreview && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
             <Shield className="h-3 w-3" style={{ color: team.primaryColor }} />
@@ -682,8 +688,8 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
         </div>
       </div>
 
-      {/* ── Player Spotlight + Verdict (AI only) ── */}
-      {!aiLoading && aiPreview && (
+      {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}
+      {!compact && !aiLoading && aiPreview && (
         <div className="grid grid-cols-2 gap-5">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
@@ -702,8 +708,8 @@ export function GameExpandPanel({ game, className }: GameExpandPanelProps) {
         </div>
       )}
 
-      {/* ── Team News ── (EPL only, when available) */}
-      {!loading && hasNews && (
+      {/* ── Team News ── (EPL only, when available; hidden in compact mode) */}
+      {!compact && !loading && hasNews && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
             <Newspaper className="h-3 w-3" />

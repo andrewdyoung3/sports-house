@@ -7,6 +7,7 @@ import { Calendar, MapPin, Tv, Plus, ChevronDown } from 'lucide-react';
 import { getFollowedTeams } from '@/lib/user-prefs';
 import { getUpcomingGames } from '@/lib/mock-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { TEAMS, LEAGUES } from '@/lib/teams';
 import { contrastColor, formatTimeInZone, datekeyInZone } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
@@ -24,6 +25,27 @@ type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** Leagues backed by real APIs — all others use deterministic mock data. */
 const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+
+/** Ordered list for the league filter pills. */
+const BROWSABLE_LEAGUES = LEAGUES.filter(l => REAL_DATA_LEAGUES.has(l.id));
+
+/** Build a minimal Team stub for games whose teamId isn't in the TEAMS array. */
+function makeFallbackTeam(game: UpcomingGame, league: string): Team {
+  const suffix = game.teamId.split('-').slice(1).join(' ');
+  return {
+    id:             game.teamId,
+    name:           suffix || game.teamId,
+    shortName:      suffix || game.teamId,
+    abbreviation:   (suffix || game.teamId).slice(0, 3).toUpperCase(),
+    league:         league as SportKey,
+    sport:          'Unknown',
+    city:           '',
+    country:        '',
+    primaryColor:   '#4B5563',
+    secondaryColor: '#6B7280',
+    venue:          game.venue ?? '',
+  };
+}
 
 const MOCK_GAMES_PER_TEAM = 10;
 
@@ -201,6 +223,8 @@ interface ScheduleRowProps {
   dateKey: string;
   isHighlighted: boolean;
   isExpanded: boolean;
+  /** True in league-browse mode when the user follows one of the two teams. */
+  isFollowed?: boolean;
   onHover: (dateKey: string | null) => void;
   onToggle: () => void;
 }
@@ -211,6 +235,7 @@ function ScheduleRow({
   dateKey,
   isHighlighted,
   isExpanded,
+  isFollowed = false,
   onHover,
   onToggle,
 }: ScheduleRowProps) {
@@ -232,12 +257,14 @@ function ScheduleRow({
         isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
       ].join(' ')}
       style={{
-        borderLeftColor: `${team.primaryColor}cc`,
-        borderLeftWidth: '3px',
+        borderLeftColor: isFollowed ? team.primaryColor : `${team.primaryColor}cc`,
+        borderLeftWidth: isFollowed ? '3px' : '3px',
         transition: 'box-shadow 0.4s ease-out',
-        boxShadow: isHighlighted && !isExpanded
-          ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
-          : undefined,
+        boxShadow: isFollowed && !isExpanded
+          ? `inset 0 0 0 1px ${team.primaryColor}30, 0 0 32px ${team.primaryColor}28`
+          : isHighlighted && !isExpanded
+            ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
+            : undefined,
       }}
       onClick={onToggle}
       onMouseEnter={() => onHover(dateKey)}
@@ -309,6 +336,18 @@ function ScheduleRow({
             {game.opponent}
           </span>
           <FixtureBadge league={team.league} competition={game.competition} />
+          {isFollowed && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none"
+              style={{
+                background: `${team.primaryColor}22`,
+                color:      team.primaryColor,
+                border:     `1px solid ${team.primaryColor}44`,
+              }}
+            >
+              ★ Following
+            </span>
+          )}
         </div>
 
         {/* Secondary line: venue + broadcast */}
@@ -446,6 +485,39 @@ function TeamFilterPill({
   );
 }
 
+// ─── LeagueFilterPill ─────────────────────────────────────────────────────────
+
+function LeagueFilterPill({
+  leagueId, active, onClick,
+}: {
+  leagueId: string; active: boolean; onClick: () => void;
+}) {
+  const meta = LEAGUE_BADGE[leagueId];
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0"
+      style={active ? {
+        background:  meta?.bg     ?? 'rgba(99,102,241,0.25)',
+        color:       meta?.color  ?? 'white',
+        border:      `1px solid ${meta?.border ?? 'rgba(99,102,241,0.5)'}`,
+        boxShadow:   `0 0 14px ${meta?.bg ?? '#6366f1'}55`,
+      } : {
+        background: 'rgba(255,255,255,0.06)',
+        color:      'rgba(255,255,255,0.45)',
+        border:     '1px solid transparent',
+      }}
+    >
+      {meta?.symbol && (
+        <span aria-hidden="true" style={{ color: meta.symbolColor ?? meta.color, fontSize: '8px' }}>
+          {meta.symbol}
+        </span>
+      )}
+      {meta?.label ?? leagueId.toUpperCase()}
+    </button>
+  );
+}
+
 // ─── Followed-teams sidebar widget ────────────────────────────────────────────
 
 function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
@@ -499,6 +571,9 @@ export default function SchedulePage() {
   const [userTz,   setUserTz]   = useState('Australia/Brisbane');
 
   const [activeTeamId,    setActiveTeamId]    = useState<string>('all');
+  const [activeLeagueId,  setActiveLeagueId]  = useState<string | null>(null);
+  const [leagueGames,     setLeagueGames]     = useState<ScheduleEntry[]>([]);
+  const [leagueLoading,   setLeagueLoading]   = useState(false);
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
   const [standings,       setStandings]       = useState<StandingRow[] | null>(null);
@@ -523,11 +598,12 @@ export default function SchedulePage() {
     }
   }, []);
 
-  // Fetch standings for the selected team's league, or for the expanded card's league.
+  // Fetch standings: prioritise league-browse mode → selected team → expanded card.
   useEffect(() => {
-    const league = activeTeamId !== 'all'
-      ? teams.find(t => t.id === activeTeamId)?.league ?? null
-      : allGames.find(g => g.id === expandedId)?.team.league ?? null;
+    const league = activeLeagueId
+      ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league ?? null : null)
+      ?? allGames.find(g => g.id === expandedId)?.team.league
+      ?? null;
 
     if (!league || !REAL_DATA_LEAGUES.has(league)) {
       setStandings(null);
@@ -538,7 +614,26 @@ export default function SchedulePage() {
       .then(r => r.ok ? r.json() : [])
       .then((rows: StandingRow[]) => setStandings(rows.length > 0 ? rows : null))
       .catch(() => setStandings(null));
-  }, [activeTeamId, expandedId, teams]);
+  }, [activeLeagueId, activeTeamId, expandedId, teams, allGames]);
+
+  // Fetch all fixtures for a league when the user activates league-browse mode.
+  useEffect(() => {
+    if (!activeLeagueId) { setLeagueGames([]); return; }
+    setLeagueLoading(true);
+    setExpandedId(null);
+    fetch(`/api/league-fixtures?league=${activeLeagueId}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((games: UpcomingGame[]) => {
+        const entries: ScheduleEntry[] = games.map(g => {
+          const team = TEAMS.find(t => t.id === g.teamId) ?? makeFallbackTeam(g, activeLeagueId);
+          return { ...g, team };
+        });
+        entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setLeagueGames(entries);
+      })
+      .catch(() => {})
+      .finally(() => setLeagueLoading(false));
+  }, [activeLeagueId]);
 
   useEffect(() => {
     const followed = getFollowedTeams();
@@ -563,23 +658,28 @@ export default function SchedulePage() {
     });
   }, []);
 
-  // IDs to highlight in the sidebar standings table.
+  // IDs of teams the user follows — used both for standings highlighting and
+  // for the "following" badge on league-browse rows.
   const followedTeamIds = useMemo(() => {
     const ids = teams.map(t => t.id);
-    const eg = allGames.find(g => g.id === expandedId);
+    const eg = [...allGames, ...leagueGames].find(g => g.id === expandedId);
     if (eg?.opponentId) ids.push(eg.opponentId);
     return new Set(ids);
-  }, [teams, expandedId, allGames]);
+  }, [teams, expandedId, allGames, leagueGames]);
 
-  // Team + home/away filters
+  const isLeagueMode = activeLeagueId !== null;
+
+  // In league-browse mode: show all league games (home/away filter still applies).
+  // In team mode: show followed-team games filtered by active team pill.
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
-    return allGames.filter(g => {
-      if (activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
+    const source = isLeagueMode ? leagueGames : allGames;
+    return source.filter(g => {
+      if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
       return true;
     });
-  }, [allGames, activeTeamId, homeAwayFilter]);
+  }, [isLeagueMode, leagueGames, allGames, activeTeamId, homeAwayFilter]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -614,6 +714,18 @@ export default function SchedulePage() {
     return groups;
   }, [displayedGames, userTz]);
 
+  // Hero game: in league mode, prefer a followed team's next fixture.
+  const heroGame = useMemo(() => {
+    if (displayedGames.length === 0) return null;
+    if (!isLeagueMode) return displayedGames[0];
+    return (
+      displayedGames.find(g =>
+        followedTeamIds.has(g.team.id) ||
+        (g.opponentId != null && followedTeamIds.has(g.opponentId)),
+      ) ?? displayedGames[0]
+    );
+  }, [displayedGames, isLeagueMode, followedTeamIds]);
+
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
 
@@ -636,7 +748,9 @@ export default function SchedulePage() {
     setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
-  if (!loading && teams.length === 0) return <EmptyState />;
+  if (!loading && !isLeagueMode && teams.length === 0) return <EmptyState />;
+
+  const activeLoading = isLeagueMode ? leagueLoading : loading;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -645,14 +759,16 @@ export default function SchedulePage() {
       <div className="mb-6">
         <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
           <Calendar className="h-6 w-6 text-indigo-400" />
-          Your Schedule
+          {isLeagueMode
+            ? `${BROWSABLE_LEAGUES.find(l => l.id === activeLeagueId)?.fullName ?? 'League'} — All Fixtures`
+            : 'Your Schedule'}
         </h1>
-        {loading && <p className="text-white/40 text-sm">Loading fixtures…</p>}
+        {activeLoading && <p className="text-white/40 text-sm">Loading fixtures…</p>}
       </div>
 
       {/* ── Next Game Hero ── */}
-      {!loading && displayedGames.length > 0 && (
-        <NextGameHero game={displayedGames[0]} userTz={userTz} />
+      {!activeLoading && heroGame && (
+        <NextGameHero game={heroGame} userTz={userTz} />
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}
@@ -661,15 +777,17 @@ export default function SchedulePage() {
         {/* ── Left column: filters + schedule ── */}
         <div>
           {/* Filters */}
-          {!loading && (
+          {!activeLoading && (
             <div className="mb-8 space-y-2">
-              {/* Row 1: Team pills — single scrollable row */}
+              {/* Row 1: Team pills + league browse pills */}
               <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {/* "All my teams" pill */}
                 <TeamFilterPill
                   label="All"
-                  active={activeTeamId === 'all'}
-                  onClick={() => setActiveTeamId('all')}
+                  active={!isLeagueMode && activeTeamId === 'all'}
+                  onClick={() => { setActiveLeagueId(null); setActiveTeamId('all'); }}
                 />
+                {/* Individual followed-team pills */}
                 {teams.map(team => (
                   <TeamFilterPill
                     key={team.id}
@@ -677,8 +795,26 @@ export default function SchedulePage() {
                     logoUrl={TEAM_LOGOS[team.id]}
                     primaryColor={team.primaryColor}
                     league={team.league}
-                    active={activeTeamId === team.id}
-                    onClick={() => setActiveTeamId(team.id)}
+                    active={!isLeagueMode && activeTeamId === team.id}
+                    onClick={() => { setActiveLeagueId(null); setActiveTeamId(team.id); }}
+                  />
+                ))}
+                {/* Divider */}
+                {teams.length > 0 && (
+                  <div className="flex items-center px-0.5">
+                    <div className="w-px h-5 bg-white/12" />
+                  </div>
+                )}
+                {/* League browse pills */}
+                {BROWSABLE_LEAGUES.map(league => (
+                  <LeagueFilterPill
+                    key={league.id}
+                    leagueId={league.id}
+                    active={activeLeagueId === league.id}
+                    onClick={() => {
+                      setActiveLeagueId(prev => prev === league.id ? null : league.id);
+                      setActiveTeamId('all');
+                    }}
                   />
                 ))}
               </div>
@@ -690,22 +826,39 @@ export default function SchedulePage() {
                   onClick={() => setGameRangeFilter(prev => prev === 'this_round' ? 'all' : 'this_round')}
                   muted
                 />
-                <div className="w-px h-4 bg-white/10" />
-                {(['all', 'home', 'away'] as const).map(opt => (
-                  <FilterPill
-                    key={opt}
-                    label={opt === 'all' ? 'All games' : opt.charAt(0).toUpperCase() + opt.slice(1)}
-                    active={homeAwayFilter === opt}
-                    onClick={() => setHomeAwayFilter(opt)}
-                    muted
-                  />
-                ))}
+                {/* Home/Away only meaningful for my-teams mode */}
+                {!isLeagueMode && (
+                  <>
+                    <div className="w-px h-4 bg-white/10" />
+                    {(['all', 'home', 'away'] as const).map(opt => (
+                      <FilterPill
+                        key={opt}
+                        label={opt === 'all' ? 'All games' : opt.charAt(0).toUpperCase() + opt.slice(1)}
+                        active={homeAwayFilter === opt}
+                        onClick={() => setHomeAwayFilter(opt)}
+                        muted
+                      />
+                    ))}
+                  </>
+                )}
+                {/* League mode: quick context label */}
+                {isLeagueMode && (
+                  <span className="text-[10px] text-white/25 font-medium ml-1">
+                    Showing all fixtures ·{' '}
+                    <button
+                      className="text-white/40 hover:text-white/70 transition-colors underline underline-offset-2"
+                      onClick={() => setActiveLeagueId(null)}
+                    >
+                      back to my teams
+                    </button>
+                  </span>
+                )}
               </div>
             </div>
           )}
 
           {/* Schedule content */}
-          {loading ? (
+          {activeLoading ? (
             <ScheduleSkeleton />
           ) : displayedGames.length === 0 ? (
             <div className="text-center py-20 text-white/40">
@@ -730,6 +883,11 @@ export default function SchedulePage() {
                     {games.map(game => {
                       const isHighlighted = hoveredDateKey === dateKey;
                       const isExpanded    = expandedId === game.id;
+                      // In league mode, highlight rows where the user follows either team.
+                      const isFollowed    = isLeagueMode && (
+                        followedTeamIds.has(game.team.id) ||
+                        (game.opponentId != null && followedTeamIds.has(game.opponentId))
+                      );
 
                       return (
                         <div
@@ -750,12 +908,13 @@ export default function SchedulePage() {
                             dateKey={dateKey}
                             isHighlighted={isHighlighted}
                             isExpanded={isExpanded}
+                            isFollowed={isFollowed}
                             onHover={handleCalendarHover}
                             onToggle={() => toggleExpand(game.id)}
                           />
                           {everExpandedIds.has(game.id) && (
                             <div style={{ display: isExpanded ? 'block' : 'none' }}>
-                              <GameExpandPanel game={game} />
+                              <GameExpandPanel game={game} compact={isLeagueMode} />
                             </div>
                           )}
                         </div>
@@ -772,7 +931,7 @@ export default function SchedulePage() {
         <aside className="hidden lg:block sticky top-20 space-y-4 mt-0">
 
           {/* Calendar */}
-          {!loading && (
+          {!activeLoading && (
             <ScheduleCalendar
               games={displayedGames}
               userTz={userTz}
@@ -782,20 +941,20 @@ export default function SchedulePage() {
             />
           )}
 
-          {/* League standings — shown when a team is selected OR a card is expanded */}
-          {!loading && standings && (activeTeamId !== 'all' || expandedId !== null) && (
+          {/* League standings — shown in league-browse mode, when a team is selected, or when a card is expanded */}
+          {!activeLoading && standings && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null) && (
             <LeagueTable
               league={(
-                activeTeamId !== 'all'
-                  ? teams.find(t => t.id === activeTeamId)?.league
-                  : allGames.find(g => g.id === expandedId)?.team.league
+                activeLeagueId
+                  ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league : undefined)
+                  ?? [...allGames, ...leagueGames].find(g => g.id === expandedId)?.team.league
               ) as SportKey}
               rows={standings}
               followedTeamIds={followedTeamIds}
             />
           )}
 
-          {/* Followed teams */}
+          {/* Followed teams — always show in league mode so user sees who they follow */}
           <FollowedTeamsWidget teams={teams} />
 
         </aside>

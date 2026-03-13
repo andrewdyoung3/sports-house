@@ -122,6 +122,7 @@ function buildDataBlock(
   teamResults: GameResult[],
   oppResults: GameResult[],
   competition?: string,
+  compact?: boolean,
 ): string {
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
@@ -226,6 +227,15 @@ function buildDataBlock(
     lines.push('');
   }
 
+  if (compact) {
+    lines.push('');
+    lines.push('BREVITY MODE — this preview appears in a league-wide fixture list alongside many other games. Be concise:');
+    lines.push('• "context": ONE sentence, max 25 words. Essential narrative only — what is at stake.');
+    lines.push('• "tacticalBattle": ONE sentence, max 20 words. The single decisive match-up.');
+    lines.push('• "playerSpotlight": player or role name + one brief phrase, max 12 words total.');
+    lines.push('• "verdict": ONE sentence, max 20 words. Most likely outcome and why.');
+    lines.push('• "keyInsights": exactly TWO points, max 8 words each.');
+  }
   lines.push(`Generate the match preview using only the data provided above. Do not invent statistics, player names not mentioned, or historical records not given.`);
 
   return lines.join('\n');
@@ -264,11 +274,11 @@ function buildUpdatePrompt(
 
 // ─── Claude call ──────────────────────────────────────────────────────────────
 
-async function callClaude(prompt: string): Promise<AIPreview> {
+async function callClaude(prompt: string, compact = false): Promise<AIPreview> {
   const client   = new Anthropic();
   const response = await client.messages.create({
     model:      'claude-sonnet-4-6',
-    max_tokens: 800,
+    max_tokens: compact ? 380 : 800,
     system:     SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: prompt }],
   });
@@ -279,10 +289,10 @@ async function callClaude(prompt: string): Promise<AIPreview> {
   return JSON.parse(cleaned) as AIPreview;
 }
 
-// Cache per unique (gameId, prompt) pair — 6-hour TTL.
-// Using Next.js unstable_cache so the same fixture isn't regenerated on every request.
+// Cache per unique (cacheKey, prompt, compact) triple — 6-hour TTL.
+// compact previews are cached separately (shorter content, different prompt).
 const getCachedPreview = unstable_cache(
-  async (_gameId: string, prompt: string): Promise<AIPreview> => callClaude(prompt),
+  async (_cacheKey: string, prompt: string, compact: boolean): Promise<AIPreview> => callClaude(prompt, compact),
   ['ai-preview-v2'],
   { revalidate: 21600 }, // 6 hours
 );
@@ -308,13 +318,14 @@ export async function POST(req: NextRequest) {
       teamResults:     GameResult[];
       oppResults:      GameResult[];
       competition?:    string;
+      compact?:        boolean;
       previousPreview?: AIPreview;
       newsFingerprint?: string;
     };
 
     const {
       league, teamId, teamName, opponentName, gameId,
-      context, teamResults, oppResults, competition,
+      context, teamResults, oppResults, competition, compact,
       previousPreview, newsFingerprint,
     } = body;
 
@@ -325,20 +336,21 @@ export async function POST(req: NextRequest) {
     let prompt: string;
     let cacheKey: string;
 
+    const isCompact = compact === true;
+
     if (previousPreview && newsFingerprint) {
       // Update mode — news has changed since last generation.
-      // Build a compact prompt that shows Claude the old preview + only the new news.
       const teamNews = context.teamNews ?? [];
       const oppNews  = context.opponentNews ?? [];
       prompt   = buildUpdatePrompt(previousPreview, teamName, opponentName, teamNews, oppNews);
-      cacheKey = `update:${gameId}:${newsFingerprint}`;
+      cacheKey = `update:${gameId}:${newsFingerprint}${isCompact ? ':c' : ''}`;
     } else {
       // Full generation mode.
-      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition);
-      cacheKey = gameId;
+      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition, isCompact);
+      cacheKey = isCompact ? `${gameId}:compact` : gameId;
     }
 
-    const preview = await getCachedPreview(cacheKey, prompt);
+    const preview = await getCachedPreview(cacheKey, prompt, isCompact);
     return NextResponse.json(preview);
   } catch (err) {
     console.error('[/api/ai-preview]', err);
