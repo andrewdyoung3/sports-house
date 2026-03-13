@@ -68,6 +68,15 @@ INFORMATION ECONOMY — avoid redundancy:
 • Directional cues (recency without the tally) are acceptable: "fresh off a convincing derby win", "arriving on the back of successive defeats", "unbeaten in six". Count-based recitations are not: "won three of their last four".
 • For standings: convey the stakes and narrative weight — "locked in a title race", "deep in a relegation battle", "chasing Champions League football" — not the coordinates.
 
+STATISTICAL CALIBRATION — think like a good analyst:
+• The CURRENT LADDER/TABLE data includes a "played" count. Use it to judge how much weight the data deserves.
+• Early season (≤4 games played): the ladder is noise, not signal. A team sitting first after three rounds has proved almost nothing. Do NOT write "on course for the title", "early front-runner", "set the standard", or any phrase implying the season's shape is clear. Instead, acknowledge the open nature: "too early to draw firm conclusions", "the table will look very different in a month", "results are forming a picture but the sample is small".
+• Small-sample form (≤3 results in the form guide): do not overstate momentum. A single heavy win or loss does not constitute a trend. Only describe sustained momentum when there are four or more results pointing the same direction.
+• Exception — strong early signals ARE worth noting when they are genuinely striking: three consecutive high-margin wins, three consecutive heavy defeats, or an unusually dominant set-piece record across all fixtures. Name the signal clearly and note it is early but meaningful.
+• Mid-season (5–15 games): patterns are becoming real. Discuss trends with moderate confidence.
+• Late season (16+ games): form, ladder position, and momentum carry full analytical weight.
+• When the "played" count differs between the two teams, acknowledge the imbalance if it affects your interpretation.
+
 COMPETITION CONTEXT — critical:
 • The COMPETITION field tells you what is actually being played. The PRIMARY LEAGUE field (when present) is background only.
 • For cup or European fixtures (e.g. Champions League, FA Cup, EFL Cup, Europa League, Rugby Championship, Six Nations), the "context" section must focus on the teams' form and journey in THAT competition — not their domestic league table position. A team's EPL standing is irrelevant to a Champions League preview.
