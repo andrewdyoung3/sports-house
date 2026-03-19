@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "clear-cache": "rimraf .next/cache/fetch-cache"
+    "clear-cache": "rimraf .next/cache/fetch-cache && echo \"Server cache cleared. Also open DevTools → Application → Local Storage and delete all ai-preview-* keys to clear browser cache.\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

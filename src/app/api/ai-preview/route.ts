@@ -410,7 +410,7 @@ async function callClaude(prompt: string, compact = false): Promise<AIPreview> {
 // compact previews are cached separately (shorter content, different prompt).
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean): Promise<AIPreview> => callClaude(prompt, compact),
-  ['ai-preview-v19'],
+  ['ai-preview-v20'],
   { revalidate: 21600 }, // 6 hours
 );
 

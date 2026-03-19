@@ -24,19 +24,60 @@ interface GameExpandPanelProps {
 /** Leagues with a real /api/results + /api/preview backend. */
 const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 
-// ── In-memory panel data cache ────────────────────────────────────────────────
-// Shared across all GameExpandPanel instances for the same page lifetime.
-// When the hero card pre-loads a game's data, the matching schedule-list card
-// reads from this cache on mount and skips its API calls entirely.
+// ── Panel data cache ───────────────────────────────────────────────────────────
+// Backed by sessionStorage so it survives navigation (dashboard ↔ schedule).
+// In-memory Map is the fast path; sessionStorage is read once on module load
+// to seed it, then written on every set().
+//
+// TTL: entries older than 5 minutes are evicted on read to prevent stale data.
 
 interface PanelData {
   results:    GameResult[];
   oppResults: GameResult[];
   context:    PreviewContext;
   standings:  StandingRow[] | null;
+  /** Unix ms — used to evict stale entries. */
+  cachedAt:   number;
 }
 
-const panelDataCache = new Map<string, PanelData>();
+const PANEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches API Cache-Control
+const PANEL_SESSION_KEY  = 'panel-data-cache-v1';
+
+/** Seed the in-memory map from sessionStorage once on module load. */
+function loadPanelSessionCache(): Map<string, PanelData> {
+  const map = new Map<string, PanelData>();
+  try {
+    const raw = sessionStorage.getItem(PANEL_SESSION_KEY);
+    if (!raw) return map;
+    const parsed = JSON.parse(raw) as Record<string, PanelData>;
+    const now = Date.now();
+    for (const [id, entry] of Object.entries(parsed)) {
+      if (now - (entry.cachedAt ?? 0) < PANEL_CACHE_TTL_MS) map.set(id, entry);
+    }
+  } catch { /* sessionStorage unavailable (SSR guard) or corrupt */ }
+  return map;
+}
+
+const panelDataCache = loadPanelSessionCache();
+
+function setPanelCache(gameId: string, data: PanelData): void {
+  panelDataCache.set(gameId, data);
+  try {
+    const obj: Record<string, PanelData> = {};
+    panelDataCache.forEach((v, k) => { obj[k] = v; });
+    sessionStorage.setItem(PANEL_SESSION_KEY, JSON.stringify(obj));
+  } catch { /* quota exceeded or SSR */ }
+}
+
+function getPanelCache(gameId: string): PanelData | undefined {
+  const entry = panelDataCache.get(gameId);
+  if (!entry) return undefined;
+  if (Date.now() - (entry.cachedAt ?? 0) >= PANEL_CACHE_TTL_MS) {
+    panelDataCache.delete(gameId);
+    return undefined;
+  }
+  return entry;
+}
 
 // ── Client-side AI preview cache ──────────────────────────────────────────────
 // v2: fingerprint-based cache keyed by news content, not time.
@@ -80,8 +121,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v4: evict caches generated before the no-redundancy prompt update.
-const CACHE_KEY = (gameId: string) => `ai-preview-v4:${gameId}`;
+// v19: knockout ties strip standings from data block; absolute phase-transition prohibition.
+const CACHE_KEY = (gameId: string) => `ai-preview-v20:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -344,7 +385,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
   // panel shows full content instantly when another instance already loaded it.
   useEffect(() => {
     // Panel data (results, context, standings) — populated by any prior instance
-    const mem = panelDataCache.get(game.id);
+    const mem = getPanelCache(game.id);
     if (mem) {
       setResults(mem.results);
       setOppResults(mem.oppResults);
@@ -368,7 +409,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
 
     // Fast path: panel data was pre-loaded by another instance (e.g. the hero card).
     // State is already set by the mount effect; just ensure AI loading clears.
-    if (panelDataCache.has(game.id)) {
+    if (getPanelCache(game.id)) {
       setAiLoading(false);
       return;
     }
@@ -401,12 +442,13 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
       if (Array.isArray(standingsData) && standingsData.length > 0) setStandings(standingsData);
       setLoading(false);
 
-      // Populate in-memory cache so other panel instances for this game skip fetching.
-      panelDataCache.set(game.id, {
+      // Persist to sessionStorage so other instances — including across navigation — skip fetching.
+      setPanelCache(game.id, {
         results:    liveResults,
         oppResults: liveOppResults,
         context:    liveContext as PreviewContext,
         standings:  Array.isArray(standingsData) && standingsData.length > 0 ? standingsData : null,
+        cachedAt:   Date.now(),
       });
 
       if (!aiEnabled) {
