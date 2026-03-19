@@ -80,6 +80,7 @@ INFORMATION ECONOMY — no redundant data:
 • Directional cues without counts are acceptable where they set up an analytical point: "arriving on the back of successive defeats", "unbeaten at home this season". These are acceptable only if they lead somewhere — not as standalone observations.
 • Forbidden vague momentum phrases — these assert something without saying anything: "building momentum", "hitting their stride", "finding their form", "growing in confidence", "on the rise", "firing on all cylinders", "clicking into gear". If form is genuinely positive, state the specific structural reason — what is working and why it matters for this fixture.
 • For standings: state the stakes and what they mean structurally — not the coordinates that produced them.
+• Defensive/offensive records: never cite a raw total in isolation ("52 points conceded", "14 goals scored"). A raw number is meaningless without context. Instead, express the record as a league rank — "the tightest defence in the competition", "conceding the fewest points of any side", "the second-highest scoring attack". If the data doesn't tell you where they rank, describe the quality directionally ("among the better defensive sides") rather than quoting a figure. The analytical question is always: where do they sit relative to the rest of the league?
 
 SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring range:
 • NRL Rugby League: scores routinely reach 30–50 pts per side. ≤10 pts margin = competitive; 11–20 pts = clear defeat; 21–30 pts = comfortable; 31+ pts = heavy/hammering. A 32–40 loss is an 8-point margin — that is a competitive defeat, NOT a heavy loss.
@@ -409,7 +410,7 @@ async function callClaude(prompt: string, compact = false): Promise<AIPreview> {
 // compact previews are cached separately (shorter content, different prompt).
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean): Promise<AIPreview> => callClaude(prompt, compact),
-  ['ai-preview-v18'],
+  ['ai-preview-v19'],
   { revalidate: 21600 }, // 6 hours
 );
 
