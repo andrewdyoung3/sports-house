@@ -142,7 +142,7 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   rugby_int: {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
     symbol: '✦\uFE0E', symbolColor: '#8899bb',
-    label: 'Test',
+    label: 'Test Rugby',
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
   },
 };
@@ -598,23 +598,25 @@ export default function SchedulePage() {
     }
   }, []);
 
-  // Fetch standings: prioritise league-browse mode → selected team → expanded card.
-  useEffect(() => {
+  // Resolve which league's standings to show. Memoised so the fetch below only
+  // re-runs when the resolved league actually changes — not on every card expand.
+  const standingsLeague = useMemo((): string | null => {
     const league = activeLeagueId
       ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league ?? null : null)
       ?? allGames.find(g => g.id === expandedId)?.team.league
       ?? null;
+    return league && REAL_DATA_LEAGUES.has(league) ? league : null;
+  }, [activeLeagueId, activeTeamId, expandedId, teams, allGames]);
 
-    if (!league || !REAL_DATA_LEAGUES.has(league)) {
-      setStandings(null);
-      return;
-    }
+  // Fetch standings when the resolved league changes (not on every expand/collapse).
+  useEffect(() => {
+    if (!standingsLeague) { setStandings(null); return; }
     setStandings(null);
-    fetch(`/api/standings?league=${league}`)
+    fetch(`/api/standings?league=${standingsLeague}`)
       .then(r => r.ok ? r.json() : [])
       .then((rows: StandingRow[]) => setStandings(rows.length > 0 ? rows : null))
       .catch(() => setStandings(null));
-  }, [activeLeagueId, activeTeamId, expandedId, teams, allGames]);
+  }, [standingsLeague]);
 
   // Fetch all fixtures for a league when the user activates league-browse mode.
   useEffect(() => {
