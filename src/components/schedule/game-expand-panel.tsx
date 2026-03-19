@@ -41,7 +41,7 @@ interface PanelData {
 }
 
 const PANEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches API Cache-Control
-const PANEL_SESSION_KEY  = 'panel-data-cache-v1';
+const PANEL_SESSION_KEY  = 'panel-data-cache-v2';
 
 /** Seed the in-memory map from sessionStorage once on module load. */
 function loadPanelSessionCache(): Map<string, PanelData> {
@@ -385,7 +385,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
   // panel shows full content instantly when another instance already loaded it.
   useEffect(() => {
     // Panel data (results, context, standings) — populated by any prior instance
-    const mem = getPanelCache(game.id);
+    const mem = getPanelCache(`${game.id}:${team.id}`);
     if (mem) {
       setResults(mem.results);
       setOppResults(mem.oppResults);
@@ -409,7 +409,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
 
     // Fast path: panel data was pre-loaded by another instance (e.g. the hero card).
     // State is already set by the mount effect; just ensure AI loading clears.
-    if (getPanelCache(game.id)) {
+    if (getPanelCache(`${game.id}:${team.id}`)) {
       setAiLoading(false);
       return;
     }
@@ -443,7 +443,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
       setLoading(false);
 
       // Persist to sessionStorage so other instances — including across navigation — skip fetching.
-      setPanelCache(game.id, {
+      setPanelCache(`${game.id}:${team.id}`, {
         results:    liveResults,
         oppResults: liveOppResults,
         context:    liveContext as PreviewContext,
