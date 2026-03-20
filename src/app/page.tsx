@@ -172,7 +172,7 @@ export default function LandingPage() {
       <section className="border-t border-white/8 bg-white/3">
         <div className="max-w-3xl mx-auto px-4 py-24 text-center">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Grab life by the ball.
+            Grab life by the ball
           </h2>
           <p className="text-white/55 mb-8 text-lg">
             Pick your teams and your personalised fixture list is ready in seconds. No account required.
