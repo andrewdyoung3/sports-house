@@ -9,6 +9,97 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage } from '@/types';
 
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
+
+// ─── Manager / Head Coach lookup ─────────────────────────────────────────────
+// Keyed by our internal team ID. Update when managers change mid-season.
+// EPL priority — expanded to other leagues over time.
+const MANAGER: Record<string, string> = {
+  // EPL
+  'epl-arsenal':       'Mikel Arteta',
+  'epl-astonvilla':    'Unai Emery',
+  'epl-bournemouth':   'Andoni Iraola',
+  'epl-brentford':     'Thomas Frank',
+  'epl-brighton':      'Fabian Hürzeler',
+  'epl-burnley':       'Scott Parker',
+  'epl-chelsea':       'Enzo Maresca',
+  'epl-crystalpalace': 'Oliver Glasner',
+  'epl-everton':       'Sean Dyche',
+  'epl-fulham':        'Marco Silva',
+  'epl-leeds':         'Daniel Farke',
+  'epl-liverpool':     'Arne Slot',
+  'epl-mancity':       'Pep Guardiola',
+  'epl-manutd':        'Ruben Amorim',
+  'epl-newcastle':     'Eddie Howe',
+  'epl-forest':        'Nuno Espírito Santo',
+  'epl-spurs':         'Ange Postecoglou',
+  'epl-sunderland':    'Régis Le Bris',
+  'epl-westham':       'Graham Potter',
+  'epl-wolves':        'Vítor Pereira',
+  // AFL
+  'afl-lions':         'Chris Fagan',
+  'afl-swans':         'John Longmire',
+  'afl-cats':          'Chris Scott',
+  'afl-pies':          'Craig McRae',
+  'afl-blues':         'Michael Voss',
+  'afl-demons':        'Simon Goodwin',
+  'afl-dogs':          'Luke Beveridge',
+  'afl-tigers':        'Adem Yze',
+  'afl-hawks':         'Sam Mitchell',
+  'afl-bombers':       'Brad Scott',
+  'afl-crows':         'Matthew Nicks',
+  'afl-power':         'Ken Hinkley',
+  'afl-dockers':       'Justin Longmuir',
+  'afl-giants':        'Adam Kingsley',
+  'afl-suns':          'Damien Hardwick',
+  'afl-kangaroos':     'Alastair Clarkson',
+  'afl-saints':        'Ross Lyon',
+  'afl-eagles':        'Andrew McQualter',
+  // NRL
+  'nrl-broncos':       'Michael Maguire',
+  'nrl-storm':         'Craig Bellamy',
+  'nrl-panthers':      'Ivan Cleary',
+  'nrl-roosters':      'Trent Robinson',
+  'nrl-rabbitohs':     'Wayne Bennett',
+  'nrl-sharks':        'Craig Fitzgibbon',
+  'nrl-raiders':       'Ricky Stuart',
+  'nrl-eels':          'Jason Ryles',
+  'nrl-bulldogs':      'Cameron Ciraldo',
+  'nrl-knights':       'Adam O\'Brien',
+  'nrl-warriors':      'Andrew Webster',
+  'nrl-cowboys':       'Todd Payten',
+  'nrl-titans':        'Des Hasler',
+  'nrl-dolphins':      'Kristian Woolf',
+  'nrl-seahawks':      'Anthony Seibold',
+  'nrl-dragons':       'Shane Flanagan',
+  'nrl-tigers':        'Benji Marshall',
+  // Super Rugby
+  'sru-crusaders':     'Scott Robertson',
+  'sru-chiefs':        'Clayton McMillan',
+  'sru-blues':         'Vern Cotter',
+  'sru-hurricanes':    'Clark Laidlaw',
+  'sru-highlanders':   'Clarke Dermody',
+  'sru-brumbies':      'Stephen Larkham',
+  'sru-reds':          'Les Kiss',
+  'sru-waratahs':      'Darren Coleman',
+  'sru-force':         'Simon Cron',
+  // International Rugby
+  'rint-wallabies':    'Joe Schmidt',
+  'rint-allblacks':    'Scott Robertson',
+  'rint-boks':         'Rassie Erasmus',
+  'rint-england':      'Steve Borthwick',
+  'rint-ireland':      'Andy Farrell',
+  'rint-france':       'Fabien Galthié',
+  'rint-scotland':     'Gregor Townsend',
+  'rint-wales':        'Mike Ruddock',
+  'rint-argentina':    'Felipe Contepomi',
+};
+
+/** Look up manager for a team ID, or by display name cross-referencing ESPN/Squiggle maps. */
+function lookupManager(teamId: string): string | undefined {
+  return MANAGER[teamId];
+}
+
 // ─── Shared ───────────────────────────────────────────────────────────────────
 
 async function fetchTimeout(
@@ -237,7 +328,7 @@ async function fetchNRLPreview(
   const oppId       = Object.entries(NRL_ESPN_NAME).find(([, v]) => v === oppESPNName)?.[0];
   const oppESPNId   = oppId ? NRL_ESPN_ID[oppId] : undefined;
 
-  const [standingsRes, teamNewsRes, oppNewsRes] = await Promise.allSettled([
+  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/rugby-league/3/standings',
       { next: { revalidate: 3600 } },
@@ -254,6 +345,8 @@ async function fetchNRLPreview(
           { next: { revalidate: 1800 } },
         )
       : Promise.resolve(null),
+    teamESPNId ? fetchLastStartingXI('rugby-league/3', teamESPNId) : Promise.resolve([]),
+    oppESPNId  ? fetchLastStartingXI('rugby-league/3', oppESPNId)  : Promise.resolve([]),
   ]);
 
   let teamStanding: TeamStanding | undefined;
@@ -282,11 +375,16 @@ async function fetchNRLPreview(
     }
   }
 
+  const teamLastLineup = teamLineupRes.status === 'fulfilled' ? teamLineupRes.value : [];
+  const oppLastLineup  = oppLineupRes.status  === 'fulfilled' ? oppLineupRes.value  : [];
+
   return {
     teamStanding,
     opponentStanding,
-    teamNews:     teamNews.length > 0 ? teamNews : undefined,
-    opponentNews: opponentNews.length > 0 ? opponentNews : undefined,
+    teamNews:           teamNews.length > 0     ? teamNews     : undefined,
+    opponentNews:       opponentNews.length > 0 ? opponentNews : undefined,
+    teamLastLineup:     teamLastLineup.length > 0 ? teamLastLineup : undefined,
+    opponentLastLineup: oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
   };
 }
 
@@ -431,6 +529,107 @@ async function fetchCompetitionStage(
   };
 }
 
+// ─── First-leg result fetch (two-legged knockout ties) ────────────────────────
+
+/**
+ * For cup/European knockout rounds, fetches the score from the most recent
+ * completed fixture between these two teams in the same competition.
+ * Returns null if no such fixture is found or data is unavailable.
+ */
+async function fetchFirstLegResult(
+  cupSlug:      string,
+  espnTeamId:   string,
+  opponentName: string,
+): Promise<{ teamScore: number; opponentScore: number } | null> {
+  try {
+    const res = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${cupSlug}/teams/${espnTeamId}/schedule`,
+      { next: { revalidate: 3600 }, timeoutMs: 5000 },
+    );
+    if (!res.ok) return null;
+
+    const data    = await res.json();
+    const events: any[] = data.events ?? [];
+    const oppLower = opponentName.toLowerCase();
+
+    // Find the most recent completed event vs this opponent
+    const leg = events
+      .filter((e: any) => {
+        if (!e.competitions?.[0]?.status?.type?.completed) return false;
+        const competitors: any[] = e.competitions[0].competitors ?? [];
+        return competitors.some((c: any) => {
+          const name = (c.team?.displayName ?? c.team?.name ?? '').toLowerCase();
+          return name.includes(oppLower) || oppLower.includes(name);
+        });
+      })
+      .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    if (!leg) return null;
+
+    const competitors: any[] = leg.competitions[0].competitors ?? [];
+    const teamComp = competitors.find((c: any) =>
+      String(c.id) === espnTeamId || String(c.team?.id) === espnTeamId,
+    );
+    const oppComp = competitors.find((c: any) =>
+      String(c.id) !== espnTeamId && String(c.team?.id) !== espnTeamId,
+    );
+    if (!teamComp || !oppComp) return null;
+
+    return {
+      teamScore:     parseInt(teamComp.score ?? '0', 10),
+      opponentScore: parseInt(oppComp.score  ?? '0', 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── Recent lineup fetch (ESPN) ───────────────────────────────────────────────
+
+/**
+ * Fetches the starting lineup from a team's most recent completed game.
+ * sportPath examples: 'soccer/eng.1', 'rugby-league/3', 'rugby/242041'
+ * Returns an empty array gracefully if the data is unavailable.
+ */
+async function fetchLastStartingXI(sportPath: string, espnTeamId: string): Promise<string[]> {
+  try {
+    // Step 1: find the most recent completed event for this team
+    const schedRes = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${espnTeamId}/schedule`,
+      { next: { revalidate: 3600 }, timeoutMs: 5000 },
+    );
+    if (!schedRes.ok) return [];
+
+    const schedData  = await schedRes.json();
+    const events: any[] = schedData.events ?? [];
+    const lastCompleted = events
+      .filter((e: any) => e.competitions?.[0]?.status?.type?.completed === true)
+      .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    if (!lastCompleted?.id) return [];
+
+    // Step 2: fetch the event summary which contains lineup data
+    const summaryRes = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${lastCompleted.id}`,
+      { next: { revalidate: 3600 }, timeoutMs: 5000 },
+    );
+    if (!summaryRes.ok) return [];
+
+    const summary = await summaryRes.json();
+    // ESPN returns lineups under `rosters` (soccer) or `boxscore.players` (rugby variants)
+    const rosters: any[] = summary.rosters ?? summary.boxscore?.players ?? [];
+    const teamRoster = rosters.find((r: any) => String(r.team?.id) === String(espnTeamId));
+    if (!teamRoster) return [];
+
+    return (teamRoster.entries as any[] ?? [])
+      .filter((e: any) => e.starter === true)
+      .map((e: any) => (e.athlete?.displayName ?? e.athlete?.shortName ?? '') as string)
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 // ─── EPL — ESPN ───────────────────────────────────────────────────────────────
 
 const ESPN_TEAM_ID: Record<string, string> = {
@@ -509,7 +708,11 @@ async function fetchEPLPreview(
   const espnTeamId = ESPN_TEAM_ID[teamId];
   if (!teamName) return {};
 
-  const [standingsRes, teamNewsRes, oppNewsRes] = await Promise.allSettled([
+  // Resolve opponent ESPN ID upfront so lineup fetch can run in parallel
+  const oppTeamKey = Object.entries(ESPN_TEAM_NAME).find(([, v]) => v === opponentName)?.[0];
+  const oppEspnId  = oppTeamKey ? ESPN_TEAM_ID[oppTeamKey] : undefined;
+
+  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',
       { next: { revalidate: 3600 } },
@@ -520,16 +723,14 @@ async function fetchEPLPreview(
           { next: { revalidate: 1800 } },
         )
       : Promise.resolve(null),
-    // For opponent: look up ESPN ID from display name
-    (async () => {
-      const oppId = Object.entries(ESPN_TEAM_NAME).find(([, v]) => v === opponentName)?.[0];
-      const oppEspnId = oppId ? ESPN_TEAM_ID[oppId] : undefined;
-      if (!oppEspnId) return null;
-      return fetchTimeout(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams/${oppEspnId}/news?limit=4`,
-        { next: { revalidate: 1800 } },
-      );
-    })(),
+    oppEspnId
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams/${oppEspnId}/news?limit=4`,
+          { next: { revalidate: 1800 } },
+        )
+      : Promise.resolve(null),
+    espnTeamId ? fetchLastStartingXI('soccer/eng.1', espnTeamId) : Promise.resolve([]),
+    oppEspnId  ? fetchLastStartingXI('soccer/eng.1', oppEspnId)  : Promise.resolve([]),
   ]);
 
   // ── Standings ──
@@ -562,21 +763,36 @@ async function fetchEPLPreview(
     }
   }
 
-  // ── Cup / European competition stage (when applicable) ──
+  // ── Cup / European competition stage + first-leg result (when applicable) ──
   let competitionStage: CompetitionStage | undefined;
+  let firstLegResult: { teamScore: number; opponentScore: number } | undefined;
   if (competition) {
     const slug = COMP_ESPN_SLUG[competition];
     if (slug) {
-      competitionStage = await fetchCompetitionStage(slug, teamName, opponentName).catch(() => undefined);
+      [competitionStage, firstLegResult] = await Promise.all([
+        fetchCompetitionStage(slug, teamName, opponentName).catch(() => undefined),
+        // Only fetch first-leg result for knockout stages (not group/league phase)
+        espnTeamId
+          ? fetchFirstLegResult(slug, espnTeamId, opponentName).then(r => r ?? undefined).catch(() => undefined)
+          : Promise.resolve(undefined),
+      ]);
+      // Discard first-leg result if this is a group/league phase (no aggregate applies)
+      if (competitionStage?.isGroupPhase) firstLegResult = undefined;
     }
   }
+
+  const teamLastLineup = teamLineupRes.status === 'fulfilled' ? teamLineupRes.value : [];
+  const oppLastLineup  = oppLineupRes.status  === 'fulfilled' ? oppLineupRes.value  : [];
 
   return {
     teamStanding,
     opponentStanding,
-    teamNews:     teamNews.length > 0 ? teamNews : undefined,
-    opponentNews: opponentNews.length > 0 ? opponentNews : undefined,
+    teamNews:            teamNews.length > 0     ? teamNews     : undefined,
+    opponentNews:        opponentNews.length > 0 ? opponentNews : undefined,
     competitionStage,
+    firstLegResult,
+    teamLastLineup:      teamLastLineup.length > 0 ? teamLastLineup : undefined,
+    opponentLastLineup:  oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
   };
 }
 
@@ -717,9 +933,161 @@ async function fetchSRUPreview(
   };
 }
 
+// ─── NBA — ESPN ───────────────────────────────────────────────────────────────
+
+const NBA_ESPN_NAME: Record<string, string> = {
+  'nba-celtics':      'Boston Celtics',
+  'nba-nets':         'Brooklyn Nets',
+  'nba-knicks':       'New York Knicks',
+  'nba-76ers':        'Philadelphia 76ers',
+  'nba-raptors':      'Toronto Raptors',
+  'nba-bulls':        'Chicago Bulls',
+  'nba-cavaliers':    'Cleveland Cavaliers',
+  'nba-pistons':      'Detroit Pistons',
+  'nba-pacers':       'Indiana Pacers',
+  'nba-bucks':        'Milwaukee Bucks',
+  'nba-hawks':        'Atlanta Hawks',
+  'nba-hornets':      'Charlotte Hornets',
+  'nba-heat':         'Miami Heat',
+  'nba-magic':        'Orlando Magic',
+  'nba-wizards':      'Washington Wizards',
+  'nba-nuggets':      'Denver Nuggets',
+  'nba-timberwolves': 'Minnesota Timberwolves',
+  'nba-thunder':      'Oklahoma City Thunder',
+  'nba-blazers':      'Portland Trail Blazers',
+  'nba-jazz':         'Utah Jazz',
+  'nba-warriors':     'Golden State Warriors',
+  'nba-clippers':     'Los Angeles Clippers',
+  'nba-lakers':       'Los Angeles Lakers',
+  'nba-suns':         'Phoenix Suns',
+  'nba-kings':        'Sacramento Kings',
+  'nba-mavericks':    'Dallas Mavericks',
+  'nba-rockets':      'Houston Rockets',
+  'nba-grizzlies':    'Memphis Grizzlies',
+  'nba-pelicans':     'New Orleans Pelicans',
+  'nba-spurs':        'San Antonio Spurs',
+};
+
+function parseNBAStandings(entries: any[], displayName: string): TeamStanding | undefined {
+  const idx = entries.findIndex((e: any) =>
+    e.team?.displayName === displayName || e.team?.name === displayName,
+  );
+  if (idx < 0) return undefined;
+  const stats = entries[idx].stats ?? [];
+  const sv = (...names: string[]): number =>
+    Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
+  const wins   = sv('wins', 'gamesWon');
+  const losses = sv('losses', 'gamesLost');
+  const played = sv('gamesPlayed') || wins + losses;
+  // ESPN returns winPercent as a decimal (0.692); convert to % for display
+  const rawPct = sv('winPercent', 'pct');
+  const pct    = rawPct > 1 ? rawPct : rawPct * 100;
+  return {
+    name:       displayName,
+    position:   idx + 1,
+    played,
+    wins,
+    draws:      0,
+    losses,
+    percentage: parseFloat(pct.toFixed(1)),
+  };
+}
+
+async function fetchNBAPreview(teamId: string, opponentName: string): Promise<PreviewContext> {
+  const teamName = NBA_ESPN_NAME[teamId];
+  if (!teamName) return {};
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings',
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return {};
+  const data    = await res.json();
+  const entries: any[] =
+    data.children?.[0]?.standings?.entries ??
+    data.standings?.entries ?? [];
+  return {
+    teamStanding:     parseNBAStandings(entries, teamName),
+    opponentStanding: parseNBAStandings(entries, opponentName),
+  };
+}
+
+// ─── NHL — ESPN ───────────────────────────────────────────────────────────────
+
+const NHL_ESPN_NAME: Record<string, string> = {
+  'nhl-bruins':        'Boston Bruins',
+  'nhl-sabres':        'Buffalo Sabres',
+  'nhl-redwings':      'Detroit Red Wings',
+  'nhl-panthers':      'Florida Panthers',
+  'nhl-canadiens':     'Montréal Canadiens',
+  'nhl-senators':      'Ottawa Senators',
+  'nhl-lightning':     'Tampa Bay Lightning',
+  'nhl-leafs':         'Toronto Maple Leafs',
+  'nhl-canes':         'Carolina Hurricanes',
+  'nhl-jackets':       'Columbus Blue Jackets',
+  'nhl-devils':        'New Jersey Devils',
+  'nhl-islanders':     'New York Islanders',
+  'nhl-rangers':       'New York Rangers',
+  'nhl-flyers':        'Philadelphia Flyers',
+  'nhl-penguins':      'Pittsburgh Penguins',
+  'nhl-capitals':      'Washington Capitals',
+  'nhl-coyotes':       'Utah Hockey Club',
+  'nhl-blackhawks':    'Chicago Blackhawks',
+  'nhl-avalanche':     'Colorado Avalanche',
+  'nhl-stars':         'Dallas Stars',
+  'nhl-wild':          'Minnesota Wild',
+  'nhl-predators':     'Nashville Predators',
+  'nhl-blues':         'St. Louis Blues',
+  'nhl-jets':          'Winnipeg Jets',
+  'nhl-ducks':         'Anaheim Ducks',
+  'nhl-flames':        'Calgary Flames',
+  'nhl-oilers':        'Edmonton Oilers',
+  'nhl-kings':         'Los Angeles Kings',
+  'nhl-sharks':        'San Jose Sharks',
+  'nhl-kraken':        'Seattle Kraken',
+  'nhl-canucks':       'Vancouver Canucks',
+  'nhl-goldenknights': 'Vegas Golden Knights',
+};
+
+function parseNHLStandings(entries: any[], displayName: string): TeamStanding | undefined {
+  const idx = entries.findIndex((e: any) =>
+    e.team?.displayName === displayName || e.team?.name === displayName,
+  );
+  if (idx < 0) return undefined;
+  const stats = entries[idx].stats ?? [];
+  const sv = (...names: string[]): number =>
+    Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
+  return {
+    name:     displayName,
+    position: idx + 1,
+    played:   sv('gamesPlayed'),
+    wins:     sv('wins', 'gamesWon'),
+    draws:    sv('otLosses', 'ties', 'gamesDrawn'), // OT losses shown in draws column
+    losses:   sv('losses', 'gamesLost'),
+    points:   sv('points'),
+  };
+}
+
+async function fetchNHLPreview(teamId: string, opponentName: string): Promise<PreviewContext> {
+  const teamName = NHL_ESPN_NAME[teamId];
+  if (!teamName) return {};
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/hockey/nhl/standings',
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return {};
+  const data    = await res.json();
+  const entries: any[] =
+    data.children?.[0]?.standings?.entries ??
+    data.standings?.entries ?? [];
+  return {
+    teamStanding:     parseNHLStandings(entries, teamName),
+    opponentStanding: parseNHLStandings(entries, opponentName),
+  };
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
 const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
@@ -740,7 +1108,27 @@ export async function GET(req: NextRequest) {
     else if (league === 'epl')         ctx = await fetchEPLPreview(teamId, opponentName, competition);
     else if (league === 'super_rugby') ctx = await fetchSRUPreview(teamId, opponentName);
     else if (league === 'rugby_int')   ctx = await fetchRINTPreview(teamId, opponentName);
-    return NextResponse.json(ctx);
+    else if (league === 'nba')         ctx = await fetchNBAPreview(teamId, opponentName);
+    else if (league === 'nhl')         ctx = await fetchNHLPreview(teamId, opponentName);
+
+    // Resolve opponent team ID from display name for the manager lookup.
+    // We search ESPN_TEAM_NAME / NRL_ESPN_NAME / SQUIGGLE_NAME / SRU_ESPN_NAME / RINT_ESPN_NAME_P
+    // by comparing the value against opponentName.
+    const nameMaps: Record<string, string>[] = [
+      ESPN_TEAM_NAME, NRL_ESPN_NAME, SQUIGGLE_NAME, SRU_ESPN_NAME, RINT_ESPN_NAME_P,
+    ];
+    let oppTeamId: string | undefined;
+    for (const map of nameMaps) {
+      const entry = Object.entries(map).find(([, v]) =>
+        v.toLowerCase() === opponentName.toLowerCase(),
+      );
+      if (entry) { oppTeamId = entry[0]; break; }
+    }
+
+    ctx.teamManager     = lookupManager(teamId);
+    ctx.opponentManager = oppTeamId ? lookupManager(oppTeamId) : undefined;
+
+    return NextResponse.json(ctx, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/preview]', err);
     return NextResponse.json({});

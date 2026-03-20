@@ -22,7 +22,8 @@ interface GameExpandPanelProps {
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
 
 // ── Panel data cache ───────────────────────────────────────────────────────────
 // Backed by sessionStorage so it survives navigation (dashboard ↔ schedule).
@@ -373,7 +374,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
   );
   const [context,   setContext]   = useState<PreviewContext | null>(null);
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
-  const [loading,   setLoading]   = useState(REAL_DATA_LEAGUES.has(team.league));
+  const [loading,   setLoading]   = useState(REAL_DATA_LEAGUES.has(team.league) || STANDINGS_ONLY_LEAGUES.has(team.league));
   // Plain defaults — localStorage is unavailable during SSR so we never read it
   // in useState. A separate mount-effect reads it instantly on the client.
   const [aiPreview,  setAiPreview]  = useState<AIPreview | null>(null);
@@ -405,12 +406,30 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
   }, []);
 
   useEffect(() => {
-    if (!REAL_DATA_LEAGUES.has(team.league)) return;
+    const isStandingsOnly = STANDINGS_ONLY_LEAGUES.has(team.league);
+    if (!REAL_DATA_LEAGUES.has(team.league) && !isStandingsOnly) return;
 
     // Fast path: panel data was pre-loaded by another instance (e.g. the hero card).
     // State is already set by the mount effect; just ensure AI loading clears.
     if (getPanelCache(`${game.id}:${team.id}`)) {
-      setAiLoading(false);
+      if (!isStandingsOnly) setAiLoading(false);
+      return;
+    }
+
+    // Standings-only leagues (NBA, NHL): fetch just the preview context for standings,
+    // skip results, AI preview, and league standings table.
+    if (isStandingsOnly) {
+      const previewUrl = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}`;
+      fetch(previewUrl).then(r => r.ok ? r.json() : null).catch(() => null)
+        .then((ctxData: PreviewContext | null) => {
+          if (ctxData && typeof ctxData === 'object') {
+            setContext(ctxData);
+            setPanelCache(`${game.id}:${team.id}`, {
+              results, oppResults, context: ctxData, standings: null, cachedAt: Date.now(),
+            });
+          }
+          setLoading(false);
+        });
       return;
     }
 
