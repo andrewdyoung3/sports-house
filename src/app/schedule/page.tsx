@@ -26,8 +26,11 @@ type ScheduleEntry = UpcomingGame & { team: Team };
 /** Leagues backed by real APIs — all others use deterministic mock data. */
 const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
 
+/** All leagues with browse support (real or mock fixtures + standings). */
+const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
+
 /** Ordered list for the league filter pills. */
-const BROWSABLE_LEAGUES = LEAGUES.filter(l => REAL_DATA_LEAGUES.has(l.id));
+const BROWSABLE_LEAGUES = LEAGUES.filter(l => BROWSABLE_LEAGUE_IDS.has(l.id));
 
 /** Build a minimal Team stub for games whose teamId isn't in the TEAMS array. */
 function makeFallbackTeam(game: UpcomingGame, league: string): Team {
@@ -144,6 +147,16 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     symbol: '✦\uFE0E', symbolColor: '#8899bb',
     label: 'Test Rugby',
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
+  },
+  nba: {
+    // NBA: dark navy + brand red
+    label: 'NBA',
+    bg: '#051828', color: '#c8102e', border: 'rgba(200,16,46,0.35)',
+  },
+  nhl: {
+    // NHL: near-black + icy silver
+    label: 'NHL',
+    bg: '#0a0f1a', color: '#c0c8d4', border: 'rgba(192,200,212,0.28)',
   },
 };
 

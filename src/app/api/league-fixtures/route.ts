@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { TEAMS } from '@/lib/teams';
+import { getUpcomingGames } from '@/lib/mock-data';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -513,9 +515,18 @@ async function fetchRINTLeague(): Promise<UpcomingGame[]> {
   return unique.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
+// ─── NBA / NHL — mock fixtures for all teams in the league ────────────────────
+
+function fetchMockLeague(leagueId: string): UpcomingGame[] {
+  return TEAMS
+    .filter(t => t.league === leagueId)
+    .flatMap(team => getUpcomingGames(team, 2))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -529,7 +540,9 @@ export async function GET(req: NextRequest) {
     else if (league === 'nrl')         fixtures = await fetchNRLLeague();
     else if (league === 'super_rugby') fixtures = await fetchSRULeague();
     else if (league === 'rugby_int')   fixtures = await fetchRINTLeague();
-    return NextResponse.json(fixtures);
+    else if (league === 'nba')         fixtures = fetchMockLeague('nba');
+    else if (league === 'nhl')         fixtures = fetchMockLeague('nhl');
+    return NextResponse.json(fixtures, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
   } catch (err) {
     console.error('[/api/league-fixtures]', err);
     return NextResponse.json([]);
