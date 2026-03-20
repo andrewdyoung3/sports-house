@@ -863,11 +863,11 @@ export default function SchedulePage() {
               {groupedByDate.map(({ dateKey, representativeDate, games }) => (
                 <section key={dateKey} id={`date-section-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-white/50 shrink-0">
+                    <p className="text-[13px] font-black uppercase tracking-[0.12em] text-white/75 shrink-0">
                       {formatDateHeading(representativeDate, dateKey, userTz)}
                     </p>
-                    <div className="flex-1 h-px bg-white/8" />
-                    <span className="text-[10px] font-semibold text-white/25 shrink-0 uppercase tracking-wide">
+                    <div className="flex-1 h-px bg-white/12" />
+                    <span className="text-[10px] font-semibold text-white/40 shrink-0 uppercase tracking-wide">
                       {games.length} {games.length !== 1 ? 'fixtures' : 'fixture'}
                     </span>
                   </div>
