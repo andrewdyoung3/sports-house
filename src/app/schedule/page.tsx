@@ -149,13 +149,13 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
   },
   nba: {
-    // NBA: dark navy + brand red
-    label: 'NBA',
+    // NBA: dark navy + brand red, basketball emoji from league icon
+    symbol: '🏀', label: 'NBA',
     bg: '#051828', color: '#c8102e', border: 'rgba(200,16,46,0.35)',
   },
   nhl: {
-    // NHL: near-black + icy silver
-    label: 'NHL',
+    // NHL: near-black + icy silver, hockey stick emoji from league icon
+    symbol: '🏒', label: 'NHL',
     bg: '#0a0f1a', color: '#c0c8d4', border: 'rgba(192,200,212,0.28)',
   },
 };
@@ -522,7 +522,7 @@ function LeagueFilterPill({
       }}
     >
       {meta?.symbol && (
-        <span aria-hidden="true" style={{ color: meta.symbolColor ?? meta.color, fontSize: '8px' }}>
+        <span aria-hidden="true" style={{ color: meta.symbolColor ?? meta.color, fontSize: meta.symbol.codePointAt(0)! > 0xffff ? '11px' : '8px' }}>
           {meta.symbol}
         </span>
       )}
