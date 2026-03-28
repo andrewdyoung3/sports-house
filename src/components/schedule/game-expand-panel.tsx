@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus, Cloud } from 'lucide-react';
 import { getAIPreview, getRecentResults } from '@/lib/mock-data';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName } from '@/lib/f1-data';
 import { cn, ordinal } from '@/lib/utils';
-import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview } from '@/types';
+import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
@@ -19,11 +20,15 @@ interface GameExpandPanelProps {
    * Requests shorter AI output and hides detailed sections (tactical, spotlight, verdict, news).
    */
   compact?: boolean;
+  /** Called with fresh standings whenever the panel fetches them — lets the parent keep its sidebar in sync. */
+  onStandingsUpdate?: (rows: StandingRow[]) => void;
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
 const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
+/** Outdoor sports where weather affects play. */
+const OUTDOOR_SPORTS       = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // ── Panel data cache ───────────────────────────────────────────────────────────
 // Backed by sessionStorage so it survives navigation (dashboard ↔ schedule).
@@ -109,21 +114,35 @@ function buildFingerprint(
   oppNews:    { headline: string }[] | undefined,
   teamResults: GameResult[],
   oppResults:  GameResult[],
+  weather?:    WeatherData | null,
+  context?:    PreviewContext | null,
 ): string {
   const headlines = [
     ...(teamNews ?? []).map(n => n.headline),
     ...(oppNews  ?? []).map(n => n.headline),
   ].sort();
-  // Include last-3 results for each team as a compact form string
   const formStr = (rs: GameResult[]) =>
     rs.slice(0, 3).map(r => `${r.opponent}:${r.teamScore}-${r.opponentScore}`).join(',');
-  const parts = [...headlines, formStr(teamResults), formStr(oppResults)].join('\x00');
+  // Include weather condition bucket so a change in conditions triggers re-generation
+  const weatherKey = weather?.isNotable
+    ? `${weather.condition}:${Math.round(weather.windKmh / 15)}:${Math.round(weather.precipMm)}`
+    : 'clear';
+  // Include squad and injury data — when squads are released or injury status changes, regenerate
+  const squadKey = [
+    ...(context?.teamSquad ?? []),
+    ...(context?.opponentSquad ?? []),
+  ].sort().join(',').slice(0, 60);
+  const injuryKey = [
+    ...(context?.teamInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+    ...(context?.opponentInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+  ].sort().join(',').slice(0, 60);
+  const parts = [...headlines, formStr(teamResults), formStr(oppResults), weatherKey, squadKey, injuryKey].join('\x00');
   try { return btoa(encodeURIComponent(parts)).slice(0, 48); }
   catch { return parts.slice(0, 48); }
 }
 
-// v19: knockout ties strip standings from data block; absolute phase-transition prohibition.
-const CACHE_KEY = (gameId: string) => `ai-preview-v20:${gameId}`;
+// v26: Form recency language fix + early-season narration suppression.
+const CACHE_KEY = (gameId: string) => `ai-preview-v26:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -359,10 +378,370 @@ function AILoadingCard({ color }: { color: string }) {
   );
 }
 
+// ── F1 circuit expand panel ────────────────────────────────────────────────────
+
+function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: string }) {
+  const { team } = game;
+  const circuitId = game.opponentId ?? '';
+  const circuit   = F1_CIRCUITS[circuitId];
+
+  const isConstructorFollow    = isF1ConstructorTeam(team.id);
+  const followedConstructorName = getF1ConstructorName(team);
+
+  const [driverStandings, setDriverStandings] = useState<StandingRow[] | null>(null);
+  const [constructorStandings, setConstructorStandings] = useState<StandingRow[] | null>(null);
+  const [loadingStandings, setLoadingStandings] = useState(true);
+  const [imgError, setImgError] = useState(false);
+
+  // ── AI race preview state ─────────────────────────────────────────────────
+  const [aiPreview, setAiPreview] = useState<AIPreview | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError,   setAiError]   = useState(false);
+
+  useEffect(() => {
+    setLoadingStandings(true);
+    Promise.all([
+      fetch('/api/standings?league=f1').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/standings?league=f1&type=constructors').then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([drivers, constructors]) => {
+      if (Array.isArray(drivers) && drivers.length > 0) setDriverStandings(drivers);
+      if (Array.isArray(constructors) && constructors.length > 0) setConstructorStandings(constructors);
+      setLoadingStandings(false);
+    });
+  }, []);
+
+  // ── AI race preview fetch ─────────────────────────────────────────────────
+  useEffect(() => {
+    // Only generate AI previews for Race and Qualifying sessions
+    const sessionType = game.competition ?? 'Race';
+    if (!['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(sessionType)) return;
+
+    // Cache key — shared across all sessions in the same race round
+    const roundKey = game.id.replace(/-(race|qualifying|sprint.*|fp\d|sprintq)$/i, '');
+    const cacheKey = `ai-preview-f1-v1:${roundKey}`;
+
+    // Check localStorage cache
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw) as { preview: AIPreview; generatedAt: number };
+        if (Date.now() - cached.generatedAt < 14 * 24 * 60 * 60 * 1000) {
+          setAiPreview(cached.preview);
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+
+    setAiLoading(true);
+
+    // Parse roundNumber from game.id — format: f1-{round}-{session}
+    const parts = game.id.split('-');
+    const roundNumber = parseInt(parts[1]) || undefined;
+
+    // Fetch PreviewContext from /api/preview
+    const params = new URLSearchParams({
+      league:      'f1',
+      teamId:      team.id,
+      gameId:      game.id,
+      raceName:    game.opponent,
+      circuitName: game.venue ?? '',
+      sessionType,
+      ...(roundNumber ? { roundNumber: String(roundNumber) } : {}),
+    });
+
+    fetch(`/api/preview?${params}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then((context: PreviewContext | null) => {
+        if (!context) { setAiLoading(false); return null; }
+
+        // Post to AI preview endpoint
+        return fetch('/api/ai-preview', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            gameId:       roundKey,
+            league:       'f1',
+            teamName:     team.name,
+            opponentName: game.opponent,
+            teamResults:  [],
+            oppResults:   [],
+            context,
+          }),
+        });
+      })
+      .then(r => (r && r.ok) ? r.json() : null)
+      .catch(() => null)
+      .then((preview: AIPreview | null) => {
+        setAiLoading(false);
+        if (!preview) { setAiError(true); return; }
+        setAiPreview(preview);
+        // Cache to localStorage
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ preview, generatedAt: Date.now() }));
+        } catch { /* storage full */ }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.id, game.opponent, game.venue, game.competition, team.id, team.name]);
+
+  // Constructor color map for the standings table
+  const CONSTRUCTOR_COLORS_MAP: Record<string, string> = {
+    'Red Bull Racing': '#3671C6',
+    'Ferrari':         '#E8002D',
+    'Mercedes':        '#27F4D2',
+    'McLaren':         '#FF8000',
+    'Aston Martin':    '#229971',
+    'Alpine':          '#FF87BC',
+    'Williams':        '#64C4FF',
+    'Racing Bulls':    '#6692FF',
+    'Haas':            '#B6BABD',
+    'Kick Sauber':     '#52E252',
+  };
+
+  return (
+    <div
+      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
+      style={{ animation: 'slideDown 0.22s ease-out' }}
+    >
+      {/* Circuit map */}
+      {circuit && !imgError && (
+        <div className="rounded-xl overflow-hidden">
+          <img
+            src={circuit.mapUrl}
+            alt={`${circuit.name} circuit map`}
+            className="w-full h-auto object-contain"
+            onError={() => setImgError(true)}
+          />
+        </div>
+      )}
+
+      {/* AI Race Preview — only for Race/Qualifying/Sprint sessions */}
+      {(['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(game.competition ?? '')) && (
+        <div className="space-y-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5">
+            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
+            Race Preview
+          </p>
+
+          {aiLoading ? (
+            <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Generating preview…
+            </div>
+          ) : aiError ? (
+            <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
+          ) : aiPreview ? (
+            <div className="space-y-3">
+              {/* context */}
+              {aiPreview.context && (
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Context</p>
+                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.context}</p>
+                </div>
+              )}
+              {/* tacticalBattle → "Field Form" in F1 */}
+              {aiPreview.tacticalBattle && (
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Field Form</p>
+                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.tacticalBattle}</p>
+                </div>
+              )}
+              {/* playerSpotlight → focused driver/constructor */}
+              {aiPreview.playerSpotlight && (
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: `${team.primaryColor}99` }}>
+                    {team.division ? `${team.shortName} — ${team.division}` : team.shortName}
+                  </p>
+                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.playerSpotlight}</p>
+                </div>
+              )}
+              {/* verdict */}
+              {aiPreview.verdict && (
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Watch For</p>
+                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.verdict}</p>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* Circuit info */}
+      {circuit ? (
+        <div className="space-y-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5">
+            <span style={{ color: team.primaryColor }}>◉</span>
+            {circuit.name}
+            <span className="text-white/20 font-normal">·</span>
+            <span className="text-white/40 font-normal normal-case tracking-normal">{circuit.country}</span>
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
+            <div>
+              <span className="text-white/35">Length</span>
+              <span className="ml-2 text-white/75 font-semibold">{circuit.length}</span>
+            </div>
+            <div>
+              <span className="text-white/35">Laps</span>
+              <span className="ml-2 text-white/75 font-semibold">{circuit.laps}</span>
+            </div>
+            <div className="col-span-2">
+              <span className="text-white/35">Lap record</span>
+              <span className="ml-2 text-white/75 font-semibold">{circuit.lapRecord}</span>
+            </div>
+            <div className="col-span-2">
+              <span className="text-white/35">DRS zones</span>
+              <span className="ml-2 text-white/75 font-semibold">{circuit.drsZones}</span>
+              <span className="ml-1.5 text-white/40 text-[10px]">— {circuit.drsDescription}</span>
+            </div>
+          </div>
+          <p className="text-[11px] text-white/50 leading-relaxed pt-1">{circuit.description}</p>
+        </div>
+      ) : (
+        <div>
+          <p className="text-[11px] text-white/40">
+            {game.opponent}
+            {game.venue ? ` · ${game.venue}` : ''}
+          </p>
+        </div>
+      )}
+
+      {/* Drivers' Championship standings */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-3">
+          <Trophy className="h-3 w-3" />
+          Drivers&apos; Championship
+        </p>
+        {loadingStandings ? (
+          <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading standings…
+          </div>
+        ) : driverStandings && driverStandings.length > 0 ? (
+          <div className="space-y-1.5">
+            {driverStandings.slice(0, 15).map((row, i) => {
+              const constructorColor = CONSTRUCTOR_COLORS_MAP[row.constructorName ?? ''] ?? '#9CA3AF';
+              const isTop3 = row.position <= 3;
+              // Highlight: followed driver → match by teamId; followed constructor → match all their drivers
+              const isHighlighted = isConstructorFollow
+                ? row.constructorName === followedConstructorName
+                : row.teamId === team.id;
+              return (
+                <div
+                  key={i}
+                  className={cn('flex items-center gap-2 text-[11px] rounded-lg px-1', isHighlighted && 'bg-white/6')}
+                  style={isHighlighted ? { borderLeft: `2px solid ${team.primaryColor}`, paddingLeft: '6px' } : {}}
+                >
+                  <span
+                    className={cn(
+                      'w-5 text-right font-black tabular-nums shrink-0',
+                      isTop3 ? 'text-white/85' : 'text-white/40',
+                    )}
+                  >
+                    {row.position}
+                  </span>
+                  <span
+                    className="w-7 text-[10px] font-black shrink-0 truncate"
+                    style={{ color: constructorColor }}
+                  >
+                    {row.name.split(' ').map((w: string) => w[0]).join('').slice(0, 3).toUpperCase()}
+                  </span>
+                  <span className="flex-1 text-white/70 font-semibold truncate">{row.name}</span>
+                  <span className="text-[10px] text-white/35 shrink-0 truncate max-w-[80px]">
+                    {row.constructorName}
+                  </span>
+                  <span className="text-[11px] font-black text-white/85 shrink-0 w-12 text-right tabular-nums">
+                    {row.points ?? 0}<span className="text-[9px] font-normal text-white/35">pts</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/30 italic">Season standings not yet available</p>
+        )}
+      </div>
+
+      {/* Constructors' Championship standings */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-3">
+          <Trophy className="h-3 w-3" />
+          Constructors&apos; Championship
+        </p>
+        {loadingStandings ? (
+          <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Loading standings…
+          </div>
+        ) : constructorStandings && constructorStandings.length > 0 ? (
+          <div className="space-y-1.5">
+            {constructorStandings.map((row, i) => {
+              const constructorColor = (row as any).primaryColor ?? CONSTRUCTOR_COLORS_MAP[row.name] ?? '#9CA3AF';
+              const isTop3 = row.position <= 3;
+              // Highlight: followed constructor → match by teamId or name; followed driver → match their constructor
+              const isHighlighted = isConstructorFollow
+                ? row.teamId === team.id || row.name === followedConstructorName
+                : row.name === followedConstructorName;
+              return (
+                <div
+                  key={i}
+                  className={cn('flex items-center gap-2 text-[11px] rounded-lg px-1', isHighlighted && 'bg-white/6')}
+                  style={isHighlighted ? { borderLeft: `2px solid ${team.primaryColor}`, paddingLeft: '6px' } : {}}
+                >
+                  <span
+                    className={cn(
+                      'w-5 text-right font-black tabular-nums shrink-0',
+                      isTop3 ? 'text-white/85' : 'text-white/40',
+                    )}
+                  >
+                    {row.position}
+                  </span>
+                  <span
+                    className="w-7 text-[10px] font-black shrink-0 truncate"
+                    style={{ color: constructorColor }}
+                  >
+                    {row.name.slice(0, 3).toUpperCase()}
+                  </span>
+                  <span className="flex-1 text-white/70 font-semibold truncate">{row.name}</span>
+                  <span className="text-[10px] text-white/35 shrink-0">
+                    {row.wins > 0 ? `${row.wins}W` : ''}
+                  </span>
+                  <span className="text-[11px] font-black text-white/85 shrink-0 w-12 text-right tabular-nums">
+                    {row.points ?? 0}<span className="text-[9px] font-normal text-white/35">pts</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/30 italic">Season standings not yet available</p>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="flex items-center justify-end pt-3 border-t border-white/6">
+        <button
+          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/35 hover:text-white/70 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/8"
+          onClick={e => { e.stopPropagation(); }}
+          title="Add to calendar (coming soon)"
+        >
+          <CalendarPlus className="h-3.5 w-3.5" />
+          Add to calendar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GameExpandPanel({ game, className, compact = false }: GameExpandPanelProps) {
+export function GameExpandPanel({ game, className, compact = false, onStandingsUpdate }: GameExpandPanelProps) {
   const { team } = game;
+
+  // F1 has its own dedicated panel — no AI preview, just circuit info + standings.
+  if (team.league === 'f1') {
+    return <F1ExpandPanel game={game} className={className} />;
+  }
 
   // AI only makes sense for imminent fixtures — too much changes further out.
   const daysUntilGame = (new Date(game.date).getTime() - Date.now()) / 86_400_000;
@@ -380,6 +759,22 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
   const [aiPreview,  setAiPreview]  = useState<AIPreview | null>(null);
   const [aiLoading,  setAiLoading]  = useState(aiEnabled);
   const [aiUpdating, setAiUpdating] = useState(false);
+  const [weather,    setWeather]    = useState<WeatherData | null>(null);
+
+  // Fetch weather independently — not tied to the panel-data cache so it always
+  // runs even when results/standings are served from sessionStorage.
+  // Window: 72h (3-day forecasts are reliable; beyond that accuracy drops off).
+  const hoursUntilGame = daysUntilGame * 24;
+  const weatherEnabled = OUTDOOR_SPORTS.has(team.league) && hoursUntilGame <= 72 && !!game.venue;
+
+  useEffect(() => {
+    if (!weatherEnabled) return;
+    fetch(`/api/weather?venue=${encodeURIComponent(game.venue!)}&date=${encodeURIComponent(game.date)}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then((data: WeatherData | null) => { if (data) setWeather(data); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weatherEnabled, game.venue, game.date]);
 
   // ── Immediate cache read on mount ─────────────────────────────────────────
   // Runs client-side only. Reads both caches before any API round-trips so the
@@ -458,7 +853,10 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
       if (Array.isArray(resultsData)  && resultsData.length > 0)  setResults(resultsData);
       if (ctxData && typeof ctxData === 'object')                  setContext(ctxData);
       if (Array.isArray(oppData)      && oppData.length > 0)       setOppResults(oppData);
-      if (Array.isArray(standingsData) && standingsData.length > 0) setStandings(standingsData);
+      if (Array.isArray(standingsData) && standingsData.length > 0) {
+        setStandings(standingsData);
+        onStandingsUpdate?.(standingsData);
+      }
       setLoading(false);
 
       // Persist to sessionStorage so other instances — including across navigation — skip fetching.
@@ -477,7 +875,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
 
       // Fingerprint the adaptable news context.
       const liveCtx     = liveContext as PreviewContext;
-      const fingerprint = buildFingerprint(liveCtx.teamNews, liveCtx.opponentNews, liveResults, liveOppResults);
+      const fingerprint = buildFingerprint(liveCtx.teamNews, liveCtx.opponentNews, liveResults, liveOppResults, weather, liveContext as PreviewContext);
       const cached      = loadPreviewCache(game.id);
 
       if (cached) {
@@ -509,6 +907,7 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
           context:         liveContext,
           teamResults:     liveResults,
           oppResults:      liveOppResults,
+          weather:         weather,
           // Pass existing preview + fingerprint so the API can do a targeted update.
           previousPreview: cached?.preview,
           newsFingerprint: cached ? fingerprint : undefined,
@@ -605,8 +1004,8 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
         </div>
       )}
 
-      {/* ── Form + Standings / Key Factors ── */}
-      <div className="grid grid-cols-2 gap-5">
+      {/* ── Form + Standings / Key Factors + Weather ── */}
+      <div className={`grid gap-5 ${weather ? 'grid-cols-3' : 'grid-cols-2'}`}>
 
         {/* Recent form — both teams */}
         <div>
@@ -747,6 +1146,30 @@ export function GameExpandPanel({ game, className, compact = false }: GameExpand
             </>
           )}
         </div>
+
+        {/* Kickoff Forecast */}
+        {weather && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+              <Cloud className="h-3 w-3" />
+              Kickoff Forecast
+            </p>
+            <div className="space-y-1.5">
+              <p className="text-[13px] font-bold text-white/80 leading-none">
+                {weather.icon} {weather.description}
+              </p>
+              <p className="text-[10px] text-white/40 leading-none">{weather.tempC}°C</p>
+              {(weather.precipMm > 0.5 || weather.precipProbability > 40) && (
+                <p className="text-[10px] text-white/40 leading-none">
+                  {weather.precipProbability}% rain{weather.precipMm > 0.5 ? ` · ${weather.precipMm}mm` : ''}
+                </p>
+              )}
+              {weather.windKmh > 25 && (
+                <p className="text-[10px] text-white/40 leading-none">{weather.windKmh} km/h wind</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}

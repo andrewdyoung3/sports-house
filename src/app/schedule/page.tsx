@@ -24,10 +24,10 @@ import type { Team, UpcomingGame, SportKey } from '@/types';
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** Leagues backed by real APIs — all others use deterministic mock data. */
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
 
 /** All leagues with browse support (real or mock fixtures + standings). */
-const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
+const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
 
 /** Ordered list for the league filter pills. */
 const BROWSABLE_LEAGUES = LEAGUES.filter(l => BROWSABLE_LEAGUE_IDS.has(l.id));
@@ -108,6 +108,22 @@ interface BadgeMeta {
   logoUrl?: string;
   /** Opacity for the watermark logo — defaults to 0.18 if omitted. */
   logoOpacity?: number;
+  /** CSS mix-blend-mode for the watermark logo — 'screen' dissolves dark backgrounds (good for UCL/UEFA logos). */
+  logoBlend?: string;
+  /** CSS filter applied to the watermark logo — e.g. 'brightness(0) invert(1)' forces the logo to white. */
+  logoFilter?: string;
+  /** Override the default h-[140%] height class for this logo's watermark. */
+  logoHeight?: string;
+  /** Cap the width of wide/banner logos so they don't spill across the card. */
+  logoMaxWidth?: string;
+  /**
+   * Manual override for the right position of this logo's watermark.
+   * Normally leave unset — the render derives right automatically from logoHeight
+   * using the reference-midpoint formula (midpoint = 49px from the right edge):
+   *   right = 49 - (heightPercent × 0.42)  px
+   * Only set this to escape the formula for special cases.
+   */
+  logoRight?: string;
 }
 
 // ── Primary-league badges ─────────────────────────────────────────────────────
@@ -117,15 +133,15 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'AFL',
     bg: '#001d3d', color: '#f4ac20', border: 'rgba(244,172,32,0.30)',
     logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png',
-    logoOpacity: 0.25,
+    logoOpacity: 0.10,
   },
   nrl: {
     // NRL: ◆ (diamond from the NRL shield mark) in brand red on navy
     symbol: '◆\uFE0E', symbolColor: '#e21b23',
     label: 'NRL',
     bg: '#002955', color: '#ffffff', border: 'rgba(226,27,35,0.40)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby-league/500/3.png',
-    logoOpacity: 0.18,
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png',
+    logoOpacity: 0.27, logoHeight: '98%',
   },
   epl: {
     // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
@@ -133,14 +149,14 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'Premier League',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
-    logoOpacity: 0.22,
+    logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)',
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
     label: 'Super Rugby',
     bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/rugby/500/242041.png',
-    logoOpacity: 0.18,
+    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png',
+    logoOpacity: 0.18, logoHeight: '110%',
   },
   rugby_int: {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
@@ -158,6 +174,13 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     symbol: '🏒', label: 'NHL',
     bg: '#0a0f1a', color: '#c0c8d4', border: 'rgba(192,200,212,0.28)',
   },
+  f1: {
+    // F1: official scarlet on near-black, checkered flag symbol
+    symbol: '🏁', label: 'F1',
+    bg: '#1a0000', color: '#E8002D', border: 'rgba(232,0,45,0.40)',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',
+    logoOpacity: 0.15,
+  },
 };
 
 // ── Cup / European competition badges ─────────────────────────────────────────
@@ -168,7 +191,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'Champions League',
     bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
-    logoOpacity: 0.42,
+    logoOpacity: 0.68, logoBlend: 'screen',
   },
   'Europa League': {
     // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
@@ -176,7 +199,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'Europa League',
     bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
-    logoOpacity: 0.35,
+    logoOpacity: 0.56, logoBlend: 'screen',
   },
   'Conference League': {
     // UECL: ◉ (inner circle = target / conference identity) in brand teal
@@ -184,7 +207,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'Conference League',
     bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
-    logoOpacity: 0.35,
+    logoOpacity: 0.56, logoBlend: 'screen',
   },
   'FA Cup': {
     // FA Cup: Three Lions abstracted as ◆ ◆ ◆ is complex — use ✦ on FA red
@@ -192,14 +215,14 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'FA Cup',
     bg: '#1a0005', color: '#ff2244', border: 'rgba(255,34,68,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',
-    logoOpacity: 0.30,
+    logoOpacity: 0.47, logoBlend: 'screen',
   },
   'EFL Cup': {
     // EFL Cup / Carabao Cup: official green palette, "EFL" abbreviation
     label: 'EFL Cup',
     bg: '#0d1f00', color: '#78be20', border: 'rgba(120,190,32,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',
-    logoOpacity: 0.22,
+    logoOpacity: 0.43, logoBlend: 'screen',
   },
 };
 
@@ -230,6 +253,28 @@ function FixtureBadge({ league, competition }: { league: string; competition?: s
 
 // ─── Schedule row ─────────────────────────────────────────────────────────────
 
+// ─── Channel deduplication ────────────────────────────────────────────────────
+// Collapses same-company broadcast + streaming entries into one token per group.
+
+const CHANNEL_GROUPS: [string, string[]][] = [
+  ['Nine/9Now',   ['Nine Network', '9Now', '9Gem']],
+  ['Seven/7plus', ['Seven Network', '7plus', '7mate']],
+  ['Fox/Kayo',    ['Fox Sports', 'Fox Footy', 'Kayo Sports']],
+  ['Stan Sport',  ['Stan Sport']],
+  ['beIN Sports', ['beIN Sports', 'beIN Sports Connect']],
+];
+
+function dedupeChannels(broadcast: string[], streaming: string[]): string {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const ch of [...broadcast, ...streaming]) {
+    const group = CHANNEL_GROUPS.find(([, members]) => members.includes(ch));
+    const key = group ? group[0] : ch;
+    if (!seen.has(key)) { seen.add(key); result.push(key); }
+  }
+  return result.join(' · ');
+}
+
 interface ScheduleRowProps {
   game: ScheduleEntry;
   userTz: string;
@@ -238,6 +283,8 @@ interface ScheduleRowProps {
   isExpanded: boolean;
   /** True in league-browse mode when the user follows one of the two teams. */
   isFollowed?: boolean;
+  /** teamId → league position, shown in league-browse mode for AFL/NRL/EPL. */
+  standingsMap?: Map<string, number>;
   onHover: (dateKey: string | null) => void;
   onToggle: () => void;
 }
@@ -249,18 +296,33 @@ function ScheduleRow({
   isHighlighted,
   isExpanded,
   isFollowed = false,
+  standingsMap,
   onHover,
   onToggle,
 }: ScheduleRowProps) {
   const { team } = game;
-  const displayTime = formatTimeInZone(game.date, userTz);
+  const isF1           = team.league === 'f1';
+  const displayTime    = formatTimeInZone(game.date, userTz);
+  const teamPosition   = standingsMap?.get(team.id);
+  const opponentPosition = game.opponentId ? standingsMap?.get(game.opponentId) : undefined;
 
   const teamLogoUrl    = TEAM_LOGOS[team.id];
   const leagueMeta     = game.competition
     ? COMPETITION_BADGE[game.competition]
     : LEAGUE_BADGE[team.league];
-  const leagueLogoUrl  = leagueMeta?.logoUrl;
-  const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
+  const leagueLogoUrl      = leagueMeta?.logoUrl;
+  const leagueLogoOpacity  = leagueMeta?.logoOpacity ?? 0.18;
+  const leagueLogoBlend    = leagueMeta?.logoBlend;
+  const leagueLogoFilter   = leagueMeta?.logoFilter;
+  const leagueLogoHeight   = leagueMeta?.logoHeight;
+  const leagueLogoMaxWidth = leagueMeta?.logoMaxWidth;
+  // Auto-compute right from height to keep all logo midpoints aligned at ~49px from the right edge.
+  // Formula: right = 49 - (heightPercent × 0.42) px. Manual logoRight overrides this.
+  const leagueLogoRight = leagueMeta?.logoRight ?? (() => {
+    const h = leagueMeta?.logoHeight ?? '140%';
+    if (h.endsWith('%')) return `${49 - parseFloat(h) * 0.42}px`;
+    return '-10px';
+  })();
 
   return (
     <div
@@ -309,8 +371,8 @@ function ScheduleRow({
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
-          className="absolute top-1/2 -translate-y-1/2 h-[140%] w-auto object-contain pointer-events-none select-none"
-          style={{ right: '-8px', opacity: leagueLogoOpacity }}
+          className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
+          style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
@@ -332,23 +394,41 @@ function ScheduleRow({
       <div className="flex-1 min-w-0 relative z-10">
         {/* Primary line: team vs opponent */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[15px] font-black tracking-tight text-white/85 leading-none">
-            {team.shortName}
-          </span>
-          <span className="text-[11px] font-medium text-white/30">
-            {game.isHome ? 'vs' : '@'}
-          </span>
-          <TeamBadge
-            logoUrl={game.opponentLogoUrl}
-            abbreviation={game.opponentAbbr}
-            primaryColor={game.opponentColor}
-            size={24}
-            className="rounded-md"
-          />
-          <span className="text-[13px] font-semibold text-white/70 leading-none">
-            {game.opponent}
-          </span>
-          <FixtureBadge league={team.league} competition={game.competition} />
+          {/* For F1 in league-browse mode, show the Grand Prix name as the headline */}
+          {isF1 ? (
+            <>
+              <span className="text-[15px] font-black tracking-tight text-white/85 leading-none">
+                {game.opponent}
+              </span>
+              {game.competition && (
+                <span className="text-[10px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded border shrink-0"
+                  style={{ color: '#E8002D', background: 'rgba(232,0,45,0.12)', borderColor: 'rgba(232,0,45,0.35)' }}
+                >
+                  {game.competition === 'Race' ? '🏁\uFE0E ' : ''}{game.competition}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="text-[13px] font-medium text-white/30">
+                {game.isHome ? 'vs' : '@'}
+              </span>
+              <TeamBadge
+                logoUrl={game.opponentLogoUrl}
+                abbreviation={game.opponentAbbr}
+                primaryColor={game.opponentColor}
+                size={26}
+                className="rounded-md"
+              />
+              <span className="text-[15px] font-semibold text-white/70 leading-none">
+                {game.opponent}
+              </span>
+              {opponentPosition !== undefined && (
+                <span className="text-[12px] font-bold text-white/35 leading-none">#{opponentPosition}</span>
+              )}
+            </>
+          )}
+          {!isF1 && <FixtureBadge league={team.league} competition={game.competition} />}
           {isFollowed && (
             <span
               className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none"
@@ -363,17 +443,17 @@ function ScheduleRow({
           )}
         </div>
 
-        {/* Secondary line: venue + broadcast */}
-        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+        {/* Secondary line: venue + broadcast — single line, no wrap */}
+        <div className="flex items-center gap-3 mt-1.5 min-w-0 overflow-hidden">
           {game.venue && (
-            <span className="flex items-center gap-1 text-[11px] text-white/30">
+            <span className="flex items-center gap-1 text-[11px] text-white/30 shrink-0 min-w-0 max-w-[130px]">
               <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate max-w-[150px]">{game.venue}</span>
+              <span className="truncate">{game.venue}</span>
             </span>
           )}
-          <span className="flex items-center gap-1 text-[11px] text-white/30">
+          <span className="flex items-center gap-1 text-[11px] text-white/30 truncate min-w-0">
             <Tv className="h-3 w-3 shrink-0" />
-            {[...game.broadcast, ...game.streaming].join(' · ')}
+            <span className="truncate">{dedupeChannels(game.broadcast, game.streaming)}</span>
           </span>
         </div>
       </div>
@@ -381,11 +461,11 @@ function ScheduleRow({
       {/* ── Time + chevron ── */}
       <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
         <div>
-          <p className="text-[17px] font-bold leading-none tabular-nums text-white/85">
+          <p className="text-[19px] font-bold leading-none tabular-nums text-white/85">
             {displayTime}
           </p>
-          <p className="text-[10px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
-            {game.isHome ? 'Home' : 'Away'}
+          <p className="text-[11px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
+            {isF1 ? (game.competition ?? 'F1') : game.isHome ? 'Home' : 'Away'}
           </p>
         </div>
         <ChevronDown
@@ -488,7 +568,7 @@ function TeamFilterPill({
         <img
           src={logoUrl}
           alt=""
-          className="w-4 h-4 object-contain shrink-0"
+          className="w-[13px] h-[13px] object-contain shrink-0"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
@@ -659,17 +739,17 @@ export default function SchedulePage() {
       return;
     }
 
-    Promise.all(
-      followed.map(async (team): Promise<ScheduleEntry[]> => {
-        const games = await loadFixtures(team);
-        return games.map(g => ({ ...g, team }));
-      }),
-    ).then(results => {
-      const sorted = results
-        .flat()
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setAllGames(sorted);
-      setLoading(false);
+    let remaining = followed.length;
+    followed.forEach(async (team) => {
+      const games = await loadFixtures(team);
+      const entries: ScheduleEntry[] = games.map(g => ({ ...g, team }));
+      setAllGames(prev => {
+        const merged = [...prev, ...entries];
+        merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        return merged;
+      });
+      remaining -= 1;
+      if (remaining === 0) setLoading(false);
     });
   }, []);
 
@@ -683,6 +763,18 @@ export default function SchedulePage() {
   }, [teams, expandedId, allGames, leagueGames]);
 
   const isLeagueMode = activeLeagueId !== null;
+
+  // Position map for AFL/NRL/EPL/F1 league-browse — teamId → table position.
+  const STANDINGS_POSITION_LEAGUES = new Set(['afl', 'nrl', 'epl', 'f1']);
+  const standingsMap = useMemo((): Map<string, number> | undefined => {
+    if (!isLeagueMode || !activeLeagueId || !STANDINGS_POSITION_LEAGUES.has(activeLeagueId) || !standings) return undefined;
+    const map = new Map<string, number>();
+    for (const row of standings) {
+      if (row.teamId) map.set(row.teamId, row.position);
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standings, isLeagueMode, activeLeagueId]);
 
   // In league-browse mode: show all league games (home/away filter still applies).
   // In team mode: show followed-team games filtered by active team pill.
@@ -714,21 +806,6 @@ export default function SchedulePage() {
     });
   }, [filteredGames, gameRangeFilter]);
 
-  // Group by calendar date in the user's timezone
-  const groupedByDate = useMemo(() => {
-    const groups: { dateKey: string; representativeDate: Date; games: ScheduleEntry[] }[] = [];
-    for (const game of displayedGames) {
-      const dateKey = datekeyInZone(game.date, userTz);
-      const last = groups[groups.length - 1];
-      if (last?.dateKey === dateKey) {
-        last.games.push(game);
-      } else {
-        groups.push({ dateKey, representativeDate: new Date(game.date), games: [game] });
-      }
-    }
-    return groups;
-  }, [displayedGames, userTz]);
-
   // Hero game: in league mode, prefer a followed team's next fixture.
   const heroGame = useMemo(() => {
     if (displayedGames.length === 0) return null;
@@ -740,6 +817,22 @@ export default function SchedulePage() {
       ) ?? displayedGames[0]
     );
   }, [displayedGames, isLeagueMode, followedTeamIds]);
+
+  // Group by calendar date in the user's timezone — hero game excluded (shown separately above)
+  const groupedByDate = useMemo(() => {
+    const groups: { dateKey: string; representativeDate: Date; games: ScheduleEntry[] }[] = [];
+    for (const game of displayedGames) {
+      if (game === heroGame) continue;
+      const dateKey = datekeyInZone(game.date, userTz);
+      const last = groups[groups.length - 1];
+      if (last?.dateKey === dateKey) {
+        last.games.push(game);
+      } else {
+        groups.push({ dateKey, representativeDate: new Date(game.date), games: [game] });
+      }
+    }
+    return groups;
+  }, [displayedGames, heroGame, userTz]);
 
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
@@ -915,12 +1008,17 @@ export default function SchedulePage() {
                             isHighlighted={isHighlighted}
                             isExpanded={isExpanded}
                             isFollowed={isFollowed}
+                            standingsMap={standingsMap}
                             onHover={handleCalendarHover}
                             onToggle={() => toggleExpand(game.id)}
                           />
                           {everExpandedIds.has(game.id) && (
                             <div style={{ display: isExpanded ? 'block' : 'none' }}>
-                              <GameExpandPanel game={game} compact={isLeagueMode} />
+                              <GameExpandPanel
+                                game={game}
+                                compact={isLeagueMode}
+                                onStandingsUpdate={rows => setStandings(rows)}
+                              />
                             </div>
                           )}
                         </div>

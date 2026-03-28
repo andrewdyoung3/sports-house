@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Calendar, Settings } from 'lucide-react';
+import { Home, Calendar, Trophy, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
   { href: '/',         label: 'Home',     icon: Home },
   { href: '/schedule', label: 'Schedule', icon: Calendar },
+  { href: '/results',  label: 'Results',  icon: Trophy },
 ];
 
 export function Navbar() {

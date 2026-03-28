@@ -13,6 +13,7 @@ import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
 import { getUpcomingGames } from '@/lib/mock-data';
+import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -524,9 +525,100 @@ function fetchMockLeague(leagueId: string): UpcomingGame[] {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
+// ─── F1 — Jolpi Ergast race calendar ──────────────────────────────────────────
+//
+// Returns one entry per SESSION per upcoming race weekend.
+// All sessions use teamId: 'f1-championship' and store the circuitId in opponentId.
+
+interface F1SessionDef {
+  key: string;
+  label: string;
+  abbr: string;
+  dateField?: string;
+  timeField?: string;
+}
+
+const F1_SESSIONS: F1SessionDef[] = [
+  { key: 'fp1',       label: 'Practice 1',       abbr: 'FP1',  dateField: 'FirstPractice' },
+  { key: 'fp2',       label: 'Practice 2',       abbr: 'FP2',  dateField: 'SecondPractice' },
+  { key: 'fp3',       label: 'Practice 3',       abbr: 'FP3',  dateField: 'ThirdPractice' },
+  { key: 'sprintq',   label: 'Sprint Qualifying', abbr: 'SQ',   dateField: 'SprintQualifying' },
+  { key: 'sprint',    label: 'Sprint',            abbr: 'SPR',  dateField: 'Sprint' },
+  { key: 'qualifying',label: 'Qualifying',        abbr: 'QUAL', dateField: 'Qualifying' },
+  { key: 'race',      label: 'Race',              abbr: 'RACE' },
+];
+
+async function fetchF1League(): Promise<UpcomingGame[]> {
+  const tryUrls = [
+    'https://api.jolpi.ca/ergast/f1/current.json',
+    'https://api.jolpi.ca/ergast/f1/2025.json',
+  ];
+
+  let races: any[] = [];
+  for (const url of tryUrls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      races = data?.MRData?.RaceTable?.Races ?? [];
+      if (races.length > 0) break;
+    } catch {
+      // try next
+    }
+  }
+  if (races.length === 0) return [];
+
+  const now          = Date.now();
+  const twoHoursAgo  = now - 2 * 3600 * 1000;
+  const fixtures: UpcomingGame[] = [];
+
+  for (const race of races) {
+    const raceName  = race.raceName as string;
+    const country   = (race.Circuit?.Location?.country as string) ?? '';
+    const abbr      = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
+    const circuitId = race.Circuit?.circuitId ?? '';
+
+    for (const session of F1_SESSIONS) {
+      let sessionDate: Date;
+      if (session.dateField) {
+        const sessionData = race[session.dateField];
+        if (!sessionData?.date) continue;
+        const sessionTime = sessionData.time ?? '12:00:00Z';
+        sessionDate = new Date(`${sessionData.date}T${sessionTime}`);
+      } else {
+        // Race itself
+        const raceTime = race.time ?? '14:00:00Z';
+        sessionDate = new Date(`${race.date}T${raceTime}`);
+      }
+
+      if (isNaN(sessionDate.getTime())) continue;
+      if (sessionDate.getTime() <= twoHoursAgo) continue;
+
+      fixtures.push({
+        id:              `f1-${race.round}-${session.key}`,
+        teamId:          'f1-championship',
+        opponent:        raceName,
+        opponentAbbr:    abbr,
+        opponentColor:   '#E8002D',
+        opponentLogoUrl: undefined,
+        isHome:          false,
+        date:            sessionDate.toISOString(),
+        time:            aestDisplay(sessionDate),
+        venue:           race.Circuit?.circuitName ?? '',
+        broadcast:       ['Fox Sports', 'Kayo Sports'],
+        streaming:       ['Kayo Sports'],
+        competition:     session.label,
+        opponentId:      circuitId,
+      });
+    }
+  }
+
+  return fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
+const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -542,6 +634,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'rugby_int')   fixtures = await fetchRINTLeague();
     else if (league === 'nba')         fixtures = fetchMockLeague('nba');
     else if (league === 'nhl')         fixtures = fetchMockLeague('nhl');
+    else if (league === 'f1')          fixtures = await fetchF1League();
     return NextResponse.json(fixtures, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
   } catch (err) {
     console.error('[/api/league-fixtures]', err);

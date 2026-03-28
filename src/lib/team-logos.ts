@@ -268,4 +268,41 @@ export const TEAM_LOGOS: Record<string, string> = {
   'nhl-canucks':        `${ESPN}/nhl/500/van.png`,
   'nhl-goldenknights':  `${ESPN}/nhl/500/vgk.png`,
 
+  // ── Formula 1 ───────────────────────────────────────────────────────────────
+  // Championship entity (used in league-browse mode)
+  'f1-championship': 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',
+  // Driver headshots — Official F1 media CDN — 2025 driver portraits
+  'f1_ver': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/verstappen.png',
+  'f1_law': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/lawson.png',
+  'f1_lec': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/leclerc.png',
+  'f1_ham': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/hamilton.png',
+  'f1_rus': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/russell.png',
+  'f1_ant': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/antonelli.png',
+  'f1_nor': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/norris.png',
+  'f1_pia': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/piastri.png',
+  'f1_alo': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/alonso.png',
+  'f1_str': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/stroll.png',
+  'f1_gas': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/gasly.png',
+  'f1_doo': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/doohan.png',
+  'f1_alb': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/albon.png',
+  'f1_sai': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/sainz.png',
+  'f1_tsu': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/tsunoda.png',
+  'f1_had': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/hadjar.png',
+  'f1_oco': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/ocon.png',
+  'f1_bea': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/bearman.png',
+  'f1_hul': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/hulkenberg.png',
+  'f1_bor': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/bortoleto.png',
+
+  // ── Formula 1 (constructor logos) ──────────────────────────────────────────
+  'f1-team-redbull':     'https://a.espncdn.com/i/teamlogos/f1/500/red_bull.png',
+  'f1-team-ferrari':     'https://a.espncdn.com/i/teamlogos/f1/500/ferrari.png',
+  'f1-team-mercedes':    'https://a.espncdn.com/i/teamlogos/f1/500/mercedes.png',
+  'f1-team-mclaren':     'https://a.espncdn.com/i/teamlogos/f1/500/mclaren.png',
+  'f1-team-astonmartin': 'https://a.espncdn.com/i/teamlogos/f1/500/aston_martin.png',
+  'f1-team-alpine':      'https://a.espncdn.com/i/teamlogos/f1/500/alpine.png',
+  'f1-team-williams':    'https://a.espncdn.com/i/teamlogos/f1/500/williams.png',
+  'f1-team-racingbulls': 'https://a.espncdn.com/i/teamlogos/f1/500/racing_bulls.png',
+  'f1-team-haas':        'https://a.espncdn.com/i/teamlogos/f1/500/haas.png',
+  'f1-team-sauber':      'https://a.espncdn.com/i/teamlogos/f1/500/sauber.png',
+
 };

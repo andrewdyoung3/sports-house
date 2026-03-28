@@ -10,7 +10,8 @@ export type SportKey =
   | 'nba'
   | 'nfl'
   | 'mlb'
-  | 'nhl';
+  | 'nhl'
+  | 'f1';
 
 export interface League {
   id: SportKey;
@@ -113,6 +114,7 @@ export interface TeamStanding {
   goalsAgainst?: number;
   percentage?: number;     // AFL: for/against percentage
   rankChange?: number;     // +ve = moved up, -ve = moved down, 0 = same (from ESPN previousRank)
+  constructorName?: string; // F1: constructor/team name for the driver
 }
 
 export interface NewsHeadline {
@@ -148,6 +150,93 @@ export interface PreviewContext {
   tips?: TipSummary;
   /** Cup/European competitions — current stage info and optional group standings. */
   competitionStage?: CompetitionStage;
+  /** Head coach / manager name, used to inform tactical analysis. */
+  teamManager?: string;
+  opponentManager?: string;
+  /** Starting players from each team's most recent game, used to infer likely lineup. */
+  teamLastLineup?: string[];
+  opponentLastLineup?: string[];
+  /** AFL: 26-player Squiggle squad submission for the upcoming game.
+   *  Cross-reference with teamLastLineup to identify ins (possible returns) and outs (likely absent). */
+  teamSquad?: string[];
+  opponentSquad?: string[];
+  /** Players confirmed or likely unavailable for the upcoming fixture.
+   *  Populated from ESPN injury reports (NRL, EPL, Super Rugby). */
+  teamInjuryReport?: Array<{ name: string; status: string }>;
+  opponentInjuryReport?: Array<{ name: string; status: string }>;
+  /** For two-legged knockout ties: score from the first leg (team's perspective). */
+  firstLegResult?: { teamScore: number; opponentScore: number };
+  /** For English cup fixtures: the division the opponent currently plays in (e.g. "Championship", "League One") — only set when they are not in the top flight. */
+  opponentLeague?: string;
+
+  // ── F1-specific preview data ──────────────────────────────────────────────
+  f1DriverStandings?: Array<{
+    position: number;
+    driverName: string;
+    teamId?: string;
+    constructorName: string;
+    points: number;
+    wins: number;
+    ergastDriverId: string;
+  }>;
+  f1ConstructorStandings?: Array<{
+    position: number;
+    constructorName: string;
+    points: number;
+    wins: number;
+  }>;
+  f1RecentRaceResults?: Array<{
+    round: number;
+    raceName: string;
+    /** Top-10 finishers for this race */
+    results: Array<{
+      position: number;
+      driverName: string;
+      constructorName: string;
+      ergastDriverId: string;
+    }>;
+  }>;
+  f1FollowedType?: 'driver' | 'constructor';
+  /** Full name of followed driver (e.g. "Max Verstappen") or constructor (e.g. "McLaren") */
+  f1FollowedName?: string;
+  /** Constructor name for the followed driver (same as f1FollowedName if following constructor) */
+  f1FollowedConstructorName?: string;
+  f1SessionType?: string;   // "Race", "Qualifying", "Practice 1", etc.
+  f1RaceName?: string;      // "Japanese Grand Prix"
+  f1CircuitName?: string;   // "Suzuka Circuit"
+  f1RoundNumber?: number;
+}
+
+// ─── Match Stats (live/completed game player + team data) ────────────────────
+
+export interface PlayerStatLine {
+  name: string;
+  position?: string;
+  /** e.g. [{ label: 'G', value: '2' }, { label: 'A', value: '1' }] */
+  stats: Array<{ label: string; value: string }>;
+}
+
+export interface TeamMatchStats {
+  teamName: string;
+  /** Aggregate team-level stats (possession, shots, etc.) */
+  aggStats: Array<{ label: string; value: string }>;
+  players: PlayerStatLine[];
+}
+
+export interface MatchStats {
+  team: TeamMatchStats;
+  opponent: TeamMatchStats;
+}
+
+// ─── AI Match Review (post-match, retrospective) ─────────────────────────────
+
+export interface AIReview {
+  /** 2–3 sentences explaining what happened tactically and why. */
+  summary: string;
+  /** 2–3 specific, grounded factors that determined the match. */
+  keyMoments: string[];
+  /** What this result means for the team going forward. */
+  verdict: string;
 }
 
 // ─── AI Match Preview ────────────────────────────────────────────────────────
@@ -163,6 +252,29 @@ export interface AIPreview {
   verdict: string;
   /** 3–4 short punchy tactical or contextual insights. */
   keyInsights: string[];
+}
+
+// ─── Weather ─────────────────────────────────────────────────────────────────
+
+export interface WeatherData {
+  /** Broad condition bucket: 'clear' | 'cloud' | 'drizzle' | 'rain' | 'snow' | 'fog' | 'storm' */
+  condition: string;
+  /** Display emoji icon */
+  icon: string;
+  /** Short human-readable description, e.g. "Heavy rain" */
+  description: string;
+  /** Temperature at kickoff in °C */
+  tempC: number;
+  /** Precipitation in mm for the kickoff hour */
+  precipMm: number;
+  /** Precipitation probability 0–100 */
+  precipProbability: number;
+  /** Wind speed in km/h */
+  windKmh: number;
+  /** Raw WMO weather code from Open-Meteo */
+  weatherCode: number;
+  /** True when conditions meaningfully affect play (rain/wind/extreme temp) */
+  isNotable: boolean;
 }
 
 // ─── User Preferences ────────────────────────────────────────────────────────

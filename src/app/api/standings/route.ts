@@ -13,8 +13,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { TeamStanding } from '@/types';
+import { F1_DRIVERS, F1_CONSTRUCTOR_TEAMS, ERGAST_ID_TO_TEAM_ID } from '@/lib/f1-data';
 
 export type StandingRow = TeamStanding & { teamId?: string };
+
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
 async function fetchTimeout(
   url: string,
@@ -276,12 +279,135 @@ async function fetchRINTStandings(): Promise<StandingRow[]> {
   });
 }
 
+// ─── Formula 1 — Jolpi Ergast API ────────────────────────────────────────────
+
+async function fetchF1Standings(): Promise<StandingRow[]> {
+  const tryUrls = [
+    'https://api.jolpi.ca/ergast/f1/current/driverstandings.json',
+    'https://api.jolpi.ca/ergast/f1/2025/driverstandings.json',
+  ];
+
+  let standingsList: any[] = [];
+  for (const url of tryUrls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      standingsList = data?.MRData?.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+      if (standingsList.length > 0) break;
+    } catch {
+      // try next URL
+    }
+  }
+
+  if (standingsList.length === 0) return [];
+
+  // Get count of completed races for the "played" field
+  let completedRaces = 0;
+  try {
+    const racesRes = await fetchTimeout(
+      'https://api.jolpi.ca/ergast/f1/current.json',
+      { next: { revalidate: 3600 } },
+    );
+    if (racesRes.ok) {
+      const racesData = await racesRes.json();
+      const races: any[] = racesData?.MRData?.RaceTable?.Races ?? [];
+      const now = Date.now();
+      completedRaces = races.filter((r: any) => new Date(r.date).getTime() < now).length;
+    }
+  } catch {
+    // use 0 as fallback
+  }
+
+  return standingsList.map((s: any): StandingRow => {
+    const driverId = s.Driver?.driverId ?? '';
+    const teamId   = ERGAST_ID_TO_TEAM_ID[driverId];
+    const driver   = teamId ? F1_DRIVERS.find(d => d.id === teamId) : undefined;
+
+    const wins    = parseInt(s.wins ?? '0', 10);
+    const played  = completedRaces;
+    const losses  = Math.max(0, played - wins);
+
+    return {
+      name:         `${s.Driver?.givenName ?? ''} ${s.Driver?.familyName ?? ''}`.trim(),
+      teamId,
+      position:     parseInt(s.position, 10),
+      played,
+      wins,
+      draws:        0,
+      losses,
+      points:       parseFloat(s.points ?? '0'),
+      constructorName: s.Constructors?.[0]?.name ?? '',
+      primaryColor:   driver?.primaryColor,
+      secondaryColor: driver?.secondaryColor,
+    } as StandingRow & { primaryColor?: string; secondaryColor?: string };
+  });
+}
+
+// ─── Formula 1 Constructor Standings — Jolpi Ergast API ──────────────────────
+
+/** Mapping from Ergast constructorId → our internal f1-team-* id */
+const F1_ERGAST_CONSTRUCTOR_TO_TEAM_ID: Record<string, string> = {
+  'red_bull':    'f1-team-redbull',
+  'ferrari':     'f1-team-ferrari',
+  'mercedes':    'f1-team-mercedes',
+  'mclaren':     'f1-team-mclaren',
+  'aston_martin':'f1-team-astonmartin',
+  'alpine':      'f1-team-alpine',
+  'williams':    'f1-team-williams',
+  'rb':          'f1-team-racingbulls',
+  'haas':        'f1-team-haas',
+  'sauber':      'f1-team-sauber',
+};
+
+async function fetchF1ConstructorStandings(): Promise<StandingRow[]> {
+  const tryUrls = [
+    'https://api.jolpi.ca/ergast/f1/current/constructorstandings.json',
+    'https://api.jolpi.ca/ergast/f1/2025/constructorstandings.json',
+  ];
+
+  let standingsList: any[] = [];
+  for (const url of tryUrls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      standingsList = data?.MRData?.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
+      if (standingsList.length > 0) break;
+    } catch {
+      // try next URL
+    }
+  }
+
+  if (standingsList.length === 0) return [];
+
+  return standingsList.map((s: any): StandingRow => {
+    const constructorId = s.Constructor?.constructorId ?? '';
+    const teamId        = F1_ERGAST_CONSTRUCTOR_TO_TEAM_ID[constructorId];
+    const constructorTeam = teamId ? F1_CONSTRUCTOR_TEAMS.find(t => t.id === teamId) : undefined;
+
+    return {
+      name:         s.Constructor?.name ?? '',
+      teamId,
+      position:     parseInt(s.position, 10),
+      played:       0,
+      wins:         parseInt(s.wins ?? '0', 10),
+      draws:        0,
+      losses:       0,
+      points:       parseFloat(s.points ?? '0'),
+      primaryColor: constructorTeam?.primaryColor,
+      secondaryColor: constructorTeam?.secondaryColor,
+    } as StandingRow & { primaryColor?: string; secondaryColor?: string };
+  });
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
+const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
+  const type   = req.nextUrl.searchParams.get('type') ?? 'drivers';
   if (!ALLOWED.has(league)) {
     return NextResponse.json({ error: 'Invalid league' }, { status: 400 });
   }
@@ -293,8 +419,10 @@ export async function GET(req: NextRequest) {
     else if (league === 'epl')         rows = await fetchEPLStandings();
     else if (league === 'super_rugby') rows = await fetchSuperRugbyStandings();
     else if (league === 'rugby_int')   rows = await fetchRINTStandings();
+    else if (league === 'f1' && type === 'constructors') rows = await fetchF1ConstructorStandings();
+    else if (league === 'f1')          rows = await fetchF1Standings();
 
-    return NextResponse.json(rows);
+    return NextResponse.json(rows, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/standings]', err);
     return NextResponse.json([]);

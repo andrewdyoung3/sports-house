@@ -13,6 +13,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+
+// 5-minute browser/CDN cache; server-side fetch cache handles upstream revalidation.
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -124,12 +128,15 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
 
   const { games = [] } = await res.json();
   const now = Date.now();
+  // Keep games that kicked off within the last 2 hours (so the hero stays
+  // visible during the game) and are not yet complete.
+  const twoHoursAgo = now - 2 * 3600 * 1000;
 
   return (games as any[])
     .filter(g =>
       (g.hteam === sqName || g.ateam === sqName) &&
       g.complete < 100 &&
-      g.unixtime * 1000 > now,
+      g.unixtime * 1000 > twoHoursAgo,
     )
     .slice(0, 10)
     .map((g, i): UpcomingGame => {
@@ -155,7 +162,7 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
         time,
         venue:          g.venue ?? '',
         broadcast:      AFL_BROADCAST_ROTATION[i % AFL_BROADCAST_ROTATION.length],
-        streaming:      ['Kayo Sports'],
+        streaming:      ['Kayo Sports', '7plus'],
         opponentId:     SQUIGGLE_TO_ID[oppName],
       };
     });
@@ -221,21 +228,25 @@ const EPL_TEAM: Record<string, { color: string; abbr: string }> = {
 
 /**
  * Australian broadcast rights per ESPN competition slug.
- * Stan Sport acquired English football rights (PL, FA Cup, EFL Cup, UCL, UEL)
- * from the 2022-23 season onward, replacing Optus Sport.
+ * Last verified: March 2026.
+ *
+ * EPL (eng.1):        Stan Sport (streaming) + Channel 9 (select FTA games)
+ * FA Cup (eng.fa):    Stan Sport only
+ * EFL Cup/Carabao (eng.league_cup): beIN Sports Connect (exclusive rights)
+ * Champions League:   Stan Sport only
+ * Europa League:      Stan Sport only
  *
  * UPDATE THIS TABLE when rights deals change — nowhere else needs touching.
- * Last verified: March 2026.
  *
  * broadcast  = traditional TV channels (may include free-to-air)
  * streaming  = subscription streaming services
  */
 const BROADCAST_RIGHTS: Record<string, { broadcast: string[]; streaming: string[] }> = {
-  'eng.1':          { broadcast: ['Stan Sport'],          streaming: ['Stan Sport'] },
-  'eng.fa':         { broadcast: ['Stan Sport'],          streaming: ['Stan Sport'] },
-  'eng.league_cup': { broadcast: ['Stan Sport'],          streaming: ['Stan Sport'] },
-  'uefa.champions': { broadcast: ['Stan Sport'],          streaming: ['Stan Sport'] },
-  'uefa.europa':    { broadcast: ['Stan Sport'],          streaming: ['Stan Sport'] },
+  'eng.1':          { broadcast: ['Channel 9', 'Stan Sport'], streaming: ['Stan Sport'] },
+  'eng.fa':         { broadcast: ['Stan Sport'],              streaming: ['Stan Sport'] },
+  'eng.league_cup': { broadcast: ['beIN Sports'],             streaming: ['beIN Sports Connect'] },
+  'uefa.champions': { broadcast: ['Stan Sport'],              streaming: ['Stan Sport'] },
+  'uefa.europa':    { broadcast: ['Stan Sport'],              streaming: ['Stan Sport'] },
 };
 const BROADCAST_FALLBACK = { broadcast: ['Stan Sport'], streaming: ['Stan Sport'] };
 
@@ -444,7 +455,7 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
         time,
         venue:           comp.venue?.fullName ?? '',
         broadcast:       ['Nine Network', 'Fox Sports'],
-        streaming:       ['Kayo Sports'],
+        streaming:       ['Kayo Sports', '9Now'],
         opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
           ?? NRL_OPP_LOGO[oppName],
         opponentId:      NRL_DISP_TO_ID[oppName],
@@ -739,11 +750,114 @@ async function fetchInternationalRugbyFixtures(teamId: string): Promise<Upcoming
     .slice(0, 10);
 }
 
+// ─── Formula 1 — Jolpi Ergast API ────────────────────────────────────────────
+//
+// Returns all sessions for the next 2 race weekends (Practice, Qualifying, Race, etc.)
+// All entries use teamId: 'f1-championship' and store circuitId in opponentId.
+
+interface F1SessionDef {
+  key: string;
+  label: string;
+  dateField?: string;
+}
+
+const F1_FIXTURE_SESSIONS: F1SessionDef[] = [
+  { key: 'fp1',        label: 'Practice 1',       dateField: 'FirstPractice' },
+  { key: 'fp2',        label: 'Practice 2',       dateField: 'SecondPractice' },
+  { key: 'fp3',        label: 'Practice 3',       dateField: 'ThirdPractice' },
+  { key: 'sprintq',    label: 'Sprint Qualifying', dateField: 'SprintQualifying' },
+  { key: 'sprint',     label: 'Sprint',            dateField: 'Sprint' },
+  { key: 'qualifying', label: 'Qualifying',        dateField: 'Qualifying' },
+  { key: 'race',       label: 'Race' },
+];
+
+function buildF1Sessions(races: any[], teamId: string): UpcomingGame[] {
+  const now          = Date.now();
+  const twoHoursAgo  = now - 2 * 3600 * 1000;
+
+  // Find next 2 upcoming race weekends
+  const upcomingRaces = races.filter((race: any) => {
+    const raceDate = new Date(`${race.date}T${race.time ?? '14:00:00Z'}`);
+    return raceDate.getTime() > twoHoursAgo;
+  }).slice(0, 2);
+
+  if (upcomingRaces.length === 0) return [];
+
+  const fixtures: UpcomingGame[] = [];
+
+  for (const race of upcomingRaces) {
+    const raceName  = race.raceName as string;
+    const country   = (race.Circuit?.Location?.country as string) ?? '';
+    const abbr      = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
+    const circuitId = race.Circuit?.circuitId ?? '';
+
+    for (const session of F1_FIXTURE_SESSIONS) {
+      let sessionDate: Date;
+      if (session.dateField) {
+        const sessionData = race[session.dateField];
+        if (!sessionData?.date) continue;
+        const sessionTime = sessionData.time ?? '12:00:00Z';
+        sessionDate = new Date(`${sessionData.date}T${sessionTime}`);
+      } else {
+        const raceTime = race.time ?? '14:00:00Z';
+        sessionDate = new Date(`${race.date}T${raceTime}`);
+      }
+
+      if (isNaN(sessionDate.getTime())) continue;
+      if (sessionDate.getTime() <= twoHoursAgo) continue;
+
+      const aestDate = new Date(sessionDate.getTime() + 10 * 3600 * 1000);
+
+      fixtures.push({
+        id:              `f1-${race.round}-${session.key}`,
+        teamId,
+        opponent:        raceName,
+        opponentAbbr:    abbr,
+        opponentColor:   '#E8002D',
+        isHome:          false,
+        date:            sessionDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           race.Circuit?.circuitName ?? '',
+        broadcast:       ['Fox Sports', 'Kayo Sports'],
+        streaming:       ['Kayo Sports'],
+        competition:     session.label,
+        opponentId:      circuitId,
+      });
+    }
+  }
+
+  return fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+async function fetchF1Fixtures(teamId: string): Promise<UpcomingGame[]> {
+  const tryUrls = [
+    'https://api.jolpi.ca/ergast/f1/current.json',
+    'https://api.jolpi.ca/ergast/f1/2025.json',
+  ];
+
+  let races: any[] = [];
+  for (const url of tryUrls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      races = data?.MRData?.RaceTable?.Races ?? [];
+      if (races.length > 0) break;
+    } catch {
+      // try next URL
+    }
+  }
+
+  if (races.length === 0) return [];
+
+  return buildF1Sessions(races, teamId);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
 // Allowlist of valid teamId prefixes keeps arbitrary strings out of upstream URLs
-const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
+const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -760,11 +874,11 @@ export async function GET(req: NextRequest) {
     else if (league === 'nrl')         fixtures = await fetchNRLFixtures(teamId);
     else if (league === 'super_rugby') fixtures = await fetchSuperRugbyFixtures(teamId);
     else if (league === 'rugby_int')   fixtures = await fetchInternationalRugbyFixtures(teamId);
+    else if (league === 'f1')          fixtures = await fetchF1Fixtures(teamId);
 
-    return NextResponse.json(fixtures);
+    return NextResponse.json(fixtures, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/fixtures]', err);
-    // Return empty — client falls back to mock data
     return NextResponse.json([]);
   }
 }

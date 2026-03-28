@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
-import type { PreviewContext, GameResult, AIPreview } from '@/types';
+import type { PreviewContext, GameResult, AIPreview, WeatherData } from '@/types';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
@@ -31,6 +31,17 @@ const SPORT_CONTEXT: Record<string, string> = {
   epl: `English Premier League (association football). Use EPL-specific terminology: pressing triggers, high block/low block, inverted wingers, full-backs overlapping, false nine, set-piece delivery, high line, offside trap, the run-in, relegation scrap, top-four race, Europa spot. The table is called "the Table". Use "pitch" not "ground". Use "half" not "period".`,
   super_rugby: `Super Rugby Pacific (15-man rugby union code). Use rugby union terminology: scrum dominance, lineout, breakdown, ruck, maul, gainline, high ball, box kick, garryowen, carrying game, wide channels, jackal, the carrying game, phases. The table is called "the Table".`,
   rugby_int: `International Rugby Union Test match (15-man code) — the pinnacle of the game. Use rugby union terminology: set-piece, scrum, lineout, breakdown, maul, territorial kicking, box kick, garryowen, gainline, the contact area, Test rugby, the jersey, Test debut. This is a Test match — tone should reflect the magnitude. The table is called "the Table".`,
+  f1: `Formula 1 — 2026 season. This season operates under completely new technical regulations that have reset the competitive order. You MUST incorporate the following 2026-specific context into every preview:
+
+ACTIVE AERODYNAMICS (replaces DRS): Traditional DRS has been abolished. All cars run active aerodynamics that continuously transition between High Downforce mode (cornering) and Low Drag mode (straights). Unlike DRS — which was driver-activated in fixed zones — active aero operates algorithmically. Overtaking is less zone-predictable; opportunities depend more on raw pace differential and corner exit speed. On circuits where DRS was previously decisive (long straights, tight hairpins), the racing dynamics have changed significantly.
+
+MANUAL OVERRIDE (MO) SYSTEM: Drivers have a push-to-pass electrical boost button. The MGU-K now contributes approximately 350kW — nearly triple the 2022–2025 level. Drivers have limited MO activations per lap, making energy management critical. Teams with superior electrical deployment software gain an advantage. Crucially: smooth, efficient cornering matters more than late braking — drivers who recover more energy through slow-speed sections have more MO to deploy on straights. This rewards a different driving style than the DRS era.
+
+NEW POWER UNITS (2026 spec): Approximately 50/50 split between ICE and electrical power. Manufacturers: Mercedes, Ferrari, Honda (Red Bull Powertrains), Renault (Alpine), Audi (powering their new F1 entry, formerly Kick Sauber). Higher electrical contribution means software and energy deployment are major differentiators. Teams with earlier-developed PU packages likely have advantages over Audi in its debut season.
+
+PERFORMANCE IMPLICATIONS: The reset creates uncertainty — teams that excelled under 2022–2025 ground-effect aero may not retain their positions. Active aero compliance, MO energy efficiency, and PU deployment strategy are the new differentiating factors. Use this context when discussing team performance trajectories and constructor competitiveness.
+
+Championship points: 25/18/15/12/10/8/6/4/2/1 for positions 1–10, plus 1 point for fastest lap. The standings are called "the Championship". Use F1 terminology: active aero, Manual Override (MO), undercut, overcut, pit window, soft/medium/hard compounds, safety car, VSC, parc fermé, setup, downforce, tyre deg. Do NOT reference DRS as a current system — it does not exist in 2026.`,
 };
 
 const LEAGUE_LABELS: Record<string, string> = {
@@ -39,6 +50,7 @@ const LEAGUE_LABELS: Record<string, string> = {
   epl:         'Premier League',
   super_rugby: 'Super Rugby Pacific',
   rugby_int:   'International Rugby Union',
+  f1:          'Formula 1',
 };
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -78,8 +90,14 @@ INFORMATION ECONOMY — no redundant data:
   - Not "sitting third with 38 points" → "well placed for a top-four push but the gap is tightening"
   - Not "beat City 3–0 last month" → "their most recent head-to-head exposed City's high line against pace"
 • Directional cues without counts are acceptable where they set up an analytical point: "arriving on the back of successive defeats", "unbeaten at home this season". These are acceptable only if they lead somewhere — not as standalone observations.
+• FORM RESULT RECENCY — the form data shows results in sequence (most recent first) but contains NO round numbers or dates. Do not use time-anchored language ("last round", "last week", "last month", "recently", "just last week") for any specific result unless you are certain it was the most recent game (first in the sequence). For results in positions 2–5, use neutral phrases: "in their loss to the Sharks", "when they faced City", "against the Broncos earlier this season". Calling a third-game-ago result "last round" is factually wrong — the form data does not tell you when that game was played.
 • Forbidden vague momentum phrases — these assert something without saying anything: "building momentum", "hitting their stride", "finding their form", "growing in confidence", "on the rise", "firing on all cylinders", "clicking into gear". If form is genuinely positive, state the specific structural reason — what is working and why it matters for this fixture.
 • For standings: state the stakes and what they mean structurally — not the coordinates that produced them.
+• POSITION vs POINTS — understand the model, then use it correctly:
+  HOW IT WORKS: Each result earns competition points (e.g. 2 pts for a win, 1 for a draw, 0 for a loss in most leagues). The total of those points determines a team's ordinal position on the ladder/table — 1st = most points, last = fewest. Position and points are two different things derived from the same underlying results; never conflate them.
+  TALKING ABOUT THE POINTS TOTAL — acceptable phrases: "league points", "points on the table", "points tally", "competition points". Example: "Brisbane sit on 10 points" or "12 points from eight games".
+  TALKING ABOUT THE ORDINAL RANK — acceptable phrases: "league position", "ladder position", "Xth on the ladder", "Xth on the table", "sitting in Xth". Example: "Brisbane sit 13th on the ladder".
+  FORBIDDEN: "ladder points" — this phrase conflates the two concepts and is meaningless. Never use it. Never write "13 ladder points" when you mean 13th place. Never write "6 table points" when you mean 6th on the table.
 • Defensive/offensive records: never cite a raw total in isolation ("52 points conceded", "14 goals scored"). A raw number is meaningless without context. Instead, express the record as a league rank — "the tightest defence in the competition", "conceding the fewest points of any side", "the second-highest scoring attack". If the data doesn't tell you where they rank, describe the quality directionally ("among the better defensive sides") rather than quoting a figure. The analytical question is always: where do they sit relative to the rest of the league?
 
 SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring range:
@@ -91,7 +109,7 @@ SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring
 
 CALIBRATING HOW MUCH WEIGHT TO GIVE THE DATA:
 • The CURRENT LADDER/TABLE data includes a "played" count. Use it to judge how much you can read into the standings.
-• Early season (≤4 games played): Don't project from the ladder — no "on course for the title", "early front-runner", "set the standard". More importantly: do NOT comment on the small sample size at all. No "two rounds in", "the ladder tells you little this early", "too soon to read much in", "patterns are still forming" — these add nothing. If there's nothing useful to say about the standings or form, skip it and write about something that IS useful: the coaching setup, the structural matchup, a tactical disparity, team news. The exception: genuinely striking early patterns (three big wins, three heavy losses, a dominant set-piece in every game) are worth naming directly — state the pattern, don't qualify it.
+• Early season (≤4 games played): Apply lower weight to the standings. You may note seasonal context when it is genuinely relevant — but only once, briefly, and as a natural part of the analysis rather than a boilerplate opener. The problem to avoid is repetitive, formulaic early-season hedging that reads the same way every preview: "X rounds in, neither position tells you much", "too soon to read into the ladder", "it's still early days". If you have already noted the stage of the season, do not repeat it in another section. Prefer spending the analytical space on what IS useful regardless of how many games have been played: the coaching setup, the structural matchup, player availability, tactical disparity. The exception: genuinely striking early patterns (three straight wins by big margins, three straight heavy losses) are worth naming directly — state the pattern, let it speak for itself.
 • Short form sample (≤3 results): Only discuss form momentum if there is a clear, specific pattern worth noting. If there isn't, omit it entirely — don't explain the absence, just move on.
 • Exception — genuinely striking early patterns ARE worth calling out: three straight wins by big margins, three straight heavy losses, a dominant set-piece in every game. Call it out directly and let the result speak for itself — don't qualify it to death.
 • Mid-season (5–15 games): patterns are becoming real. Discuss trends with confidence.
@@ -100,7 +118,7 @@ CALIBRATING HOW MUCH WEIGHT TO GIVE THE DATA:
 
 SEASONAL DYNAMICS — how much the table means at different points:
 • Different competitions settle at different rates. Use the "played" count to calibrate how much trust to put in the standings:
-  - AFL/NRL (22–27 rounds): The first four rounds tell you almost nothing about where teams finish. Things start to mean something around Round 8; genuine finals contenders are separating by Rounds 14–18; by Round 19+ every game matters. A team leading after Round 3 has roughly a coin-flip chance of finishing there.
+  - AFL/NRL (22–27 rounds): The first four rounds are volatile — use ladder positions for structural context but not for projections. Things start to mean something around Round 8; genuine finals contenders are separating by Rounds 14–18; by Round 19+ every game matters.
   - EPL (38 rounds): The first five rounds are chaotic — newly promoted sides spike, strong sides rotate. The table starts reflecting real quality around Round 6–14; the mid-table and top-four shape is fairly reliable by Round 15–25; by Round 26+ the title, top-four, and relegation groups are largely sorted.
   - Super Rugby Pacific (14 regular-season rounds + finals): The short format means things matter faster — by Round 6 the table is already meaningful; by Round 10 finals spots are largely locked in.
   - Six Nations / Rugby Championship (5–6 rounds): Every single game from Round 1 matters. These are short tournaments — no "too early" needed.
@@ -119,6 +137,7 @@ HISTORICAL ACCURACY — year-specific claims are the risk, not historical contex
 COMPETITION CONTEXT — critical:
 • The COMPETITION field tells you what is actually being played. The PRIMARY LEAGUE field (when present) is background only.
 • For cup or European fixtures (e.g. Champions League, FA Cup, EFL Cup, Europa League, Rugby Championship, Six Nations), the "context" section must focus on the teams' form and journey in THAT competition — not their domestic league table position. A team's EPL standing is irrelevant to a Champions League preview.
+• COMPETITION STAGE — mandatory disclosure: when a COMPETITION STAGE is provided in the data, you MUST state the round clearly in the opening sentence of the "context" section. For the FA Cup and EFL Cup especially, this is the single most important contextual fact — a fan needs to know immediately whether this is a Third Round tie, a quarter-final, or the final. State it plainly and early: "This is the FA Cup Fifth Round", "Arsenal face Chelsea in the quarter-final", "A place in the final is at stake". Do not bury the round deep in the section or omit it.
 • When standings are labelled as "primary league context only", treat them as a footnote — do not lead with or centre the narrative on league position.
 • The recent form covers all competitions. Acknowledge this naturally ("across all fronts", "in recent weeks") rather than implying it is competition-specific.
 • TWO-LEGGED KNOCKOUT TIES: UEFA knockout rounds (Champions League, Europa League, Conference League) and most domestic cups are played over two legs on aggregate. A single leg is not a standalone elimination — both teams can progress from the first leg regardless of its result. Do not describe a first-leg draw or loss as existential ("need a result to keep hopes alive") unless the aggregate position actually eliminates a path to progress. State the tie situation plainly: "level on aggregate after the first leg" or "facing a deficit going into the second leg". If you do not have first-leg score data, acknowledge the two-legged format without fabricating the aggregate position.
@@ -153,14 +172,14 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
 • Do NOT invent coaching tendencies you are not confident about. If you don't have reliable knowledge of a coach's system, refer to the team's play style based on results data instead.
 • Keep coach references analytical, not biographical. "Dyche's side will be compact and physical from the first whistle" is useful. "Dyche, who was appointed in January 2023..." is not.
 
-LINEUP ANALYSIS — when MOST RECENT STARTING LINEUP data is provided:
-• The lineup shows who started the most recent game. Use it as the baseline for predicting who will start this fixture, adjusted for any information in the news.
-• Cross-reference lineup players against TEAM NEWS: if a player appears in the last lineup and news reports them as injured, suspended, or doubtful, flag their absence and state the specific positional or structural gap it creates — who is likely to cover that role and whether it represents a genuine downgrade.
-• Focus on key players — those who clearly hold important structural roles (starting goalkeeper, first-choice centre-back pairing, main ball-carrier, primary playmaker). Do not list every player; identify the ones whose presence or absence materially affects the fixture.
-• If no lineup data is provided, draw on your knowledge of the team's typical selection under their current manager. Apply the same logic: flag known injury/suspension concerns from the news and their structural impact.
-• Early in a season (≤4 games played), or if only pre-season data is available, note that selection patterns are still forming — a player in the last lineup may still be rotated.
-• Do not speculate about absences that have no evidence in the news. If a player is in the last lineup and there is no news suggesting they won't play, assume they will start.
-• Keep lineup analysis integrated into the relevant sections (tacticalBattle, playerSpotlight, verdict) — do not create a standalone squad list. The goal is insight, not recitation.
+LINEUP AND AVAILABILITY ANALYSIS:
+• PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, or INJURY REPORT. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• MOST RECENT STARTING LINEUP (when provided): Use as the baseline for predicting selection, adjusted for availability data. Focus on players in structurally important roles — the first-choice goalkeeper, the main ball-carrier, the primary playmaker, the key defensive pairing. Do not list every player; name only those whose presence or absence materially changes how the team sets up.
+• SQUAD SUBMISSION (AFL — when SQUAD SUBMISSION FOR THIS GAME is provided): The "Absent vs last lineup" list shows players who were in the last game but are NOT in the 26-man submission — they are definitively unavailable. Assess each absent player's structural role and what the team loses. The "possible returns/inclusions" list shows players in the squad who weren't in the last lineup. Cross-reference with team news — if news confirms a player is returning from injury, state the positional and structural impact of their return. Player returns are analytically significant, especially when they restore a role that has been structurally weaker without them.
+• INJURY REPORT (NRL/EPL/SRU — when INJURY REPORT is provided): "Out" = confirmed unavailable. "Doubtful" = significant doubt, likely to miss. Only name an injured player if they hold an important structural role (regular starter, key specialist). Do not list every injury; filter to the ones that materially affect the team's attacking or defensive capability. For key absences, explain who fills that role and whether it represents a genuine structural downgrade.
+• Player returns are as analytically significant as absences. When a key player returns from injury, name them, state what they bring structurally, and explain how their inclusion changes the team's tactical options — whether that's restored aerial presence, additional ball-carrying load, or a reassembled combination that was broken during their absence.
+• Integration: weave availability naturally into tacticalBattle (if it shifts the system), playerSpotlight (if a key absence or return is the pivotal storyline), and verdict (if availability is a genuine swing factor). Do NOT create a standalone injury-list paragraph — availability is context for tactical analysis, not a topic in itself.
+• Do not speculate about absences with no data evidence. If a player is in the last lineup and not in the injury report, assume they will start.
 
 WRITING STYLE:
 • Present tense throughout — this is a preview, not a report.
@@ -170,6 +189,26 @@ WRITING STYLE:
 • Vary sentence length for readability, but never sacrifice precision for style.
 • Avoid all clichés: "both sides will be looking to", "key battle will be in", "it promises to be", "all to play for", "must-win fixture", "clash of titans".
 • NO FILLER — this is the hardest constraint. Every sentence must carry a specific, grounded observation. If you cannot say something specific and grounded, say nothing. A preview with two sharp sentences per section is better than one padded to three. "They will need to perform well" — filler. "Arteta's high line will be tested by their pace in behind" — grounded. When in doubt, cut.
+
+WEATHER ANALYSIS — when WEATHER AT KICKOFF is provided in the data block:
+• Integrate weather ONLY when conditions are genuinely notable:
+  — Precipitation: >0.5mm in the kickoff hour, or >40% chance → worth considering
+  — Wind: >25 km/h → significant for kicking sports; >40 km/h → dominant tactical factor
+  — Temperature: <5°C or >32°C → affects handling and player endurance
+  — Clear, mild weather: do NOT mention — it is neutral and adds nothing
+• Sport-specific impacts — apply these, but ALWAYS connect to THESE specific teams:
+  — AFL: Wind forces teams to kick against it; corridor play and handball chains become more important downwind. Rain makes marking contests messier and favours ground-level football. Teams with strong runners and tight defensive structures often benefit.
+  — NRL: Rain slows the ball out wide — teams with powerful middle forwards who can grind through the ruck gain a structural edge over teams that rely on wide edges and fast play-the-ball. Wind >30 km/h means the kicking game (bomb, kick chase, field goals) becomes decisive; the team kicking with the wind has a clear territorial advantage.
+  — Rugby Union (Super Rugby / Tests): Rain reduces ball speed through the hands; driving lineouts, pick-and-go sequences and tight forwards become more potent. Wet balls favour physically dominant packs. Wind >25 km/h makes the box kick and garryowen unpredictable and rewards teams that can manage territory rather than run the ball wide.
+  — EPL/Football: Rain can slow a high-tempo, short-passing game and make the pitch heavy for direct runners. Strong crosswinds make aerial duels and long balls unpredictable; less impactful than in the ball-carrying codes. Heat (>30°C) favours the fitter, better-conditioned side in the second half.
+• CRITICAL: Never state generic principles. Always say WHY weather favours or hurts THESE specific teams based on their known style and structure. "Rain will challenge [Team]'s wide-edge attacking game" is analytical. "Rain could affect the game" is filler and is forbidden.
+• Integration: weave weather naturally into tacticalBattle and/or verdict. Do NOT create a standalone weather paragraph — weather is context for the tactical analysis, not a topic in itself.
+
+F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORMULA 1"):
+• "context": Championship situation — where the followed entity sits and what this race weekend means for their season. Reference the 2026 regulation changes when they're directly relevant to this circuit (e.g. active aero behaviour at Monza's straights vs Monaco's corners, MO deployment strategy).
+• "tacticalBattle" (labelled "Field Form" in F1): Describe the current form and trajectory of the broader field — who has been quick over recent rounds, which constructors are performing above/below expectation under the new regs, key rivalries developing in the championship. Cover the whole grid at a high level; the followed driver/constructor gets extra depth but should not crowd out the field picture.
+• "playerSpotlight" (labelled "Focus: {followed name}" in F1): Deep focus on the followed driver or constructor. Their specific strengths/weaknesses at this circuit type, how their car handles active aero and MO deployment, their championship trajectory, nearest rivals and what the points situation means.
+• "verdict": Key things to watch in this race weekend — specific overtaking opportunities, strategic scenarios (undercut/overcut windows, safety car beneficiaries, tyre strategy), weather factors, and what would constitute a successful weekend for the followed entity.
 
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
@@ -203,6 +242,83 @@ function formDetail(results: GameResult[], limit = 3): string {
   }).join('; ');
 }
 
+// ─── F1 data block ────────────────────────────────────────────────────────────
+
+function buildF1DataBlock(context: PreviewContext): string {
+  const lines: string[] = [];
+
+  lines.push(`FORMULA 1 — ${context.f1RaceName ?? 'Race'} (${context.f1SessionType ?? 'Race'})`);
+  if (context.f1CircuitName) lines.push(`Circuit: ${context.f1CircuitName}`);
+  if (context.f1RoundNumber) lines.push(`Season Round: ${context.f1RoundNumber} · 2026 F1 World Championship`);
+  lines.push('');
+
+  if (context.f1FollowedName) {
+    const typeLabel = context.f1FollowedType === 'driver'
+      ? `Driver · ${context.f1FollowedConstructorName ?? ''}`
+      : 'Constructor';
+    lines.push(`FOLLOWED ENTITY: ${context.f1FollowedName} (${typeLabel})`);
+    lines.push('');
+  }
+
+  if (context.f1DriverStandings && context.f1DriverStandings.length > 0) {
+    const roundLabel = context.f1RecentRaceResults && context.f1RecentRaceResults.length > 0
+      ? ` (after Round ${context.f1RecentRaceResults[context.f1RecentRaceResults.length - 1].round})`
+      : '';
+    lines.push(`DRIVERS' CHAMPIONSHIP${roundLabel}:`);
+    context.f1DriverStandings.slice(0, 15).forEach(d => {
+      const winsNote = d.wins > 0 ? `, ${d.wins} win${d.wins > 1 ? 's' : ''}` : '';
+      const followedMarker = d.driverName === context.f1FollowedName ? ' ◄ FOLLOWED' : '';
+      lines.push(`  P${d.position}. ${d.driverName} [${d.constructorName}] — ${d.points}pts${winsNote}${followedMarker}`);
+    });
+    lines.push('');
+  }
+
+  if (context.f1ConstructorStandings && context.f1ConstructorStandings.length > 0) {
+    lines.push("CONSTRUCTORS' CHAMPIONSHIP:");
+    context.f1ConstructorStandings.forEach(c => {
+      const followedMarker = c.constructorName === context.f1FollowedConstructorName ? ' ◄ FOLLOWED' : '';
+      const winsNote = c.wins > 0 ? `, ${c.wins} win${c.wins > 1 ? 's' : ''}` : '';
+      lines.push(`  P${c.position}. ${c.constructorName} — ${c.points}pts${winsNote}${followedMarker}`);
+    });
+    lines.push('');
+  }
+
+  if (context.f1RecentRaceResults && context.f1RecentRaceResults.length > 0) {
+    lines.push('RECENT RACE RESULTS:');
+    // Show most recent first
+    const sorted = [...context.f1RecentRaceResults].sort((a, b) => b.round - a.round);
+    sorted.forEach(race => {
+      lines.push(`  Round ${race.round} — ${race.raceName}:`);
+      const top5 = race.results.slice(0, 5).map(r =>
+        `P${r.position}: ${r.driverName.split(' ').pop()} (${r.constructorName.split(' ').slice(-1)[0]})`
+      ).join(', ');
+      lines.push(`    Top 5: ${top5}`);
+      // Highlight followed entity
+      if (context.f1FollowedName && context.f1FollowedType === 'driver') {
+        const followedResult = race.results.find(r => r.driverName === context.f1FollowedName);
+        if (followedResult) {
+          lines.push(`    ${context.f1FollowedName}: P${followedResult.position}`);
+        } else {
+          lines.push(`    ${context.f1FollowedName}: outside top 10`);
+        }
+      } else if (context.f1FollowedConstructorName) {
+        const constructorResults = race.results.filter(r =>
+          r.constructorName === context.f1FollowedConstructorName ||
+          r.constructorName.includes(context.f1FollowedConstructorName ?? '')
+        );
+        if (constructorResults.length > 0) {
+          const positions = constructorResults.map(r => `P${r.position} (${r.driverName.split(' ').pop()})`).join(', ');
+          lines.push(`    ${context.f1FollowedConstructorName}: ${positions}`);
+        }
+      }
+    });
+    lines.push('');
+  }
+
+  lines.push(`Generate the race preview using only the data provided above. Do not invent statistics, driver names not mentioned, or historical records not given.`);
+  return lines.join('\n');
+}
+
 function buildDataBlock(
   league: string,
   teamName: string,
@@ -212,7 +328,13 @@ function buildDataBlock(
   oppResults: GameResult[],
   competition?: string,
   compact?: boolean,
+  weather?: WeatherData,
 ): string {
+  // ─── F1 — completely different data model ────────────────────────────────
+  if (league === 'f1' && context.f1RaceName) {
+    return buildF1DataBlock(context);
+  }
+
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
   // A fixture is "off-league" when it's in a cup, European, or international
@@ -244,6 +366,11 @@ function buildDataBlock(
         : `${opponentName} lead ${os}–${ts} on aggregate — ${teamName} must overturn the deficit`;
     lines.push(`TIE AGGREGATE (second leg): ${aggLine}`);
   }
+  // Opponent league tier — critical for cup fixtures involving lower-division clubs
+  if (context.opponentLeague) {
+    lines.push(`OPPONENT LEAGUE: ${opponentName} are currently playing in the ${context.opponentLeague} (NOT the Premier League). Factor this division gap into the analysis — do not describe them as a PL side or in a PL relegation battle.`);
+    lines.push('');
+  }
   lines.push(`SPORT: ${sportCtx}`);
   if (context.teamManager || context.opponentManager) {
     const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
@@ -263,7 +390,7 @@ function buildDataBlock(
       if (!s) continue;
       const draws = s.draws > 0 ? ` ${s.draws}D` : '';
       const record = `${s.wins}W${draws} ${s.losses}L`;
-      lines.push(`  ${name}: ${ordinalSuffix(s.position)} — played ${s.played}, ${record}, ${s.points ?? 0} pts`);
+      lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}, competition points: ${s.points ?? 0}`);
     }
     lines.push('');
   }
@@ -273,37 +400,58 @@ function buildDataBlock(
   // who progresses; including it only invites the model to misuse it.
   const isKnockoutTie = !!cs && !cs.isGroupPhase;
   if (!isKnockoutTie && (context.teamStanding || context.opponentStanding)) {
-    const standingsHeading = isOffLeague
-      ? `${leagueLabel.toUpperCase()} STANDING (primary league context only — NOT the focus for this ${competition} fixture):`
-      : 'CURRENT LADDER/TABLE POSITIONS:';
+    const isF1Standing = league === 'f1';
+    const standingsHeading = isF1Standing
+      ? 'DRIVERS\' CHAMPIONSHIP STANDING:'
+      : isOffLeague
+        ? `${leagueLabel.toUpperCase()} STANDING (primary league context only — NOT the focus for this ${competition} fixture):`
+        : 'CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):';
     lines.push(standingsHeading);
-    for (const [name, s] of [
-      [teamName, context.teamStanding],
-      [opponentName, context.opponentStanding],
-    ] as const) {
+    // For F1, only show the driver's own standing (no "opponent" standing — it's a circuit)
+    const standingPairs: [string, typeof context.teamStanding][] = isF1Standing
+      ? [[teamName, context.teamStanding]]
+      : [
+          [teamName, context.teamStanding],
+          [opponentName, context.opponentStanding],
+        ];
+    for (const [name, s] of standingPairs) {
       if (!s) continue;
-      const draws = s.draws > 0 ? ` ${s.draws}D` : '';
-      const record = `${s.wins}W${draws} ${s.losses}L`;
-      const extra = s.points !== undefined
-        ? `, ${s.points} pts`
-        : s.percentage !== undefined
-          ? `, ${s.percentage.toFixed(1)}% percentage`
-          : '';
-      lines.push(`  ${name}: ${ordinalSuffix(s.position)} — played ${s.played}, ${record}${extra}`);
+      if (isF1Standing) {
+        const constructor = s.constructorName ? ` (${s.constructorName})` : '';
+        lines.push(`  ${name}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
+      } else {
+        const draws = s.draws > 0 ? ` ${s.draws}D` : '';
+        const record = `${s.wins}W${draws} ${s.losses}L`;
+        const extra = s.points !== undefined
+          ? `, competition points: ${s.points}`
+          : s.percentage !== undefined
+            ? `, percentage: ${s.percentage.toFixed(1)}%`
+            : '';
+        lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
+      }
     }
     lines.push('');
   }
 
   // Recent form — spans all competitions
   if (teamResults.length > 0 || oppResults.length > 0) {
-    const formHeading = isOffLeague
-      ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
-      : 'RECENT FORM (last 5 fixtures, most recent first):';
+    const isF1 = league === 'f1';
+    const formHeading = isF1
+      ? 'RECENT FORM — Race Results (most recent first):'
+      : isOffLeague
+        ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
+        : 'RECENT FORM (last 5 fixtures, most recent first):';
     lines.push(formHeading);
     if (teamResults.length > 0) {
-      lines.push(`  ${teamName}: ${formString(teamResults)} — ${formDetail(teamResults)}`);
+      if (isF1) {
+        // For F1: format as "P{position} — {race name}" instead of W/L score
+        const f1FormStr = teamResults.map(r => `P${r.teamScore} — ${r.opponent}`).join('; ');
+        lines.push(`  ${teamName}: ${f1FormStr}`);
+      } else {
+        lines.push(`  ${teamName}: ${formString(teamResults)} — ${formDetail(teamResults)}`);
+      }
     }
-    if (oppResults.length > 0) {
+    if (oppResults.length > 0 && league !== 'f1') {
       lines.push(`  ${opponentName}: ${formString(oppResults)} — ${formDetail(oppResults)}`);
     }
     lines.push('');
@@ -337,10 +485,64 @@ function buildDataBlock(
     lines.push('');
   }
 
+  // Player availability — squad (AFL) and injury report (NRL/EPL/SRU)
+  const teamSquad = context.teamSquad ?? [];
+  const oppSquad  = context.opponentSquad ?? [];
+  const teamInj   = context.teamInjuryReport ?? [];
+  const oppInj    = context.opponentInjuryReport ?? [];
+
+  if (teamSquad.length > 0 || oppSquad.length > 0) {
+    // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
+    lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
+    const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
+    const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
+
+    for (const [name, squad, lineupSet] of [
+      [teamName,     teamSquad, teamLineupSet],
+      [opponentName, oppSquad,  oppLineupSet],
+    ] as [string, string[], Set<string>][]) {
+      if (squad.length === 0) continue;
+      const squadSet = new Set(squad.map((n: string) => n.toLowerCase()));
+      // Players in last lineup but NOT in current squad → likely absent
+      const absent   = (lineupSet.size > 0)
+        ? Array.from(lineupSet).filter((n: string) => !squadSet.has(n)).map((n: string) =>
+            squad.find((s: string) => s.toLowerCase() === n) ?? n,
+          )
+        : [];
+      // Players in current squad NOT in last lineup → possible return or new inclusion
+      const returns  = (lineupSet.size > 0)
+        ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
+        : [];
+
+      lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
+      if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
+      if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  if (teamInj.length > 0 || oppInj.length > 0) {
+    lines.push('INJURY REPORT (confirmed/likely unavailable for this fixture):');
+    const fmtInjuries = (injuries: Array<{ name: string; status: string }>) =>
+      injuries.map(i => `${i.name} (${i.status})`).join(', ');
+    if (teamInj.length > 0) lines.push(`  ${teamName}: ${fmtInjuries(teamInj)}`);
+    if (oppInj.length > 0)  lines.push(`  ${opponentName}: ${fmtInjuries(oppInj)}`);
+    lines.push('');
+  }
+
   // Model tips (AFL Squiggle)
   if (context.tips) {
     const t = context.tips;
     lines.push(`EXPERT MODEL PREDICTIONS: ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
+    lines.push('');
+  }
+
+  // Weather at kickoff — only included when conditions are notable
+  if (weather && weather.isNotable) {
+    lines.push(`WEATHER AT KICKOFF: ${weather.icon} ${weather.description}`);
+    lines.push(`  Temperature: ${weather.tempC}°C`);
+    if (weather.precipMm > 0.5)    lines.push(`  Precipitation: ${weather.precipMm}mm (${weather.precipProbability}% chance)`);
+    if (weather.windKmh > 25)      lines.push(`  Wind: ${weather.windKmh} km/h`);
     lines.push('');
   }
 
@@ -364,6 +566,7 @@ function buildUpdatePrompt(
   opponentName: string,
   teamNews: { headline: string; description?: string }[],
   oppNews:  { headline: string; description?: string }[],
+  context?: PreviewContext,
 ): string {
   const lines: string[] = [
     'The following match preview was generated earlier. It remains accurate for the fixture context, tactical analysis, and ladder positions.',
@@ -382,20 +585,35 @@ function buildUpdatePrompt(
     const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
     lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
   });
+  // Include squad/injury updates if available
+  if (context?.teamSquad?.length || context?.opponentSquad?.length) {
+    lines.push('');
+    lines.push('UPDATED SQUAD DATA (official selection for this game):');
+    if (context.teamSquad?.length)   lines.push(`  ${teamName}: ${context.teamSquad.join(', ')}`);
+    if (context.opponentSquad?.length) lines.push(`  ${opponentName}: ${context.opponentSquad.join(', ')}`);
+  }
+  if (context?.teamInjuryReport?.length || context?.opponentInjuryReport?.length) {
+    lines.push('');
+    lines.push('UPDATED INJURY REPORT:');
+    const fmtInj = (injuries: Array<{ name: string; status: string }>) =>
+      injuries.map(i => `${i.name} (${i.status})`).join(', ');
+    if (context?.teamInjuryReport?.length)     lines.push(`  ${teamName}: ${fmtInj(context.teamInjuryReport)}`);
+    if (context?.opponentInjuryReport?.length) lines.push(`  ${opponentName}: ${fmtInj(context.opponentInjuryReport)}`);
+  }
   lines.push('');
   lines.push(
-    'Return the same JSON structure. Update only the sections directly affected by this new information (e.g. playerSpotlight if an injury is mentioned, verdict if significant news shifts the outlook). Preserve the tactical analysis, historical form narrative, and ladder context where it remains accurate. Do not invent new facts beyond what is provided above.'
+    'Return the same JSON structure. Update only the sections directly affected by this new information (e.g. playerSpotlight if an injury is mentioned, verdict if significant news shifts the outlook). If squad or injury data has changed, update tactical analysis, playerSpotlight, and verdict as needed. Preserve analysis that remains accurate. Do not invent new facts beyond what is provided above.'
   );
   return lines.join('\n');
 }
 
 // ─── Claude call ──────────────────────────────────────────────────────────────
 
-async function callClaude(prompt: string, compact = false): Promise<AIPreview> {
+async function callClaude(prompt: string, compact = false, maxTokensOverride?: number): Promise<AIPreview> {
   const client   = new Anthropic();
   const response = await client.messages.create({
     model:      'claude-sonnet-4-6',
-    max_tokens: compact ? 380 : 800,
+    max_tokens: maxTokensOverride ?? (compact ? 380 : 800),
     system:     SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: prompt }],
   });
@@ -409,15 +627,16 @@ async function callClaude(prompt: string, compact = false): Promise<AIPreview> {
 // Cache per unique (cacheKey, prompt, compact) triple — 6-hour TTL.
 // compact previews are cached separately (shorter content, different prompt).
 const getCachedPreview = unstable_cache(
-  async (_cacheKey: string, prompt: string, compact: boolean): Promise<AIPreview> => callClaude(prompt, compact),
-  ['ai-preview-v20'],
+  async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
+    callClaude(prompt, compact, maxTokensOverride),
+  ['ai-preview-v26'],
   { revalidate: 21600 }, // 6 hours
 );
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
-const TEAMID_RE       = /^[a-z]+-[a-z0-9-]+$/;
+const ALLOWED_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
+const TEAMID_RE       = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function POST(req: NextRequest) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -438,12 +657,13 @@ export async function POST(req: NextRequest) {
       compact?:        boolean;
       previousPreview?: AIPreview;
       newsFingerprint?: string;
+      weather?:        WeatherData;
     };
 
     const {
       league, teamId, teamName, opponentName, gameId,
       context, teamResults, oppResults, competition, compact,
-      previousPreview, newsFingerprint,
+      previousPreview, newsFingerprint, weather,
     } = body;
 
     if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
@@ -454,20 +674,23 @@ export async function POST(req: NextRequest) {
     let cacheKey: string;
 
     const isCompact = compact === true;
+    // F1 previews have 4 rich sections covering a full grid — allow more output tokens.
+    const isF1 = league === 'f1';
+    const maxTokensOverride = isF1 ? 1200 : undefined;
 
     if (previousPreview && newsFingerprint) {
       // Update mode — news has changed since last generation.
       const teamNews = context.teamNews ?? [];
       const oppNews  = context.opponentNews ?? [];
-      prompt   = buildUpdatePrompt(previousPreview, teamName, opponentName, teamNews, oppNews);
+      prompt   = buildUpdatePrompt(previousPreview, teamName, opponentName, teamNews, oppNews, context);
       cacheKey = `update:${gameId}:${newsFingerprint}${isCompact ? ':c' : ''}`;
     } else {
       // Full generation mode.
-      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition, isCompact);
+      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition, isCompact, weather);
       cacheKey = isCompact ? `${gameId}:compact` : gameId;
     }
 
-    const preview = await getCachedPreview(cacheKey, prompt, isCompact);
+    const preview = await getCachedPreview(cacheKey, prompt, isCompact, maxTokensOverride);
     return NextResponse.json(preview);
   } catch (err) {
     console.error('[/api/ai-preview]', err);

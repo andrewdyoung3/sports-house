@@ -117,6 +117,34 @@ const EPL_OPPONENTS = [
   { name: 'Aston Villa',      abbr: 'AVL', color: '#670E36', logo: `${ESPN}/soccer/500/362.png` },
 ];
 
+// F1 — races are the "opponent" (no team badge; country code as abbr)
+const F1_RACES = [
+  { name: 'Australian Grand Prix',   abbr: 'AUS', color: '#E8002D', logo: undefined },
+  { name: 'Bahrain Grand Prix',      abbr: 'BHR', color: '#E8002D', logo: undefined },
+  { name: 'Saudi Arabian Grand Prix',abbr: 'KSA', color: '#E8002D', logo: undefined },
+  { name: 'Japanese Grand Prix',     abbr: 'JPN', color: '#E8002D', logo: undefined },
+  { name: 'Chinese Grand Prix',      abbr: 'CHN', color: '#E8002D', logo: undefined },
+  { name: 'Miami Grand Prix',        abbr: 'MIA', color: '#E8002D', logo: undefined },
+  { name: 'Emilia Romagna Grand Prix',abbr: 'IMO', color: '#E8002D', logo: undefined },
+  { name: 'Monaco Grand Prix',       abbr: 'MON', color: '#E8002D', logo: undefined },
+  { name: 'Canadian Grand Prix',     abbr: 'CAN', color: '#E8002D', logo: undefined },
+  { name: 'Spanish Grand Prix',      abbr: 'ESP', color: '#E8002D', logo: undefined },
+  { name: 'Austrian Grand Prix',     abbr: 'AUT', color: '#E8002D', logo: undefined },
+  { name: 'British Grand Prix',      abbr: 'GBR', color: '#E8002D', logo: undefined },
+  { name: 'Belgian Grand Prix',      abbr: 'BEL', color: '#E8002D', logo: undefined },
+  { name: 'Hungarian Grand Prix',    abbr: 'HUN', color: '#E8002D', logo: undefined },
+  { name: 'Dutch Grand Prix',        abbr: 'NED', color: '#E8002D', logo: undefined },
+  { name: 'Italian Grand Prix',      abbr: 'ITA', color: '#E8002D', logo: undefined },
+  { name: 'Azerbaijan Grand Prix',   abbr: 'AZE', color: '#E8002D', logo: undefined },
+  { name: 'Singapore Grand Prix',    abbr: 'SGP', color: '#E8002D', logo: undefined },
+  { name: 'United States Grand Prix',abbr: 'USA', color: '#E8002D', logo: undefined },
+  { name: 'Mexico City Grand Prix',  abbr: 'MEX', color: '#E8002D', logo: undefined },
+  { name: 'São Paulo Grand Prix',    abbr: 'BRA', color: '#E8002D', logo: undefined },
+  { name: 'Las Vegas Grand Prix',    abbr: 'LVG', color: '#E8002D', logo: undefined },
+  { name: 'Qatar Grand Prix',        abbr: 'QAT', color: '#E8002D', logo: undefined },
+  { name: 'Abu Dhabi Grand Prix',    abbr: 'UAE', color: '#E8002D', logo: undefined },
+];
+
 type OpponentEntry = { name: string; abbr: string; color: string; logo?: string };
 
 const OPPONENT_POOLS: Record<string, OpponentEntry[]> = {
@@ -129,6 +157,7 @@ const OPPONENT_POOLS: Record<string, OpponentEntry[]> = {
   mlb:         MLB_OPPONENTS,
   nhl:         NHL_OPPONENTS,
   epl:         EPL_OPPONENTS,
+  f1:          F1_RACES,
 };
 
 // ─── Broadcast pools ──────────────────────────────────────────────────────────
@@ -136,25 +165,27 @@ const OPPONENT_POOLS: Record<string, OpponentEntry[]> = {
 // Australian sports — broadcast info for AU audience
 const AFL_BROADCASTS   = [['Seven Network', 'Fox Footy'], ['Seven Network'], ['Fox Footy']];
 const NRL_BROADCASTS   = [['Nine Network', 'Fox League'], ['Nine Network'], ['Fox League']];
-const SRUG_BROADCASTS  = [['Stan Sport'], ['Fox Sports', 'Stan Sport']];
-const RINT_BROADCASTS  = [['Channel Nine', 'Stan Sport'], ['Stan Sport'], ['Fox Sports']];
+const SRUG_BROADCASTS  = [['Stan Sport']];
+const RINT_BROADCASTS  = [['Channel Nine', 'Stan Sport'], ['Stan Sport']];
 
-// International sports
-const NFL_BROADCASTS   = [['ESPN'], ['CBS'], ['FOX'], ['NBC'], ['NFL Network'], ['Amazon Prime Video']];
-const NBA_BROADCASTS   = [['ESPN'], ['TNT'], ['ABC'], ['NBA TV']];
-const MLB_BROADCASTS   = [['ESPN'], ['FOX'], ['TBS'], ['Apple TV+'], ['Peacock']];
-const NHL_BROADCASTS   = [['ESPN'], ['TNT'], ['ABC']];
-const EPL_BROADCASTS   = [['Optus Sport'], ['beIN Sports'], ['Optus Sport', 'beIN Sports']];
+// International sports — Australian broadcast rights
+const NFL_BROADCASTS   = [['ESPN', 'Kayo Sports'], ['Kayo Sports']];
+const NBA_BROADCASTS   = [['ESPN', 'Kayo Sports'], ['Kayo Sports']];
+const MLB_BROADCASTS   = [['ESPN', 'Kayo Sports'], ['Kayo Sports']];
+const NHL_BROADCASTS   = [['ESPN', 'Kayo Sports'], ['9GO!', 'Kayo Sports']];
+const EPL_BROADCASTS   = [['Stan Sport'], ['Channel 9', 'Stan Sport']];
 
-const AFL_STREAMING    = ['Kayo Sports', 'AFL+'];
-const NRL_STREAMING    = ['Kayo Sports'];
+const AFL_STREAMING    = ['Kayo Sports', '7plus'];
+const NRL_STREAMING    = ['Kayo Sports', '9Now'];
 const SRUG_STREAMING   = ['Stan Sport'];
-const RINT_STREAMING   = ['Stan Sport', 'Kayo Sports'];
-const NFL_STREAMING    = ['NFL+', 'ESPN+'];
-const NBA_STREAMING    = ['NBA League Pass', 'ESPN+'];
-const MLB_STREAMING    = ['MLB.TV', 'Apple TV+'];
-const NHL_STREAMING    = ['ESPN+', 'Hulu'];
-const EPL_STREAMING    = ['Optus Sport', 'Kayo Sports'];
+const RINT_STREAMING   = ['Stan Sport'];
+const NFL_STREAMING    = ['Kayo Sports', 'NFL+'];
+const NBA_STREAMING    = ['Kayo Sports', 'NBA League Pass'];
+const MLB_STREAMING    = ['Kayo Sports', 'MLB.TV'];
+const NHL_STREAMING    = ['Kayo Sports'];
+const EPL_STREAMING    = ['Stan Sport'];
+const F1_BROADCASTS    = [['Fox Sports', 'Kayo Sports'], ['Fox Sports']];
+const F1_STREAMING     = ['Kayo Sports'];
 
 const BROADCAST_POOLS: Record<string, string[][]> = {
   afl:         AFL_BROADCASTS,
@@ -166,6 +197,7 @@ const BROADCAST_POOLS: Record<string, string[][]> = {
   mlb:         MLB_BROADCASTS,
   nhl:         NHL_BROADCASTS,
   epl:         EPL_BROADCASTS,
+  f1:          F1_BROADCASTS,
 };
 
 const STREAMING_POOLS: Record<string, string[]> = {
@@ -178,6 +210,7 @@ const STREAMING_POOLS: Record<string, string[]> = {
   mlb:         MLB_STREAMING,
   nhl:         NHL_STREAMING,
   epl:         EPL_STREAMING,
+  f1:          F1_STREAMING,
 };
 
 // ─── Sport-specific kickoff times ─────────────────────────────────────────────
@@ -200,11 +233,42 @@ const GAME_TIMES_UTC: Record<string, KickoffUTC[]> = {
   nhl:         [{ h: 0, m: 0  }, { h: 0, m: 30 }, { h: 1, m: 0  }],
   // EPL — UK afternoon (GMT): 15:00, 17:30, 20:00 UTC
   epl:         [{ h: 15, m: 0 }, { h: 17, m: 30 }, { h: 20, m: 0 }],
+  // F1 — race start varies by timezone; Sunday local time → common UTC windows
+  f1:          [{ h: 2, m: 0 }, { h: 6, m: 0 }, { h: 13, m: 0 }, { h: 14, m: 0 }],
 };
 
 // ─── Upcoming games ───────────────────────────────────────────────────────────
 
 export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
+  // F1 championship entity: return mock race sessions
+  if (team.id === 'f1-championship') {
+    const now    = Date.now();
+    const dayMs  = 86_400_000;
+    const sessions = ['Practice 1', 'Qualifying', 'Race'];
+    const races    = F1_RACES;
+    return Array.from({ length: count }, (_, i) => {
+      const r1        = seededRandom('f1-championship', i * 3);
+      const race      = races[Math.floor(r1 * races.length)];
+      const session   = sessions[i % sessions.length];
+      const daysAhead = 3 + i * 4;
+      const gameDate  = new Date(now + daysAhead * dayMs);
+      return {
+        id:             `game-f1-championship-${i}`,
+        teamId:         'f1-championship',
+        opponent:       race.name,
+        opponentAbbr:   race.abbr,
+        opponentColor:  '#E8002D',
+        isHome:         false,
+        date:           gameDate.toISOString(),
+        time:           '',
+        venue:          '',
+        broadcast:      ['Fox Sports', 'Kayo Sports'],
+        streaming:      ['Kayo Sports'],
+        competition:    session,
+      };
+    });
+  }
+
   const pool   = OPPONENT_POOLS[team.league]    ?? AFL_OPPONENTS;
   const bcPool = BROADCAST_POOLS[team.league]   ?? AFL_BROADCASTS;
   const stPool = STREAMING_POOLS[team.league]   ?? AFL_STREAMING;
@@ -240,6 +304,9 @@ export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
     const hasSpread = ['nfl', 'nba', 'mlb', 'epl'].includes(team.league);
     const spreadVal = (r1 * 14 - 7).toFixed(1);
 
+    // F1: each race is at a circuit — no home/away, venue is the race name
+    const isF1 = team.league === 'f1';
+
     return {
       id:              `game-${team.id}-${i}`,
       teamId:          team.id,
@@ -247,10 +314,10 @@ export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
       opponentAbbr:    opp.abbr,
       opponentColor:   opp.color,
       opponentLogoUrl: opp.logo,
-      isHome,
+      isHome:          isF1 ? false : isHome,
       date:            gameDate.toISOString(),
       time,
-      venue:           isHome ? team.venue : `${opp.name} Home Ground`,
+      venue:           isF1 ? opp.name : (isHome ? team.venue : `${opp.name} Home Ground`),
       broadcast:       bc,
       streaming:       st,
       ...(hasSpread && {
@@ -266,6 +333,27 @@ export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
 // ─── Recent results ───────────────────────────────────────────────────────────
 
 export function getRecentResults(team: Team, count = 5): GameResult[] {
+  // F1 championship: return mock race result summaries
+  if (team.id === 'f1-championship') {
+    const now   = Date.now();
+    const dayMs = 86_400_000;
+    const races = F1_RACES;
+    return Array.from({ length: count }, (_, i) => {
+      const r1   = seededRandom('f1-championship', 100 + i * 3);
+      const race = races[Math.floor(r1 * races.length)];
+      return {
+        opponent:      race.name,
+        opponentAbbr:  race.abbr,
+        isHome:        false,
+        isWin:         false,
+        teamScore:     1,
+        opponentScore: 20,
+        date:          new Date(now - (i + 1) * 14 * dayMs).toISOString(),
+        competition:   'Formula 1',
+      };
+    });
+  }
+
   const pool      = OPPONENT_POOLS[team.league] ?? AFL_OPPONENTS;
   const now       = Date.now();
   const dayMs     = 86_400_000;

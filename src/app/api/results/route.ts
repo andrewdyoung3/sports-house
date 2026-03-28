@@ -10,6 +10,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { GameResult } from '@/types';
+import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -591,10 +594,65 @@ async function fetchCrossLeagueSoccerResults(teamName: string): Promise<GameResu
     .slice(0, 5);
 }
 
+// ─── Formula 1 — Jolpi Ergast API ────────────────────────────────────────────
+//
+// Returns last 5 completed races as summary entries (race winner's result).
+
+async function fetchF1Results(_teamId: string): Promise<GameResult[]> {
+  const tryUrls = [
+    'https://api.jolpi.ca/ergast/f1/current/results.json?limit=100',
+    'https://api.jolpi.ca/ergast/f1/2025/results.json?limit=100',
+  ];
+
+  let races: any[] = [];
+  for (const url of tryUrls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+      if (!res.ok) continue;
+      const data = await res.json();
+      races = data?.MRData?.RaceTable?.Races ?? [];
+      if (races.length > 0) break;
+    } catch {
+      // try next URL
+    }
+  }
+
+  if (races.length === 0) return [];
+
+  // Filter to completed races only (race date in the past)
+  const now = Date.now();
+  const completed = races.filter((race: any) =>
+    new Date(race.date).getTime() < now && Array.isArray(race.Results) && race.Results.length > 0,
+  );
+
+  return completed
+    .slice(-5)
+    .reverse()
+    .map((race: any): GameResult => {
+      const winner  = race.Results[0];
+      const country = race.Circuit?.Location?.country ?? '';
+      const abbr    = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
+      const winnerName = winner
+        ? `${winner.Driver?.givenName ?? ''} ${winner.Driver?.familyName ?? ''}`.trim()
+        : '';
+
+      return {
+        opponent:      race.raceName,
+        opponentAbbr:  abbr,
+        isHome:        false,
+        isWin:         false, // not meaningful for a series summary
+        teamScore:     1,
+        opponentScore: 20,
+        date:          new Date(race.date).toISOString(),
+        competition:   winnerName ? `Winner: ${winnerName}` : 'Formula 1',
+      };
+    });
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
-const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
+const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
   const league   = req.nextUrl.searchParams.get('league') ?? '';
@@ -627,8 +685,9 @@ export async function GET(req: NextRequest) {
     else if (league === 'epl')         results = await fetchEPLResults(teamId);
     else if (league === 'super_rugby') results = await fetchSuperRugbyResults(teamId);
     else if (league === 'rugby_int')   results = await fetchInternationalRugbyResults(teamId);
+    else if (league === 'f1')          results = await fetchF1Results(teamId);
 
-    return NextResponse.json(results);
+    return NextResponse.json(results, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/results]', err);
     return NextResponse.json([]);

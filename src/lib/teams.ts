@@ -1,4 +1,5 @@
 import type { League, SportKey, Team } from '@/types';
+import { F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from './f1-data';
 
 // ─── League Definitions ───────────────────────────────────────────────────────
 
@@ -12,6 +13,7 @@ export const LEAGUES: League[] = [
   { id: 'nfl',         name: 'NFL',          fullName: 'National Football League',      sport: 'American Football',         icon: '🏈', country: 'USA' },
   { id: 'mlb',         name: 'MLB',          fullName: 'Major League Baseball',         sport: 'Baseball',                  icon: '⚾', country: 'USA' },
   { id: 'nhl',         name: 'NHL',          fullName: 'National Hockey League',        sport: 'Ice Hockey',                icon: '🏒', country: 'USA/Canada' },
+  { id: 'f1',          name: 'F1',           fullName: 'Formula 1 World Championship',  sport: 'Motorsport',                icon: '🏎', country: 'International' },
 ];
 
 // ─── All Teams ────────────────────────────────────────────────────────────────
@@ -236,6 +238,10 @@ export const TEAMS: Team[] = [
   { id: 'epl-spurs',        name: 'Tottenham Hotspur',        shortName: 'Spurs',         abbreviation: 'TOT', league: 'epl', sport: 'Football', city: 'London',          country: 'England', primaryColor: '#132257', secondaryColor: '#FFFFFF', venue: 'Tottenham Hotspur Stadium' },
   { id: 'epl-westham',      name: 'West Ham United',          shortName: 'West Ham',      abbreviation: 'WHU', league: 'epl', sport: 'Football', city: 'London',          country: 'England', primaryColor: '#7A263A', secondaryColor: '#1BB1E7', venue: 'London Stadium' },
   { id: 'epl-wolves',       name: 'Wolverhampton Wanderers',  shortName: 'Wolves',        abbreviation: 'WOL', league: 'epl', sport: 'Football', city: 'Wolverhampton',   country: 'England', primaryColor: '#FDB913', secondaryColor: '#231F20', venue: 'Molineux Stadium' },
+
+  // ── Formula 1 — 2025 drivers and constructor teams ───────────────────────
+  ...F1_DRIVERS,
+  ...F1_CONSTRUCTOR_TEAMS,
 ];
 
 /** Look up a team by its ID. */

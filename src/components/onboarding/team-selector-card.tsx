@@ -4,6 +4,7 @@ import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { F1_CONSTRUCTOR_LOGOS, isF1ConstructorTeam } from '@/lib/f1-data';
 import type { Team } from '@/types';
 
 interface TeamSelectorCardProps {
@@ -50,6 +51,11 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
         primaryColor={team.primaryColor}
         size={72}
         className="rounded-2xl"
+        overlayLogoUrl={
+          team.league === 'f1' && !isF1ConstructorTeam(team.id)
+            ? F1_CONSTRUCTOR_LOGOS[team.division ?? '']
+            : undefined
+        }
       />
 
       {/* Name */}
@@ -64,7 +70,10 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
           'text-xs leading-tight mt-0.5 truncate',
           selected ? 'text-white/70' : 'text-white/40',
         )}>
-          {team.city}
+          {team.league === 'f1'
+            ? (isF1ConstructorTeam(team.id) ? team.country : (team.division ?? team.city))
+            : team.city
+          }
         </p>
       </div>
     </button>

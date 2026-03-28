@@ -56,7 +56,7 @@ export default function OnboardingPage() {
         </div>
 
         {/* Sport filter tabs */}
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none">
+        <div className="flex flex-wrap gap-2 mb-4">
           {[{ id: 'all' as const, name: 'All', icon: '🏆' }, ...LEAGUES].map(league => (
             <button
               key={league.id}

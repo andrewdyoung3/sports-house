@@ -17,7 +17,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import type { Team, UpcomingGame, GameResult, NewsItem } from '@/types';
 
 /** Leagues with real API backends. */
-const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby']);
+const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'f1']);
 
 interface TeamFeedCardProps {
   team: Team;

@@ -13,6 +13,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { NewsItem } from '@/types';
 
+const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
+
 async function fetchTimeout(
   url: string,
   options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
@@ -211,7 +213,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'epl')         news = await fetchEPLNews(teamId);
     else if (league === 'super_rugby') news = await fetchSRUNews(teamId);
     else if (league === 'rugby_int')   news = await fetchRINTNews(teamId);
-    return NextResponse.json(news);
+    return NextResponse.json(news, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/news]', err);
     return NextResponse.json([]);

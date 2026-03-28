@@ -8,6 +8,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage } from '@/types';
+import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
+import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -186,6 +188,8 @@ async function fetchAFLPreview(
 
   // ── Tips for the specific upcoming game ──
   let tips: TipSummary | undefined;
+  let teamSquad: string[] | undefined;
+  let opponentSquad: string[] | undefined;
 
   // gameId is like "afl-1234" or "afl-lions-vs-geelong-..." — extract numeric portion
   const numericId = gameId.replace(/^afl-/, '').match(/^\d+$/)?.[0];
@@ -225,10 +229,37 @@ async function fetchAFLPreview(
           };
         }
       }
+
+      // Fetch squad submissions for the current round — serial step (needs round from matchGame)
+      if (matchGame.round) {
+        const squadRes = await fetchTimeout(
+          `https://api.squiggle.com.au/?q=squads;year=${year};round=${matchGame.round}`,
+          { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, next: { revalidate: 1800 } },
+        ).catch(() => null);
+
+        if (squadRes?.ok) {
+          const { squads: rawSquads = [] } = await squadRes.json();
+          // Resolve opponent's Squiggle team name
+          const oppSqKey  = Object.entries(SQUIGGLE_NAME).find(
+            ([, v]) => v.toLowerCase() === opponentName.toLowerCase(),
+          )?.[0];
+          const oppSqName = oppSqKey ? SQUIGGLE_NAME[oppSqKey] : opponentName;
+
+          const teamEntries = (rawSquads as any[]).filter((p: any) => p.team === sqTeam);
+          const oppEntries  = (rawSquads as any[]).filter((p: any) => p.team === oppSqName);
+
+          if (teamEntries.length > 0) {
+            teamSquad = teamEntries.map((p: any) => (p.name ?? '') as string).filter(Boolean);
+          }
+          if (oppEntries.length > 0) {
+            opponentSquad = oppEntries.map((p: any) => (p.name ?? '') as string).filter(Boolean);
+          }
+        }
+      }
     }
   }
 
-  return { teamStanding, opponentStanding, tips };
+  return { teamStanding, opponentStanding, tips, teamSquad, opponentSquad };
 }
 
 // ─── NRL — ESPN (league ID: 3) ────────────────────────────────────────────────
@@ -328,7 +359,7 @@ async function fetchNRLPreview(
   const oppId       = Object.entries(NRL_ESPN_NAME).find(([, v]) => v === oppESPNName)?.[0];
   const oppESPNId   = oppId ? NRL_ESPN_ID[oppId] : undefined;
 
-  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes] = await Promise.allSettled([
+  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes, teamInjuryRes, oppInjuryRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/rugby-league/3/standings',
       { next: { revalidate: 3600 } },
@@ -347,6 +378,8 @@ async function fetchNRLPreview(
       : Promise.resolve(null),
     teamESPNId ? fetchLastStartingXI('rugby-league/3', teamESPNId) : Promise.resolve([]),
     oppESPNId  ? fetchLastStartingXI('rugby-league/3', oppESPNId)  : Promise.resolve([]),
+    teamESPNId ? fetchESPNInjuries('rugby-league/3', teamESPNId)   : Promise.resolve([]),
+    oppESPNId  ? fetchESPNInjuries('rugby-league/3', oppESPNId)    : Promise.resolve([]),
   ]);
 
   let teamStanding: TeamStanding | undefined;
@@ -378,13 +411,18 @@ async function fetchNRLPreview(
   const teamLastLineup = teamLineupRes.status === 'fulfilled' ? teamLineupRes.value : [];
   const oppLastLineup  = oppLineupRes.status  === 'fulfilled' ? oppLineupRes.value  : [];
 
+  const teamInjuries = teamInjuryRes.status === 'fulfilled' ? teamInjuryRes.value : [];
+  const oppInjuries  = oppInjuryRes.status  === 'fulfilled' ? oppInjuryRes.value  : [];
+
   return {
     teamStanding,
     opponentStanding,
-    teamNews:           teamNews.length > 0     ? teamNews     : undefined,
-    opponentNews:       opponentNews.length > 0 ? opponentNews : undefined,
-    teamLastLineup:     teamLastLineup.length > 0 ? teamLastLineup : undefined,
-    opponentLastLineup: oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
+    teamNews:              teamNews.length > 0     ? teamNews     : undefined,
+    opponentNews:          opponentNews.length > 0 ? opponentNews : undefined,
+    teamLastLineup:        teamLastLineup.length > 0 ? teamLastLineup : undefined,
+    opponentLastLineup:    oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
+    teamInjuryReport:      teamInjuries.length   > 0 ? teamInjuries   : undefined,
+    opponentInjuryReport:  oppInjuries.length    > 0 ? oppInjuries    : undefined,
   };
 }
 
@@ -414,6 +452,15 @@ function normaliseRoundName(raw: string): string {
   if (lower.includes('semi'))                              return 'Semi-finals';
   if (/\bfinal\b/.test(lower) && !lower.includes('semi')) return 'Final';
   if (lower === 'round of 16')                             return 'Round of 16';
+  // FA Cup / EFL Cup specific round names
+  if (/third.round/i.test(noLeg))  return 'Third Round';
+  if (/fourth.round/i.test(noLeg)) return 'Fourth Round';
+  if (/fifth.round/i.test(noLeg))  return 'Fifth Round';
+  if (/sixth.round/i.test(noLeg))  return 'Sixth Round';
+  if (/round\s+3/i.test(noLeg))    return 'Third Round';
+  if (/round\s+4/i.test(noLeg))    return 'Fourth Round';
+  if (/round\s+5/i.test(noLeg))    return 'Fifth Round';
+  if (/round\s+6/i.test(noLeg))    return 'Sixth Round';
   return noLeg;
 }
 
@@ -430,13 +477,20 @@ async function fetchCompetitionStage(
   teamName:     string,
   opponentName: string,
 ): Promise<CompetitionStage | undefined> {
+  // Use a 120-day forward window so upcoming fixtures (FA Cup, EFL Cup rounds
+  // that haven't kicked off yet) appear in the scoreboard with their round notes.
+  const now = new Date();
+  const end = new Date(now.getTime() + 120 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const dateRange = `${fmt(now)}-${fmt(end)}`;
+
   const [standingsRes, boardRes] = await Promise.allSettled([
     fetchTimeout(
       `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`,
       { next: { revalidate: 3600 } },
     ),
     fetchTimeout(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard`,
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dateRange}&limit=100`,
       { next: { revalidate: 1800 } },
     ),
   ]);
@@ -445,13 +499,41 @@ async function fetchCompetitionStage(
   let roundName = '';
   if (boardRes.status === 'fulfilled' && boardRes.value.ok) {
     const data = await boardRes.value.json();
-    for (const ev of (data.events ?? []) as any[]) {
-      const note = (ev.notes?.[0]?.headline ?? '') as string;
+
+    // Build a list of events sorted: specific match first, then any event
+    const events: any[] = data.events ?? [];
+    const teamLower = teamName.toLowerCase().split(' ')[0]; // use first word for fuzzy match
+    const oppLower  = opponentName.toLowerCase().split(' ')[0];
+
+    // Try to find the exact event first, then fall back to any event in the board
+    const sortedEvents = [...events].sort((a, b) => {
+      const aComps: any[] = a.competitions?.[0]?.competitors ?? [];
+      const bComps: any[] = b.competitions?.[0]?.competitors ?? [];
+      const aMatch = aComps.some((c: any) => {
+        const n = (c.team?.displayName ?? c.team?.name ?? '').toLowerCase();
+        return n.includes(teamLower) || n.includes(oppLower);
+      });
+      const bMatch = bComps.some((c: any) => {
+        const n = (c.team?.displayName ?? c.team?.name ?? '').toLowerCase();
+        return n.includes(teamLower) || n.includes(oppLower);
+      });
+      return (bMatch ? 1 : 0) - (aMatch ? 1 : 0);
+    });
+
+    for (const ev of sortedEvents) {
+      // ESPN stores cup round in competitions[0].notes OR top-level notes depending on comp
+      const note = (
+        ev.competitions?.[0]?.notes?.[0]?.headline ??
+        ev.competitions?.[0]?.notes?.[0]?.text ??
+        ev.notes?.[0]?.headline ??
+        ev.notes?.[0]?.text ??
+        ''
+      ) as string;
       if (note) { roundName = normaliseRoundName(note); break; }
     }
     // Fallback: season type text (e.g. "Knockout Rounds")
     if (!roundName) {
-      const typeText = (data.leagues?.[0]?.season?.type?.text ?? '') as string;
+      const typeText = (data.leagues?.[0]?.season?.type?.text ?? data.season?.type?.text ?? '') as string;
       if (typeText && typeText !== 'Regular Season') roundName = typeText;
     }
   }
@@ -630,6 +712,37 @@ async function fetchLastStartingXI(sportPath: string, espnTeamId: string): Promi
   }
 }
 
+// ─── ESPN injury report fetch ──────────────────────────────────────────────────
+
+/**
+ * Fetches the current injury report for a team from ESPN.
+ * Returns players with status 'Out' or 'Doubtful' only — these are the ones that matter.
+ * sportPath examples: 'rugby-league/3', 'soccer/eng.1', 'rugby/242041'
+ */
+async function fetchESPNInjuries(
+  sportPath: string,
+  espnTeamId: string,
+): Promise<Array<{ name: string; status: string }>> {
+  try {
+    const res = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${espnTeamId}/injuries`,
+      { next: { revalidate: 900 }, timeoutMs: 5000 }, // 15-min cache — injury status changes frequently
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const injuries: any[] = data.injuries ?? [];
+    return injuries
+      .filter((i: any) => ['Out', 'Doubtful'].includes(i.status))
+      .map((i: any) => ({
+        name:   (i.athlete?.displayName ?? i.athlete?.shortName ?? '') as string,
+        status: (i.status ?? 'Unknown') as string,
+      }))
+      .filter((i: any) => i.name);
+  } catch {
+    return [];
+  }
+}
+
 // ─── EPL — ESPN ───────────────────────────────────────────────────────────────
 
 const ESPN_TEAM_ID: Record<string, string> = {
@@ -712,7 +825,7 @@ async function fetchEPLPreview(
   const oppTeamKey = Object.entries(ESPN_TEAM_NAME).find(([, v]) => v === opponentName)?.[0];
   const oppEspnId  = oppTeamKey ? ESPN_TEAM_ID[oppTeamKey] : undefined;
 
-  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes] = await Promise.allSettled([
+  const [standingsRes, teamNewsRes, oppNewsRes, teamLineupRes, oppLineupRes, teamInjuryRes, oppInjuryRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',
       { next: { revalidate: 3600 } },
@@ -731,6 +844,8 @@ async function fetchEPLPreview(
       : Promise.resolve(null),
     espnTeamId ? fetchLastStartingXI('soccer/eng.1', espnTeamId) : Promise.resolve([]),
     oppEspnId  ? fetchLastStartingXI('soccer/eng.1', oppEspnId)  : Promise.resolve([]),
+    espnTeamId ? fetchESPNInjuries('soccer/eng.1', espnTeamId)   : Promise.resolve([]),
+    oppEspnId  ? fetchESPNInjuries('soccer/eng.1', oppEspnId)    : Promise.resolve([]),
   ]);
 
   // ── Standings ──
@@ -743,6 +858,38 @@ async function fetchEPLPreview(
     const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
+  }
+
+  // ── Cup fixture: look up opponent division if not in PL standings ──
+  let opponentLeague: string | undefined;
+  if (competition && !opponentStanding) {
+    const divEntry = lookupEnglishDivision(opponentName);
+    if (divEntry) {
+      opponentLeague = divEntry.division;
+      // Try to fetch their actual standing from their tier's ESPN endpoint
+      if (divEntry.espnId && ENGLISH_TIER_SLUG[divEntry.tier]) {
+        try {
+          const slug = ENGLISH_TIER_SLUG[divEntry.tier];
+          const res = await fetchTimeout(
+            `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`,
+            { next: { revalidate: 3600 }, timeoutMs: 5000 },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+            // Try to find by ESPN ID or by display name
+            const found = entries.find((e: any) =>
+              String(e.team?.id) === divEntry.espnId ||
+              (e.team?.displayName ?? e.team?.name ?? '').toLowerCase().includes(opponentName.toLowerCase().split(' ')[0])
+            );
+            if (found) {
+              opponentStanding = parseESPNStandings(entries, found.team?.displayName ?? opponentName);
+              if (opponentStanding) opponentStanding.name = opponentName;
+            }
+          }
+        } catch { /* standing fetch failed — opponentLeague string is still set */ }
+      }
+    }
   }
 
   // ── News ──
@@ -784,15 +931,21 @@ async function fetchEPLPreview(
   const teamLastLineup = teamLineupRes.status === 'fulfilled' ? teamLineupRes.value : [];
   const oppLastLineup  = oppLineupRes.status  === 'fulfilled' ? oppLineupRes.value  : [];
 
+  const teamInjuries = teamInjuryRes.status === 'fulfilled' ? teamInjuryRes.value : [];
+  const oppInjuries  = oppInjuryRes.status  === 'fulfilled' ? oppInjuryRes.value  : [];
+
   return {
     teamStanding,
     opponentStanding,
-    teamNews:            teamNews.length > 0     ? teamNews     : undefined,
-    opponentNews:        opponentNews.length > 0 ? opponentNews : undefined,
+    opponentLeague,
+    teamNews:              teamNews.length > 0     ? teamNews     : undefined,
+    opponentNews:          opponentNews.length > 0 ? opponentNews : undefined,
     competitionStage,
     firstLegResult,
-    teamLastLineup:      teamLastLineup.length > 0 ? teamLastLineup : undefined,
-    opponentLastLineup:  oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
+    teamLastLineup:        teamLastLineup.length > 0 ? teamLastLineup : undefined,
+    opponentLastLineup:    oppLastLineup.length  > 0 ? oppLastLineup  : undefined,
+    teamInjuryReport:      teamInjuries.length   > 0 ? teamInjuries   : undefined,
+    opponentInjuryReport:  oppInjuries.length    > 0 ? oppInjuries    : undefined,
   };
 }
 
@@ -868,6 +1021,20 @@ async function fetchRINTPreview(
 
 // ─── Super Rugby — ESPN ───────────────────────────────────────────────────────
 
+const SRU_ESPN_ID_P: Record<string, string> = {
+  'sru-brumbies':    '25889',
+  'sru-reds':        '182',
+  'sru-waratahs':    '227',
+  'sru-force':       '25893',
+  'sru-blues':       '25932',
+  'sru-chiefs':      '25934',
+  'sru-crusaders':   '25936',
+  'sru-highlanders': '25938',
+  'sru-hurricanes':  '25939',
+  'sru-drua':        '289338',
+  'sru-moana':       '289319',
+};
+
 const SRU_ESPN_NAME: Record<string, string> = {
   'sru-brumbies':    'Brumbies',
   'sru-reds':        'Queensland Reds',
@@ -927,9 +1094,27 @@ async function fetchSRUPreview(
     x.team?.displayName === opponentName || x.team?.name === opponentName,
   );
 
+  const teamStanding:     TeamStanding | undefined = teamIdx >= 0 ? parseSRUStandings(entries, teamName, teamIdx)     : undefined;
+  const opponentStanding: TeamStanding | undefined = oppIdx  >= 0 ? parseSRUStandings(entries, opponentName, oppIdx)  : undefined;
+
+  // Injury fetches — fan out in parallel
+  const teamESPNId = SRU_ESPN_ID_P[teamId];
+  const oppTeamKey = Object.entries(SRU_ESPN_NAME).find(([, v]) => v === opponentName)?.[0];
+  const oppESPNId  = oppTeamKey ? SRU_ESPN_ID_P[oppTeamKey] : undefined;
+
+  const [teamInjuryRes, oppInjuryRes] = await Promise.allSettled([
+    teamESPNId ? fetchESPNInjuries('rugby/242041', teamESPNId) : Promise.resolve([]),
+    oppESPNId  ? fetchESPNInjuries('rugby/242041', oppESPNId)  : Promise.resolve([]),
+  ]);
+
+  const teamInjuries = teamInjuryRes.status === 'fulfilled' ? teamInjuryRes.value : [];
+  const oppInjuries  = oppInjuryRes.status  === 'fulfilled' ? oppInjuryRes.value  : [];
+
   return {
-    teamStanding:     teamIdx >= 0 ? parseSRUStandings(entries, teamName, teamIdx)     : undefined,
-    opponentStanding: oppIdx  >= 0 ? parseSRUStandings(entries, opponentName, oppIdx)  : undefined,
+    teamStanding,
+    opponentStanding,
+    teamInjuryReport:     teamInjuries.length > 0 ? teamInjuries : undefined,
+    opponentInjuryReport: oppInjuries.length  > 0 ? oppInjuries  : undefined,
   };
 }
 
@@ -1085,10 +1270,159 @@ async function fetchNHLPreview(teamId: string, opponentName: string): Promise<Pr
   };
 }
 
+// ─── Formula 1 — Jolpi Ergast API ────────────────────────────────────────────
+
+async function fetchF1Preview(
+  teamId: string,
+  raceName: string,
+  circuitName: string,
+  sessionType: string,
+  roundNumber?: number,
+): Promise<PreviewContext> {
+  // ── Fan out: driver standings + constructor standings + recent results ─────
+  const [driverStandRes, constructorStandRes, resultsRes] = await Promise.allSettled([
+    (async () => {
+      for (const url of [
+        'https://api.jolpi.ca/ergast/f1/current/driverstandings.json',
+        'https://api.jolpi.ca/ergast/f1/2025/driverstandings.json',
+      ]) {
+        try {
+          const r = await fetchTimeout(url, { next: { revalidate: 3600 } });
+          if (r.ok) { const d = await r.json(); return d; }
+        } catch { /* try next */ }
+      }
+      return null;
+    })(),
+    (async () => {
+      for (const url of [
+        'https://api.jolpi.ca/ergast/f1/current/constructorstandings.json',
+        'https://api.jolpi.ca/ergast/f1/2025/constructorstandings.json',
+      ]) {
+        try {
+          const r = await fetchTimeout(url, { next: { revalidate: 3600 } });
+          if (r.ok) { const d = await r.json(); return d; }
+        } catch { /* try next */ }
+      }
+      return null;
+    })(),
+    fetchTimeout('https://api.jolpi.ca/ergast/f1/current/results.json?limit=200', { next: { revalidate: 3600 } })
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null),
+  ]);
+
+  // ── Driver standings ──────────────────────────────────────────────────────
+  const rawDriverStandings: any[] =
+    (driverStandRes.status === 'fulfilled' && driverStandRes.value)
+      ? (driverStandRes.value?.MRData?.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [])
+      : [];
+
+  const f1DriverStandings = rawDriverStandings.map((s: any) => ({
+    position:       parseInt(s.position, 10),
+    driverName:     `${s.Driver?.givenName ?? ''} ${s.Driver?.familyName ?? ''}`.trim(),
+    teamId:         ERGAST_ID_TO_TEAM_ID[s.Driver?.driverId ?? ''] ?? undefined,
+    constructorName: s.Constructors?.[0]?.name ?? '',
+    points:         parseFloat(s.points ?? '0'),
+    wins:           parseInt(s.wins ?? '0', 10),
+    ergastDriverId: s.Driver?.driverId ?? '',
+  }));
+
+  // Also maintain the old teamStanding for backward compat (legacy display uses it)
+  const ergastId = F1_DRIVER_IDS[teamId];
+  const driverEntry = ergastId ? rawDriverStandings.find((s: any) => s.Driver?.driverId === ergastId) : null;
+  let teamStanding: TeamStanding | undefined;
+  if (driverEntry) {
+    teamStanding = {
+      name:            `${driverEntry.Driver?.givenName ?? ''} ${driverEntry.Driver?.familyName ?? ''}`.trim(),
+      position:        parseInt(driverEntry.position, 10),
+      played:          0,
+      wins:            parseInt(driverEntry.wins ?? '0', 10),
+      draws:           0,
+      losses:          0,
+      points:          parseFloat(driverEntry.points ?? '0'),
+      constructorName: driverEntry.Constructors?.[0]?.name ?? '',
+    };
+  }
+
+  // ── Constructor standings ─────────────────────────────────────────────────
+  const rawConstructorStandings: any[] =
+    (constructorStandRes.status === 'fulfilled' && constructorStandRes.value)
+      ? (constructorStandRes.value?.MRData?.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [])
+      : [];
+
+  const f1ConstructorStandings = rawConstructorStandings.map((s: any) => ({
+    position:        parseInt(s.position, 10),
+    constructorName: s.Constructor?.name ?? '',
+    points:          parseFloat(s.points ?? '0'),
+    wins:            parseInt(s.wins ?? '0', 10),
+  }));
+
+  // ── Recent race results (last 4 completed rounds) ─────────────────────────
+  const rawRaces: any[] =
+    (resultsRes.status === 'fulfilled' && resultsRes.value)
+      ? (resultsRes.value?.MRData?.RaceTable?.Races ?? [])
+      : [];
+
+  const completedRaces = rawRaces
+    .filter((race: any) => Array.isArray(race.Results) && race.Results.length > 0)
+    .sort((a: any, b: any) => parseInt(b.round, 10) - parseInt(a.round, 10))
+    .slice(0, 4);
+
+  const f1RecentRaceResults = completedRaces.map((race: any) => ({
+    round:    parseInt(race.round, 10),
+    raceName: race.raceName ?? '',
+    results:  (race.Results as any[]).slice(0, 10).map((r: any) => ({
+      position:       parseInt(r.position, 10),
+      driverName:     `${r.Driver?.givenName ?? ''} ${r.Driver?.familyName ?? ''}`.trim(),
+      constructorName: r.Constructor?.name ?? '',
+      ergastDriverId: r.Driver?.driverId ?? '',
+    })),
+  }));
+
+  // ── Determine followed entity ─────────────────────────────────────────────
+  let f1FollowedType: 'driver' | 'constructor' | undefined;
+  let f1FollowedName: string | undefined;
+  let f1FollowedConstructorName: string | undefined;
+
+  if (teamId.startsWith('f1-team-')) {
+    // Following a constructor
+    const constructorTeam = F1_CONSTRUCTOR_TEAMS.find(t => t.id === teamId);
+    if (constructorTeam) {
+      f1FollowedType = 'constructor';
+      f1FollowedName = constructorTeam.division ?? constructorTeam.name;
+      f1FollowedConstructorName = f1FollowedName;
+    }
+  } else if (teamId === 'f1-championship') {
+    // Generic championship follow — no specific entity focus
+    f1FollowedType = undefined;
+  } else if (teamId.startsWith('f1_') || F1_DRIVER_IDS[teamId]) {
+    // Following a driver
+    const driverTeam = F1_DRIVERS.find(d => d.id === teamId);
+    if (driverTeam) {
+      f1FollowedType = 'driver';
+      f1FollowedName = driverTeam.name;
+      f1FollowedConstructorName = driverTeam.division;
+    }
+  }
+
+  return {
+    teamStanding,
+    f1DriverStandings:      f1DriverStandings.length > 0 ? f1DriverStandings : undefined,
+    f1ConstructorStandings: f1ConstructorStandings.length > 0 ? f1ConstructorStandings : undefined,
+    f1RecentRaceResults:    f1RecentRaceResults.length > 0 ? f1RecentRaceResults : undefined,
+    f1FollowedType,
+    f1FollowedName,
+    f1FollowedConstructorName,
+    f1SessionType:  sessionType,
+    f1RaceName:     raceName || undefined,
+    f1CircuitName:  circuitName || undefined,
+    f1RoundNumber:  roundNumber,
+  };
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl']);
-const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
+const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
   const league       = req.nextUrl.searchParams.get('league') ?? '';
@@ -1110,6 +1444,13 @@ export async function GET(req: NextRequest) {
     else if (league === 'rugby_int')   ctx = await fetchRINTPreview(teamId, opponentName);
     else if (league === 'nba')         ctx = await fetchNBAPreview(teamId, opponentName);
     else if (league === 'nhl')         ctx = await fetchNHLPreview(teamId, opponentName);
+    else if (league === 'f1') {
+      const raceName    = req.nextUrl.searchParams.get('raceName') ?? '';
+      const circuitName = req.nextUrl.searchParams.get('circuitName') ?? '';
+      const sessionType = req.nextUrl.searchParams.get('sessionType') ?? 'Race';
+      const roundNumber = parseInt(req.nextUrl.searchParams.get('roundNumber') ?? '0') || undefined;
+      ctx = await fetchF1Preview(teamId, raceName, circuitName, sessionType, roundNumber);
+    }
 
     // Resolve opponent team ID from display name for the manager lookup.
     // We search ESPN_TEAM_NAME / NRL_ESPN_NAME / SQUIGGLE_NAME / SRU_ESPN_NAME / RINT_ESPN_NAME_P

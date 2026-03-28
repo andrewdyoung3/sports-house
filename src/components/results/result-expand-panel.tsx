@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Zap, TrendingUp, BarChart2, Loader2, Newspaper,
-  ArrowUp, ArrowDown, Minus, Users, ChevronDown,
+  Zap, TrendingUp, Loader2, Newspaper,
+  Users, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Team, GameResult, TeamStanding, AIReview, MatchStats, TeamMatchStats } from '@/types';
+import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey } from '@/types';
+import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
 
 type ResultEntry = GameResult & { team: Team; id: string };
@@ -70,49 +71,6 @@ function AILoadingCard({ color }: { color: string }) {
       </p>
     </div>
   );
-}
-
-// ── Standing display ──────────────────────────────────────────────────────────
-
-function StandingDisplay({
-  standing, label, trend,
-}: {
-  standing: TeamStanding; label: string; trend?: 'up' | 'down' | 'same' | null;
-}) {
-  const record = standing.draws > 0
-    ? `${standing.wins}W ${standing.draws}D ${standing.losses}L`
-    : `${standing.wins}W ${standing.losses}L`;
-  const statLine = standing.points !== undefined
-    ? `${standing.points} pts`
-    : standing.percentage !== undefined
-      ? `${standing.percentage.toFixed(1)}%`
-      : '';
-
-  return (
-    <div className="flex items-start gap-2">
-      <div className="flex items-center gap-0.5 shrink-0 w-7">
-        <span className="text-[14px] font-black text-white/85 tabular-nums leading-none">{standing.position}</span>
-        {trend === 'up'   && <ArrowUp   className="h-2.5 w-2.5 text-emerald-400 shrink-0" />}
-        {trend === 'down' && <ArrowDown className="h-2.5 w-2.5 text-red-400 shrink-0" />}
-        {trend === 'same' && <Minus     className="h-2 w-2 text-white/25 shrink-0" />}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-bold text-white/75 leading-none truncate">{label}</p>
-        <p className="text-[10px] text-white/40 mt-0.5 leading-none">
-          {record} · {standing.played} played{statLine ? ` · ${statLine}` : ''}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function getTrend(standings: StandingRow[] | null, teamId: string | undefined): 'up' | 'down' | 'same' | null {
-  if (!standings || !teamId) return null;
-  const row = standings.find(s => s.teamId === teamId);
-  if (!row || row.rankChange === undefined) return null;
-  if (row.rankChange > 0) return 'up';
-  if (row.rankChange < 0) return 'down';
-  return 'same';
 }
 
 // ── Player stats section ──────────────────────────────────────────────────────
@@ -346,9 +304,6 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.id, team.league, team.id]);
 
-  const teamStanding = standings?.find(r => r.teamId === team.id);
-  const hasStandings = !!teamStanding;
-
   const outcomeColor = result.isDraw
     ? '#f59e0b'
     : result.isWin
@@ -408,41 +363,25 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
         </div>
       )}
 
-      {/* ── Verdict + Standings ── */}
-      <div className="grid grid-cols-2 gap-5">
-        {!aiLoading && aiReview?.verdict && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-              <TrendingUp className="h-3 w-3" />
-              Going Forward
-            </p>
-            <p className="text-[11px] text-white/55 leading-relaxed">{aiReview.verdict}</p>
-          </div>
-        )}
+      {/* ── Going Forward ── */}
+      {!aiLoading && aiReview?.verdict && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
+            <TrendingUp className="h-3 w-3" />
+            Going Forward
+          </p>
+          <p className="text-[11px] text-white/55 leading-relaxed">{aiReview.verdict}</p>
+        </div>
+      )}
 
-        {hasStandings && teamStanding && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
-              <BarChart2 className="h-3 w-3" />
-              Ladder
-            </p>
-            <StandingDisplay
-              standing={{
-                name:       team.shortName,
-                position:   teamStanding.position,
-                played:     teamStanding.played,
-                wins:       teamStanding.wins,
-                draws:      teamStanding.draws,
-                losses:     teamStanding.losses,
-                points:     teamStanding.points,
-                percentage: teamStanding.percentage,
-              }}
-              label={team.shortName}
-              trend={getTrend(standings, team.id)}
-            />
-          </div>
-        )}
-      </div>
+      {/* ── League Table ── */}
+      {standings && standings.length > 0 && (
+        <LeagueTable
+          league={team.league as SportKey}
+          rows={standings}
+          followedTeamIds={new Set([team.id])}
+        />
+      )}
 
       {/* ── Player Stats (collapsible) ── */}
       {hasStatsLeague && (
