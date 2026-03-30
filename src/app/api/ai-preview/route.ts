@@ -91,6 +91,7 @@ INFORMATION ECONOMY — no redundant data:
   - Not "beat City 3–0 last month" → "their most recent head-to-head exposed City's high line against pace"
 • Directional cues without counts are acceptable where they set up an analytical point: "arriving on the back of successive defeats", "unbeaten at home this season". These are acceptable only if they lead somewhere — not as standalone observations.
 • FORM RESULT RECENCY — the form data shows results in sequence (most recent first) but contains NO round numbers or dates. Do not use time-anchored language ("last round", "last week", "last month", "recently", "just last week") for any specific result unless you are certain it was the most recent game (first in the sequence). For results in positions 2–5, use neutral phrases: "in their loss to the Sharks", "when they faced City", "against the Broncos earlier this season". Calling a third-game-ago result "last round" is factually wrong — the form data does not tell you when that game was played.
+• RESULT ORDERING — when describing results in chronological narrative order ("they lost to X before beating Y"), you MUST reflect the array sequence accurately: the first item in the form list is the MOST RECENT game; later items happened EARLIER. So if results are [win vs A, loss vs B], chronologically the loss to B came first and the win over A came second. Getting this backwards produces factually wrong statements — double-check the sequence before using any "before/after/following/then" language.
 • Forbidden vague momentum phrases — these assert something without saying anything: "building momentum", "hitting their stride", "finding their form", "growing in confidence", "on the rise", "firing on all cylinders", "clicking into gear". If form is genuinely positive, state the specific structural reason — what is working and why it matters for this fixture.
 • For standings: state the stakes and what they mean structurally — not the coordinates that produced them.
 • POSITION vs POINTS — understand the model, then use it correctly:
@@ -207,14 +208,14 @@ WEATHER ANALYSIS — when WEATHER AT KICKOFF is provided in the data block:
 F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORMULA 1"):
 • "context": Championship situation — where the followed entity sits and what this race weekend means for their season. Reference the 2026 regulation changes when they're directly relevant to this circuit (e.g. active aero behaviour at Monza's straights vs Monaco's corners, MO deployment strategy).
 • "tacticalBattle" (labelled "Field Form" in F1): Describe the current form and trajectory of the broader field — who has been quick over recent rounds, which constructors are performing above/below expectation under the new regs, key rivalries developing in the championship. Cover the whole grid at a high level; the followed driver/constructor gets extra depth but should not crowd out the field picture.
-• "playerSpotlight" (labelled "Focus: {followed name}" in F1): Deep focus on the followed driver or constructor. Their specific strengths/weaknesses at this circuit type, how their car handles active aero and MO deployment, their championship trajectory, nearest rivals and what the points situation means.
+• "playerSpotlight" (labelled "Focus: {followed name}" in F1): At least 80% of this section must be directly about the FOLLOWED ENTITY named in the data block — their specific strengths/weaknesses at this circuit, how their car handles active aero and MO deployment, their championship trajectory, what this race means for them. Brief mention of rivals is only permitted when directly relevant to the followed entity's own situation (e.g. a points gap to their nearest rival). Do NOT lead with or centre on any other driver.
 • "verdict": Key things to watch in this race weekend — specific overtaking opportunities, strategic scenarios (undercut/overcut windows, safety car beneficiaries, tyre strategy), weather factors, and what would constitute a successful weekend for the followed entity.
 
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
   "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
   "tacticalBattle": "2–3 sentences. The specific structural contest where this fixture will be decided — name the actual system clash or matchup, not a generic description. Use sport-specific terminology. If the coaching data reveals a structural tension (e.g. a high press vs a deep defensive block), lead with that.",
-  "playerSpotlight": "Begin with the player or position name. 1–2 sentences grounded in a specific reason this individual or role is the analytical crux of THIS fixture — the matchup, the coverage gap, the form trajectory. If no player is named in the data and no specific structural role is clearly pivotal, omit this field entirely (set to empty string).",
+  "playerSpotlight": "REQUIRED — always populate this field, never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: lead with the single most analytically compelling player's full name, then 1–2 sentences connecting them to concrete gamestate factors. Draw on training knowledge of current squads when no roster data is provided.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
   "keyInsights": [
     "Specific analytical point grounded in the data (max ~12 words)",
@@ -315,6 +316,17 @@ function buildF1DataBlock(context: PreviewContext): string {
     lines.push('');
   }
 
+  if (context.f1QualifyingGrid && context.f1QualifyingGrid.length > 0) {
+    lines.push('STARTING GRID (post-qualifying — race day order):');
+    context.f1QualifyingGrid.forEach(entry => {
+      const followedMarker = entry.driverName === context.f1FollowedName ? ' ◄ FOLLOWED' : '';
+      const time = entry.q3 ?? entry.q2 ?? entry.q1 ?? '';
+      const constructor = entry.constructorName.split(' ').slice(-1)[0];
+      lines.push(`  P${entry.position}: ${entry.driverName} (${constructor})${time ? ` ${time}` : ''}${followedMarker}`);
+    });
+    lines.push('');
+  }
+
   lines.push(`Generate the race preview using only the data provided above. Do not invent statistics, driver names not mentioned, or historical records not given.`);
   return lines.join('\n');
 }
@@ -395,17 +407,17 @@ function buildDataBlock(
     lines.push('');
   }
 
-  // Ladder/Table positions — suppressed entirely for knockout-phase ties.
-  // In a knockout fixture the domestic/league-phase table has zero bearing on
-  // who progresses; including it only invites the model to misuse it.
+  // Ladder/Table positions — suppressed for cup/off-league fixtures and knockout-phase ties.
+  // When a game is in any non-primary competition (isOffLeague=true), the domestic
+  // league table has zero bearing on the cup result; including it only invites the
+  // model to misuse it. Exception: F1 driver championship standing is always relevant.
   const isKnockoutTie = !!cs && !cs.isGroupPhase;
-  if (!isKnockoutTie && (context.teamStanding || context.opponentStanding)) {
+  const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie;
+  if (!suppressStandings && (context.teamStanding || context.opponentStanding)) {
     const isF1Standing = league === 'f1';
     const standingsHeading = isF1Standing
       ? 'DRIVERS\' CHAMPIONSHIP STANDING:'
-      : isOffLeague
-        ? `${leagueLabel.toUpperCase()} STANDING (primary league context only — NOT the focus for this ${competition} fixture):`
-        : 'CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):';
+      : 'CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):';
     lines.push(standingsHeading);
     // For F1, only show the driver's own standing (no "opponent" standing — it's a circuit)
     const standingPairs: [string, typeof context.teamStanding][] = isF1Standing
@@ -551,11 +563,11 @@ function buildDataBlock(
     lines.push('BREVITY MODE — this preview appears in a league-wide fixture list alongside many other games. Be concise:');
     lines.push('• "context": ONE sentence, max 25 words. Essential narrative only — what is at stake.');
     lines.push('• "tacticalBattle": ONE sentence, max 20 words. The single decisive match-up.');
-    lines.push('• "playerSpotlight": player or role name + one brief phrase, max 12 words total.');
+    lines.push('• "playerSpotlight": REQUIRED. Player full name + one specific phrase about their gamestate impact, max 12 words total. Never empty.');
     lines.push('• "verdict": ONE sentence, max 20 words. Most likely outcome and why.');
     lines.push('• "keyInsights": exactly TWO specific, grounded points, max 8 words each — no filler.');
   }
-  lines.push(`Generate the match preview using only the data provided above. Do not invent statistics, player names not mentioned, or historical records not given.`);
+  lines.push(`Generate the match preview using the data provided above. Do not invent statistics or historical records not given. For playerSpotlight you may draw on your training knowledge of current squads to name a specific player — this is the one field where squad knowledge supplements the data block.`);
 
   return lines.join('\n');
 }
@@ -629,14 +641,17 @@ async function callClaude(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callClaude(prompt, compact, maxTokensOverride),
-  ['ai-preview-v26'],
+  ['ai-preview-v31'],
   { revalidate: 21600 }, // 6 hours
 );
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
-const TEAMID_RE       = /^[a-z0-9]+-?[a-z0-9_-]*$/;
+const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
+const TEAMID_RE        = /^[a-z0-9]+-?[a-z0-9_-]*$/;
+const FINGERPRINT_RE   = /^[a-zA-Z0-9_\-:]{1,128}$/;
+// Reject control characters and obvious prompt-injection newlines; allow Unicode letters for international names
+const NO_NEWLINES_RE   = /[\n\r\0]/;
 
 export async function POST(req: NextRequest) {
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -667,6 +682,22 @@ export async function POST(req: NextRequest) {
     } = body;
 
     if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
+      return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
+    }
+
+    // Guard against prompt injection and token amplification in user-supplied strings
+    const strFields: [string, number][] = [
+      [teamName ?? '',     100],
+      [opponentName ?? '', 100],
+      [gameId ?? '',        80],
+      [competition ?? '',  120],
+    ];
+    for (const [val, maxLen] of strFields) {
+      if (val.length > maxLen || NO_NEWLINES_RE.test(val)) {
+        return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
+      }
+    }
+    if (newsFingerprint && !FINGERPRINT_RE.test(newsFingerprint)) {
       return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
     }
 

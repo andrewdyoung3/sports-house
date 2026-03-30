@@ -287,6 +287,18 @@ async function fetchF1Standings(): Promise<StandingRow[]> {
     'https://api.jolpi.ca/ergast/f1/2025/driverstandings.json',
   ];
 
+  // Fire the race calendar fetch in parallel with driver standings
+  const racesPromise = fetchTimeout(
+    'https://api.jolpi.ca/ergast/f1/current.json',
+    { next: { revalidate: 3600 } },
+  ).then(async r => {
+    if (!r.ok) return 0;
+    const racesData = await r.json();
+    const races: any[] = racesData?.MRData?.RaceTable?.Races ?? [];
+    const now = Date.now();
+    return races.filter((r: any) => new Date(r.date).getTime() < now).length;
+  }).catch(() => 0);
+
   let standingsList: any[] = [];
   for (const url of tryUrls) {
     try {
@@ -302,22 +314,7 @@ async function fetchF1Standings(): Promise<StandingRow[]> {
 
   if (standingsList.length === 0) return [];
 
-  // Get count of completed races for the "played" field
-  let completedRaces = 0;
-  try {
-    const racesRes = await fetchTimeout(
-      'https://api.jolpi.ca/ergast/f1/current.json',
-      { next: { revalidate: 3600 } },
-    );
-    if (racesRes.ok) {
-      const racesData = await racesRes.json();
-      const races: any[] = racesData?.MRData?.RaceTable?.Races ?? [];
-      const now = Date.now();
-      completedRaces = races.filter((r: any) => new Date(r.date).getTime() < now).length;
-    }
-  } catch {
-    // use 0 as fallback
-  }
+  const completedRaces = await racesPromise;
 
   return standingsList.map((s: any): StandingRow => {
     const driverId = s.Driver?.driverId ?? '';

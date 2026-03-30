@@ -187,6 +187,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'venue and date required' }, { status: 400 });
   }
 
+  if (venue.length > 120) {
+    return NextResponse.json({ error: 'venue name too long' }, { status: 400 });
+  }
+
   const kickoff = new Date(date);
   if (isNaN(kickoff.getTime())) {
     return NextResponse.json({ error: 'invalid date' }, { status: 400 });

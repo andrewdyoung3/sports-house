@@ -17,7 +17,7 @@ import type { Team, GameResult, SportKey } from '@/types';
 
 type ResultEntry = GameResult & { team: Team; id: string };
 
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -84,7 +84,29 @@ function ResultBadge({ league, competition }: { league: string; competition?: st
 
 // ─── Outcome badge ────────────────────────────────────────────────────────────
 
+function f1PositionColor(pos: string): string {
+  if (pos === 'P1') return '#FFD700'; // gold
+  if (pos === 'P2') return '#C0C0C0'; // silver
+  if (pos === 'P3') return '#CD7F32'; // bronze
+  const n = parseInt(pos.replace('P', ''), 10);
+  if (!isNaN(n) && n <= 10) return '#34d399'; // points
+  if (!isNaN(n)) return '#9ca3af'; // outside points
+  return '#f87171'; // DNF / DNS / DSQ etc.
+}
+
 function OutcomeBadge({ result }: { result: ResultEntry }) {
+  if (result.f1Position) {
+    const color = f1PositionColor(result.f1Position);
+    const isPos = /^P\d+$/.test(result.f1Position);
+    return (
+      <span
+        className="inline-flex items-center justify-center rounded-md px-1.5 h-5 text-[10px] font-black border shrink-0 leading-none tabular-nums"
+        style={{ color, borderColor: `${color}55`, background: `${color}18` }}
+      >
+        {result.f1Position}
+      </span>
+    );
+  }
   const isDraw = result.isDraw === true;
   const label  = isDraw ? 'D' : result.isWin ? 'W' : 'L';
   const cls    = isDraw
@@ -194,12 +216,18 @@ function ResultRow({
         </div>
       </div>
 
-      {/* Score + chevron */}
+      {/* Score / F1 position + chevron */}
       <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
         <div>
-          <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
-            {result.teamScore}–{result.opponentScore}
-          </p>
+          {result.f1Position ? (
+            <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: f1PositionColor(result.f1Position) }}>
+              {result.f1Position}
+            </p>
+          ) : (
+            <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
+              {result.teamScore}–{result.opponentScore}
+            </p>
+          )}
         </div>
         <ChevronDown
           className={`h-4 w-4 text-white/20 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
@@ -321,7 +349,9 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
               {hasResults && (
                 <div className="flex gap-0.5 justify-center">
                   {dayResults!.slice(0, 3).map((r, ri) => {
-                    const c = r.isDraw === true ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
+                    const c = r.f1Position
+                      ? f1PositionColor(r.f1Position)
+                      : r.isDraw === true ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
                     return <span key={ri} className="w-1 h-1 rounded-full" style={{ backgroundColor: c }} />;
                   })}
                 </div>
@@ -341,7 +371,9 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
             <div className="space-y-2">
               {previewResults.map(r => {
                 const isDraw = r.isDraw === true;
-                const scoreColor = isDraw ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
+                const scoreColor = r.f1Position
+                  ? f1PositionColor(r.f1Position)
+                  : isDraw ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
                 return (
                   <div key={r.id} className="flex items-center gap-1.5" style={{ borderLeft: `2px solid ${r.team.primaryColor}60`, paddingLeft: '6px' }}>
                     <TeamBadge logoUrl={TEAM_LOGOS[r.team.id]} abbreviation={r.team.abbreviation} primaryColor={r.team.primaryColor} size={20} className="rounded-md shrink-0" />
@@ -349,7 +381,7 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
                     <span className="text-[10px] text-white/35">{r.isHome ? 'vs' : 'at'}</span>
                     <span className="text-[11px] text-white/70 flex-1 min-w-0 truncate">{r.opponent}</span>
                     <span className="text-[11px] font-black shrink-0" style={{ color: scoreColor }}>
-                      {r.teamScore}–{r.opponentScore}
+                      {r.f1Position ?? `${r.teamScore}–${r.opponentScore}`}
                     </span>
                   </div>
                 );
@@ -506,20 +538,24 @@ export default function ResultsPage() {
 
     if (followed.length === 0) { setLoading(false); return; }
 
+    let active = true;
     let remaining = followed.length;
     followed.forEach(async (team) => {
       try {
         const entries = await loadResults(team);
-        setAllResults(prev => {
-          const seen = new Set(prev.map(r => r.id));
-          const merged = [...prev, ...entries.filter(r => !seen.has(r.id))];
-          return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        });
+        if (active) {
+          setAllResults(prev => {
+            const seen = new Set(prev.map(r => r.id));
+            const merged = [...prev, ...entries.filter(r => !seen.has(r.id))];
+            return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          });
+        }
       } finally {
         remaining -= 1;
         if (remaining === 0) setLoading(false);
       }
     });
+    return () => { active = false; };
   }, []);
 
   const filteredResults = useMemo<ResultEntry[]>(() => {

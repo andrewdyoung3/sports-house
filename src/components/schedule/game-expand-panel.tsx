@@ -5,7 +5,8 @@ import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarCha
 import { getAIPreview, getRecentResults } from '@/lib/mock-data';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
-import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName } from '@/lib/f1-data';
+import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
+import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { cn, ordinal } from '@/lib/utils';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
 
@@ -49,7 +50,7 @@ interface PanelData {
 const PANEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches API Cache-Control
 const PANEL_SESSION_KEY  = 'panel-data-cache-v2';
 
-/** Seed the in-memory map from sessionStorage once on module load. */
+/** Seed the in-memory map from sessionStorage (lazy — only parsed on first access). */
 function loadPanelSessionCache(): Map<string, PanelData> {
   const map = new Map<string, PanelData>();
   try {
@@ -64,22 +65,28 @@ function loadPanelSessionCache(): Map<string, PanelData> {
   return map;
 }
 
-const panelDataCache = loadPanelSessionCache();
+let _panelDataCache: Map<string, PanelData> | null = null;
+function panelCache(): Map<string, PanelData> {
+  if (!_panelDataCache) _panelDataCache = loadPanelSessionCache();
+  return _panelDataCache;
+}
 
 function setPanelCache(gameId: string, data: PanelData): void {
-  panelDataCache.set(gameId, data);
+  const cache = panelCache();
+  cache.set(gameId, data);
   try {
     const obj: Record<string, PanelData> = {};
-    panelDataCache.forEach((v, k) => { obj[k] = v; });
+    cache.forEach((v, k) => { obj[k] = v; });
     sessionStorage.setItem(PANEL_SESSION_KEY, JSON.stringify(obj));
   } catch { /* quota exceeded or SSR */ }
 }
 
 function getPanelCache(gameId: string): PanelData | undefined {
-  const entry = panelDataCache.get(gameId);
+  const cache = panelCache();
+  const entry = cache.get(gameId);
   if (!entry) return undefined;
   if (Date.now() - (entry.cachedAt ?? 0) >= PANEL_CACHE_TTL_MS) {
-    panelDataCache.delete(gameId);
+    cache.delete(gameId);
     return undefined;
   }
   return entry;
@@ -141,8 +148,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v26: Form recency language fix + early-season narration suppression.
-const CACHE_KEY = (gameId: string) => `ai-preview-v26:${gameId}`;
+// v30: Prohibit chronological ordering claims between past results.
+const CACHE_KEY = (gameId: string) => `ai-preview-v31:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -335,6 +342,25 @@ const AI_TAGLINES = [
   'Sharpening the pencils…',
 ];
 
+/**
+ * Renders a spotlight text with the leading player name bolded and visually
+ * separated from the analysis. Splits on " — " (em-dash) or " - " (hyphen).
+ */
+function SpotlightText({ text }: { text: string }) {
+  const sepIdx = text.search(/ [—–-] /);
+  if (sepIdx === -1) {
+    return <p className="text-[11px] text-white/55 leading-relaxed">{text}</p>;
+  }
+  const name   = text.slice(0, sepIdx);
+  const detail = text.slice(sepIdx).replace(/^ [—–-] /, '');
+  return (
+    <div>
+      <p className="text-[12px] font-bold text-white/80 leading-none mb-1">{name}</p>
+      <p className="text-[11px] text-white/55 leading-relaxed">{detail}</p>
+    </div>
+  );
+}
+
 function AILoadingCard({ color }: { color: string }) {
   const [idx,     setIdx]     = useState(0);
   const [visible, setVisible] = useState(true);
@@ -392,11 +418,13 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
   const [constructorStandings, setConstructorStandings] = useState<StandingRow[] | null>(null);
   const [loadingStandings, setLoadingStandings] = useState(true);
   const [imgError, setImgError] = useState(false);
+  const [gridData, setGridData] = useState<PreviewContext['f1QualifyingGrid'] | null>(null);
 
   // ── AI race preview state ─────────────────────────────────────────────────
-  const [aiPreview, setAiPreview] = useState<AIPreview | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError,   setAiError]   = useState(false);
+  const [aiPreview,  setAiPreview]  = useState<AIPreview | null>(null);
+  const [aiLoading,  setAiLoading]  = useState(false);
+  const [aiUpdating, setAiUpdating] = useState(false);
+  const [aiError,    setAiError]    = useState(false);
 
   useEffect(() => {
     setLoadingStandings(true);
@@ -410,35 +438,34 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
     });
   }, []);
 
-  // ── AI race preview fetch ─────────────────────────────────────────────────
+  // ── AI race preview fetch — re-generates when qualifying grid becomes available ──
   useEffect(() => {
-    // Only generate AI previews for Race and Qualifying sessions
     const sessionType = game.competition ?? 'Race';
     if (!['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(sessionType)) return;
 
-    // Cache key — shared across all sessions in the same race round
+    // Shared cache key across all sessions in the same round
     const roundKey = game.id.replace(/-(race|qualifying|sprint.*|fp\d|sprintq)$/i, '');
-    const cacheKey = `ai-preview-f1-v1:${roundKey}`;
+    const cacheKey = `ai-preview-f1-v2:${roundKey}`;
 
-    // Check localStorage cache
+    type F1Cache = { preview: AIPreview; generatedAt: number; qualifyingFingerprint: string };
+
+    // Show cached preview immediately while we check for updates
+    let cachedEntry: F1Cache | null = null;
     try {
       const raw = localStorage.getItem(cacheKey);
       if (raw) {
-        const cached = JSON.parse(raw) as { preview: AIPreview; generatedAt: number };
-        if (Date.now() - cached.generatedAt < 14 * 24 * 60 * 60 * 1000) {
-          setAiPreview(cached.preview);
-          return;
+        const parsed = JSON.parse(raw) as F1Cache;
+        if (Date.now() - parsed.generatedAt < 14 * 24 * 60 * 60 * 1000) {
+          cachedEntry = parsed;
+          setAiPreview(parsed.preview);
         }
       }
     } catch { /* ignore */ }
 
-    setAiLoading(true);
-
-    // Parse roundNumber from game.id — format: f1-{round}-{session}
+    // Always fetch context to detect when qualifying completes
     const parts = game.id.split('-');
     const roundNumber = parseInt(parts[1]) || undefined;
 
-    // Fetch PreviewContext from /api/preview
     const params = new URLSearchParams({
       league:      'f1',
       teamId:      team.id,
@@ -449,37 +476,70 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
       ...(roundNumber ? { roundNumber: String(roundNumber) } : {}),
     });
 
+    if (!cachedEntry) setAiLoading(true);
+
     fetch(`/api/preview?${params}`)
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
-      .then((context: PreviewContext | null) => {
-        if (!context) { setAiLoading(false); return null; }
+      .then(async (context: PreviewContext | null) => {
+        if (!context) {
+          if (!cachedEntry) { setAiLoading(false); setAiError(true); }
+          return;
+        }
 
-        // Post to AI preview endpoint
-        return fetch('/api/ai-preview', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            gameId:       roundKey,
-            league:       'f1',
-            teamName:     team.name,
-            opponentName: game.opponent,
-            teamResults:  [],
-            oppResults:   [],
-            context,
-          }),
-        });
-      })
-      .then(r => (r && r.ok) ? r.json() : null)
-      .catch(() => null)
-      .then((preview: AIPreview | null) => {
-        setAiLoading(false);
-        if (!preview) { setAiError(true); return; }
-        setAiPreview(preview);
-        // Cache to localStorage
+        // Surface qualifying grid to the UI regardless of cache state
+        if (context.f1QualifyingGrid?.length) {
+          setGridData(context.f1QualifyingGrid);
+        }
+
+        // Qualifying fingerprint: top-5 drivers' ergast IDs, empty string if no grid yet
+        const qFingerprint = context.f1QualifyingGrid?.length
+          ? context.f1QualifyingGrid.slice(0, 5).map(g => g.ergastDriverId).join(',')
+          : '';
+
+        // Cache hit with matching fingerprint — nothing to do
+        if (cachedEntry && cachedEntry.qualifyingFingerprint === qFingerprint) {
+          setAiLoading(false);
+          return;
+        }
+
+        // Qualifying newly available — update silently in background, keeping old preview visible
+        if (cachedEntry && qFingerprint) setAiUpdating(true);
+
         try {
-          localStorage.setItem(cacheKey, JSON.stringify({ preview, generatedAt: Date.now() }));
-        } catch { /* storage full */ }
+          const aiRes = await fetch('/api/ai-preview', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              gameId:       roundKey,
+              league:       'f1',
+              teamName:     team.name,
+              opponentName: game.opponent,
+              teamResults:  [],
+              oppResults:   [],
+              context,
+            }),
+          });
+
+          const preview: AIPreview | null = aiRes.ok ? await aiRes.json() : null;
+          if (preview) {
+            setAiPreview(preview);
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify({
+                preview,
+                generatedAt:          Date.now(),
+                qualifyingFingerprint: qFingerprint,
+              } satisfies F1Cache));
+            } catch { /* storage full */ }
+          } else if (!cachedEntry) {
+            setAiError(true);
+          }
+        } catch {
+          if (!cachedEntry) setAiError(true);
+        } finally {
+          setAiLoading(false);
+          setAiUpdating(false);
+        }
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.id, game.opponent, game.venue, game.competition, team.id, team.name]);
@@ -515,12 +575,32 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
         </div>
       )}
 
+      {/* Starting grid — shown for Race sessions once qualifying is complete */}
+      {game.competition === 'Race' && gridData && gridData.length > 0 && (
+        <F1StartingGrid
+          grid={gridData}
+          followedDriverId={
+            !isConstructorFollow && team.id !== 'f1-championship'
+              ? (F1_DRIVER_IDS[team.id] ?? undefined)
+              : undefined
+          }
+          followedConstructorName={isConstructorFollow ? followedConstructorName ?? undefined : undefined}
+          accentColor={team.primaryColor}
+        />
+      )}
+
       {/* AI Race Preview — only for Race/Qualifying/Sprint sessions */}
       {(['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(game.competition ?? '')) && (
         <div className="space-y-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5">
             <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
             Race Preview
+            {aiUpdating && (
+              <span className="flex items-center gap-1 text-[9px] font-normal text-white/25 normal-case tracking-normal ml-auto">
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                Updating with qualifying…
+              </span>
+            )}
           </p>
 
           {aiLoading ? (
@@ -831,9 +911,10 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
     const resultsUrl  = `/api/results?league=${team.league}&teamId=${team.id}`;
     const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}${game.competition ? `&competition=${encodeURIComponent(game.competition)}` : ''}`;
     const standingsUrl = `/api/standings?league=${team.league}`;
-    // If the opponent has a known internal id, use the fast league-specific path.
-    // Otherwise fall back to the cross-league name lookup (e.g. Bundesliga side in UCL).
-    const oppUrl = game.opponentId
+    // Cup fixtures: always use the cross-league name lookup so that opponents from
+    // lower divisions (Championship, League One, etc.) are found correctly.
+    // Regular league fixtures: use the fast league-specific teamId path when available.
+    const oppUrl = (!game.competition && game.opponentId)
       ? `/api/results?league=${team.league}&teamId=${game.opponentId}`
       : game.opponent
         ? `/api/results?teamName=${encodeURIComponent(game.opponent)}`
@@ -937,7 +1018,7 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
 
   const wins   = results.filter(r => r.isWin).length;
   const draws  = results.filter(r => r.isDraw).length;
-  const preview = getAIPreview(team, game.opponent, results, context);
+  const preview = getAIPreview(team, game.opponent, results, context, game.competition);
 
   const hasStandings = context?.teamStanding || context?.opponentStanding;
   const hasNews = (context?.teamNews?.length ?? 0) > 0 || (context?.opponentNews?.length ?? 0) > 0;
@@ -1101,8 +1182,8 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
                 </div>
               )}
             </>
-          ) : hasStandings ? (
-            // ── Regular league ladder ──────────────────────────────────────
+          ) : hasStandings && !game.competition ? (
+            // ── Regular league ladder (primary league games only) ──────────
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
                 <BarChart2 className="h-3 w-3" />
@@ -1180,7 +1261,11 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
               <User className="h-3 w-3" />
               Spotlight
             </p>
-            <p className="text-[11px] text-white/55 leading-relaxed">{aiPreview.playerSpotlight}</p>
+            {aiPreview.playerSpotlight ? (
+              <SpotlightText text={aiPreview.playerSpotlight} />
+            ) : (
+              <p className="text-[11px] text-white/25 italic">No spotlight available</p>
+            )}
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">

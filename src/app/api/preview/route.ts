@@ -1279,8 +1279,12 @@ async function fetchF1Preview(
   sessionType: string,
   roundNumber?: number,
 ): Promise<PreviewContext> {
-  // ── Fan out: driver standings + constructor standings + recent results ─────
-  const [driverStandRes, constructorStandRes, resultsRes] = await Promise.allSettled([
+  // ── Fan out: driver standings + constructor standings + recent results + qualifying ──
+  const qualifyingUrl = roundNumber
+    ? `https://api.jolpi.ca/ergast/f1/current/${roundNumber}/qualifying.json`
+    : null;
+
+  const [driverStandRes, constructorStandRes, resultsRes, qualifyingRes] = await Promise.allSettled([
     (async () => {
       for (const url of [
         'https://api.jolpi.ca/ergast/f1/current/driverstandings.json',
@@ -1308,6 +1312,11 @@ async function fetchF1Preview(
     fetchTimeout('https://api.jolpi.ca/ergast/f1/current/results.json?limit=200', { next: { revalidate: 3600 } })
       .then(r => r.ok ? r.json() : null)
       .catch(() => null),
+    qualifyingUrl
+      ? fetchTimeout(qualifyingUrl, { next: { revalidate: 1800 } })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   // ── Driver standings ──────────────────────────────────────────────────────
@@ -1404,11 +1413,30 @@ async function fetchF1Preview(
     }
   }
 
+  // ── Qualifying grid ───────────────────────────────────────────────────────
+  const rawQualifying: any[] =
+    (qualifyingRes.status === 'fulfilled' && qualifyingRes.value)
+      ? (qualifyingRes.value?.MRData?.RaceTable?.Races?.[0]?.QualifyingResults ?? [])
+      : [];
+
+  const f1QualifyingGrid = rawQualifying.length > 0
+    ? rawQualifying.map((q: any) => ({
+        position:       parseInt(q.position, 10),
+        driverName:     `${q.Driver?.givenName ?? ''} ${q.Driver?.familyName ?? ''}`.trim(),
+        constructorName: q.Constructor?.name ?? '',
+        ergastDriverId: q.Driver?.driverId ?? '',
+        q1: q.Q1 || undefined,
+        q2: q.Q2 || undefined,
+        q3: q.Q3 || undefined,
+      }))
+    : undefined;
+
   return {
     teamStanding,
     f1DriverStandings:      f1DriverStandings.length > 0 ? f1DriverStandings : undefined,
     f1ConstructorStandings: f1ConstructorStandings.length > 0 ? f1ConstructorStandings : undefined,
     f1RecentRaceResults:    f1RecentRaceResults.length > 0 ? f1RecentRaceResults : undefined,
+    f1QualifyingGrid,
     f1FollowedType,
     f1FollowedName,
     f1FollowedConstructorName,

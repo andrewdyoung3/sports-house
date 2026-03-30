@@ -75,6 +75,8 @@ export interface GameResult {
   opponentScore: number;
   date: string;
   competition?: string;       // Non-primary cup/CL competition label
+  /** F1 only — finishing position label: "P1", "P3", "DNF", "DSQ", "NC" etc. */
+  f1Position?: string;
 }
 
 // ─── News ─────────────────────────────────────────────────────────────────────
@@ -205,6 +207,16 @@ export interface PreviewContext {
   f1RaceName?: string;      // "Japanese Grand Prix"
   f1CircuitName?: string;   // "Suzuka Circuit"
   f1RoundNumber?: number;
+  /** Full starting grid populated once qualifying is complete. */
+  f1QualifyingGrid?: Array<{
+    position: number;
+    driverName: string;
+    constructorName: string;
+    ergastDriverId: string;
+    q1?: string;
+    q2?: string;
+    q3?: string;
+  }>;
 }
 
 // ─── Match Stats (live/completed game player + team data) ────────────────────

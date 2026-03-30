@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Calendar, MapPin, Tv, Plus, ChevronDown } from 'lucide-react';
+import { Calendar, MapPin, Tv, Plus, ChevronDown, UserMinus } from 'lucide-react';
 
-import { getFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 import { getUpcomingGames } from '@/lib/mock-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES } from '@/lib/teams';
@@ -410,21 +410,27 @@ function ScheduleRow({
             </>
           ) : (
             <>
-              <span className="text-[13px] font-medium text-white/30">
+              <span className="text-[17px] font-semibold text-white/70 leading-none">
+                {team.shortName}
+              </span>
+              {teamPosition !== undefined && (
+                <span className="text-[13px] font-bold text-white/35 leading-none">#{teamPosition}</span>
+              )}
+              <span className="text-[14px] font-medium text-white/30">
                 {game.isHome ? 'vs' : '@'}
               </span>
               <TeamBadge
                 logoUrl={game.opponentLogoUrl}
                 abbreviation={game.opponentAbbr}
                 primaryColor={game.opponentColor}
-                size={26}
+                size={30}
                 className="rounded-md"
               />
-              <span className="text-[15px] font-semibold text-white/70 leading-none">
+              <span className="text-[17px] font-semibold text-white/70 leading-none">
                 {game.opponent}
               </span>
               {opponentPosition !== undefined && (
-                <span className="text-[12px] font-bold text-white/35 leading-none">#{opponentPosition}</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none">#{opponentPosition}</span>
               )}
             </>
           )}
@@ -601,11 +607,7 @@ function LeagueFilterPill({
         border:     '1px solid transparent',
       }}
     >
-      {meta?.symbol && (
-        <span aria-hidden="true" style={{ color: meta.symbolColor ?? meta.color, fontSize: meta.symbol.codePointAt(0)! > 0xffff ? '11px' : '8px' }}>
-          {meta.symbol}
-        </span>
-      )}
+      <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
     </button>
   );
@@ -613,35 +615,71 @@ function LeagueFilterPill({
 
 // ─── Followed-teams sidebar widget ────────────────────────────────────────────
 
-function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
+function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow: (id: string) => void }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close popup on any click outside the widget
+  useEffect(() => {
+    if (!openId) return;
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpenId(null);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [openId]);
+
   if (teams.length === 0) return null;
   return (
-    <div className="glass rounded-2xl p-4">
+    <div ref={containerRef} className="glass rounded-2xl p-4">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">
         Following
       </p>
       <div className="flex flex-wrap gap-2">
         {teams.map(team => (
-          <div key={team.id} className="relative group">
-            <TeamBadge
-              logoUrl={TEAM_LOGOS[team.id]}
-              abbreviation={team.abbreviation}
-              primaryColor={team.primaryColor}
-              size={44}
-              className="rounded-xl"
-            />
-            {/* Name tooltip */}
-            <div
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-md
-                         text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100
-                         pointer-events-none transition-opacity duration-150 z-20"
-              style={{
-                background: `${team.primaryColor}dd`,
-                color: contrastColor(team.primaryColor),
-              }}
+          <div key={team.id} className="relative">
+            {/* Badge — click toggles popup */}
+            <button
+              onClick={() => setOpenId(prev => prev === team.id ? null : team.id)}
+              className="block rounded-xl transition-transform active:scale-95"
+              style={{ filter: `drop-shadow(0 0 8px ${team.primaryColor}44)` }}
+              aria-label={`Options for ${team.shortName}`}
             >
-              {team.shortName}
-            </div>
+              <TeamBadge
+                logoUrl={TEAM_LOGOS[team.id]}
+                abbreviation={team.abbreviation}
+                primaryColor={team.primaryColor}
+                size={44}
+                className="rounded-xl"
+              />
+            </button>
+
+            {/* Popup */}
+            {openId === team.id && (
+              <div
+                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-40 rounded-xl overflow-hidden shadow-xl"
+                style={{ border: `1px solid ${team.primaryColor}44`, minWidth: '110px' }}
+              >
+                {/* Team name header */}
+                <div
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-center"
+                  style={{ background: `${team.primaryColor}22`, color: team.primaryColor }}
+                >
+                  {team.shortName}
+                </div>
+                {/* Unfollow button */}
+                <button
+                  onClick={() => { onUnfollow(team.id); setOpenId(null); }}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-red-400 hover:bg-red-500/15 transition-colors"
+                  style={{ background: 'rgba(10,10,15,0.95)' }}
+                >
+                  <UserMinus className="h-3 w-3" />
+                  Unfollow
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -739,19 +777,31 @@ export default function SchedulePage() {
       return;
     }
 
+    let active = true;
     let remaining = followed.length;
     followed.forEach(async (team) => {
       const games = await loadFixtures(team);
+      if (!active) return;
       const entries: ScheduleEntry[] = games.map(g => ({ ...g, team }));
       setAllGames(prev => {
-        const merged = [...prev, ...entries];
+        const existingIds = new Set(prev.map(g => g.id));
+        const merged = [...prev, ...entries.filter(g => !existingIds.has(g.id))];
         merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         return merged;
       });
       remaining -= 1;
       if (remaining === 0) setLoading(false);
     });
+    return () => { active = false; };
   }, []);
+
+  const handleUnfollow = useCallback((teamId: string) => {
+    const updated = teams.filter(t => t.id !== teamId);
+    saveFollowedTeams(updated);
+    setTeams(updated);
+    setAllGames(prev => prev.filter(g => g.team.id !== teamId));
+    if (activeTeamId === teamId) setActiveTeamId('all');
+  }, [teams, activeTeamId]);
 
   // IDs of teams the user follows — used both for standings highlighting and
   // for the "following" badge on league-browse rows.
@@ -915,7 +965,7 @@ export default function SchedulePage() {
               <div>
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse League</p>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                  {BROWSABLE_LEAGUES.map(league => (
+                  {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill
                       key={league.id}
                       leagueId={league.id}
@@ -1059,7 +1109,7 @@ export default function SchedulePage() {
           )}
 
           {/* Followed teams — always show in league mode so user sees who they follow */}
-          <FollowedTeamsWidget teams={teams} />
+          <FollowedTeamsWidget teams={teams} onUnfollow={handleUnfollow} />
 
         </aside>
       </div>

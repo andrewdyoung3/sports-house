@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Zap, TrendingUp, Loader2, Newspaper,
   Users, ChevronDown,
@@ -49,11 +49,12 @@ function AILoadingCard({ color }: { color: string }) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout>;
     const cycle = setInterval(() => {
       setVisible(false);
-      setTimeout(() => { setIdx(i => (i + 1) % AI_TAGLINES.length); setVisible(true); }, 300);
+      timeoutId = setTimeout(() => { setIdx(i => (i + 1) % AI_TAGLINES.length); setVisible(true); }, 300);
     }, 2400);
-    return () => clearInterval(cycle);
+    return () => { clearInterval(cycle); clearTimeout(timeoutId); };
   }, []);
 
   return (
@@ -246,12 +247,13 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
   const [aiReview,  setAiReview]  = useState<AIReview | null>(null);
   const [aiLoading, setAiLoading] = useState(isRealLeague);
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
+  const hasCachedReviewRef = useRef(false);
 
   // ── Immediate cache read on mount ─────────────────────────────────────────
   useEffect(() => {
     if (!isRealLeague) { setAiLoading(false); return; }
     const cached = loadJSON<AIReview>(REVIEW_CACHE_KEY(result.id));
-    if (cached) { setAiReview(cached); setAiLoading(false); }
+    if (cached) { setAiReview(cached); setAiLoading(false); hasCachedReviewRef.current = true; }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -259,15 +261,13 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
   useEffect(() => {
     if (!isRealLeague) return;
 
-    const hasCached = loadJSON<AIReview>(REVIEW_CACHE_KEY(result.id));
-
     fetch(`/api/standings?league=${team.league}`)
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
       .then((rows: StandingRow[] | null) => {
         if (Array.isArray(rows) && rows.length > 0) setStandings(rows);
 
-        if (hasCached) { setAiLoading(false); return; }
+        if (hasCachedReviewRef.current) { setAiLoading(false); return; }
 
         const teamRow = rows?.find(r => r.teamId === team.id);
         const oppRow  = rows?.find(r => r.name?.toLowerCase().includes(result.opponent.toLowerCase().slice(0, 6)));
@@ -303,6 +303,8 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result.id, team.league, team.id]);
+
+  const followedTeamIdsSet = useMemo(() => new Set([team.id]), [team.id]);
 
   const outcomeColor = result.isDraw
     ? '#f59e0b'
@@ -379,7 +381,7 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
         <LeagueTable
           league={team.league as SportKey}
           rows={standings}
-          followedTeamIds={new Set([team.id])}
+          followedTeamIds={followedTeamIdsSet}
         />
       )}
 

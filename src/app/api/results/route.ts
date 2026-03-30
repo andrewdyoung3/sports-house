@@ -556,6 +556,12 @@ async function fetchInternationalRugbyResults(teamId: string): Promise<GameResul
 // that appeared in the fixture, so no extra mapping is needed.
 
 const CROSS_SOCCER_COMPS = [
+  // English lower divisions — covers relegated EPL clubs and cup opponents
+  { slug: 'eng.2',          label: 'Championship' },
+  { slug: 'eng.3',          label: 'League One' },
+  { slug: 'eng.fa',         label: 'FA Cup' },
+  { slug: 'eng.league_cup', label: 'EFL Cup' },
+  // Major European domestic leagues
   { slug: 'ger.1',          label: 'Bundesliga' },
   { slug: 'esp.1',          label: 'La Liga' },
   { slug: 'fra.1',          label: 'Ligue 1' },
@@ -596,9 +602,23 @@ async function fetchCrossLeagueSoccerResults(teamName: string): Promise<GameResu
 
 // ─── Formula 1 — Jolpi Ergast API ────────────────────────────────────────────
 //
-// Returns last 5 completed races as summary entries (race winner's result).
+// Returns last 5 completed race results with the followed driver's or
+// constructor's actual finishing position (P1, P3, DNF, etc.).
 
-async function fetchF1Results(_teamId: string): Promise<GameResult[]> {
+import { F1_DRIVER_IDS, F1_CONSTRUCTOR_IDS, isF1ConstructorTeam } from '@/lib/f1-data';
+
+/** Map Ergast positionText → display label. */
+function ergastPosLabel(posText: string): string {
+  const n = parseInt(posText, 10);
+  if (!isNaN(n)) return `P${n}`;
+  if (posText === 'R') return 'DNF';
+  if (posText === 'D') return 'DSQ';
+  if (posText === 'N') return 'NC';
+  if (posText === 'W') return 'DNS';
+  return posText || 'DNF';
+}
+
+async function fetchF1Results(teamId: string): Promise<GameResult[]> {
   const tryUrls = [
     'https://api.jolpi.ca/ergast/f1/current/results.json?limit=100',
     'https://api.jolpi.ca/ergast/f1/2025/results.json?limit=100',
@@ -619,7 +639,31 @@ async function fetchF1Results(_teamId: string): Promise<GameResult[]> {
 
   if (races.length === 0) return [];
 
-  // Filter to completed races only (race date in the past)
+  // Determine whether we're following a specific driver or a constructor
+  const ergastDriverId: string | undefined = F1_DRIVER_IDS[teamId];
+  const isConstructor = isF1ConstructorTeam(teamId);
+  // Constructor ID for Ergast (e.g. 'red_bull', 'ferrari') — derived from division name
+  // stored in constructor team objects. Map via F1_CONSTRUCTOR_IDS keyed by display name.
+  // teamId format: 'f1-team-redbull' → division 'Red Bull Racing' → ergast 'red_bull'
+  const CONSTRUCTOR_ERGAST: Record<string, string> = Object.fromEntries(
+    Object.entries(F1_CONSTRUCTOR_IDS).map(([name, id]) => [
+      // Build the team-id equivalent key for lookup
+      `f1-team-${id.replace(/_/g, '')}`,
+      id,
+    ]),
+  );
+  // Also handle common mismatches (e.g. 'rb' for racing bulls stored as 'racingbulls')
+  const CONSTRUCTOR_ERGAST_OVERRIDES: Record<string, string> = {
+    'f1-team-racingbulls': 'rb',
+    'f1-team-redbull':     'red_bull',
+    'f1-team-astonmartin': 'aston_martin',
+    'f1-team-sauber':      'sauber',
+  };
+  const ergastConstructorId: string | undefined = isConstructor
+    ? (CONSTRUCTOR_ERGAST_OVERRIDES[teamId] ?? CONSTRUCTOR_ERGAST[teamId])
+    : undefined;
+
+  // Filter to completed races only (race date in the past + results present)
   const now = Date.now();
   const completed = races.filter((race: any) =>
     new Date(race.date).getTime() < now && Array.isArray(race.Results) && race.Results.length > 0,
@@ -629,22 +673,72 @@ async function fetchF1Results(_teamId: string): Promise<GameResult[]> {
     .slice(-5)
     .reverse()
     .map((race: any): GameResult => {
-      const winner  = race.Results[0];
       const country = race.Circuit?.Location?.country ?? '';
       const abbr    = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
-      const winnerName = winner
-        ? `${winner.Driver?.givenName ?? ''} ${winner.Driver?.familyName ?? ''}`.trim()
-        : '';
+      const results: any[] = race.Results ?? [];
+
+      let f1Position: string;
+      let isWin = false;
+
+      if (ergastDriverId) {
+        // Driver follow — find their specific result
+        const driverResult = results.find(
+          (r: any) => r.Driver?.driverId === ergastDriverId,
+        );
+        f1Position = driverResult
+          ? ergastPosLabel(driverResult.positionText ?? '')
+          : 'DNS';
+        isWin = f1Position === 'P1';
+      } else if (ergastConstructorId) {
+        // Constructor follow — find best result from either team car
+        const teamResults = results.filter(
+          (r: any) => r.Constructor?.constructorId === ergastConstructorId,
+        );
+        if (teamResults.length === 0) {
+          f1Position = 'DNS';
+        } else {
+          // Best position = lowest number (or any classified finisher)
+          const classified = teamResults.filter((r: any) => !isNaN(parseInt(r.positionText, 10)));
+          if (classified.length > 0) {
+            const best = classified.reduce((a: any, b: any) =>
+              parseInt(a.positionText, 10) < parseInt(b.positionText, 10) ? a : b,
+            );
+            f1Position = ergastPosLabel(best.positionText);
+            isWin = f1Position === 'P1';
+          } else {
+            f1Position = 'DNF';
+          }
+        }
+      } else {
+        // Championship/unknown — show race winner for context
+        const winner = results[0];
+        const winnerName = winner
+          ? `${winner.Driver?.givenName ?? ''} ${winner.Driver?.familyName ?? ''}`.trim()
+          : '';
+        f1Position = 'P1';
+        isWin = true;
+        return {
+          opponent:      race.raceName,
+          opponentAbbr:  abbr,
+          isHome:        false,
+          isWin:         true,
+          teamScore:     1,
+          opponentScore: 20,
+          date:          new Date(race.date).toISOString(),
+          competition:   winnerName ? `Winner: ${winnerName}` : 'Formula 1',
+          f1Position:    'P1',
+        };
+      }
 
       return {
         opponent:      race.raceName,
         opponentAbbr:  abbr,
         isHome:        false,
-        isWin:         false, // not meaningful for a series summary
-        teamScore:     1,
+        isWin,
+        teamScore:     parseInt(f1Position.replace('P', '')) || 20,
         opponentScore: 20,
         date:          new Date(race.date).toISOString(),
-        competition:   winnerName ? `Winner: ${winnerName}` : 'Formula 1',
+        f1Position,
       };
     });
 }

@@ -500,6 +500,7 @@ export function getAIPreview(
   opponentName: string,
   recentResults?: GameResult[],
   context?: PreviewContext | null,
+  competition?: string,
 ): { content: string; keyInsights: string[] } {
   const r1 = seededRandom(team.id + opponentName, 0);
 
@@ -509,10 +510,12 @@ export function getAIPreview(
   const draws   = hasReal ? recentResults!.filter(r => r.isDraw).length : 0;
   const losses  = total - wins - draws;
 
-  const ts = context?.teamStanding;
-  const os = context?.opponentStanding;
+  // For cup/off-league fixtures, ladder positions are irrelevant — suppress them.
+  const isCup = !!competition;
+  const ts = isCup ? undefined : context?.teamStanding;
+  const os = isCup ? undefined : context?.opponentStanding;
 
-  // ── Opening: standings position + games played (when available)
+  // ── Opening: standings position + games played (primary league only)
   let openingText: string;
   if (ts) {
     const pos = ordinal(ts.position);
@@ -539,7 +542,12 @@ export function getAIPreview(
       }).join(', ')}.`
     : '';
 
-  // ── Opponent standing context
+  // ── Cup competition context (replaces ladder info for cup fixtures)
+  const cupNote = isCup
+    ? ` ${competition} fixture — league table positions are not relevant to this tie.`
+    : '';
+
+  // ── Opponent context
   let opponentNote = '';
   if (os) {
     const oPos = ordinal(os.position);
@@ -548,13 +556,13 @@ export function getAIPreview(
     opponentNote = ` They face ${opponentName} in what promises to be a closely fought affair.`;
   }
 
-  // ── Goals / scoring context (EPL)
+  // ── Goals / scoring context (primary league only — not meaningful for cups)
   let scoringNote = '';
-  if (ts?.goalsFor !== undefined && ts.played > 0) {
+  if (!isCup && ts?.goalsFor !== undefined && ts.played > 0) {
     const gfAvg  = (ts.goalsFor / ts.played).toFixed(1);
     const gcAvg  = ts.goalsAgainst !== undefined ? (ts.goalsAgainst / ts.played).toFixed(1) : null;
     scoringNote = ` ${team.shortName} are averaging ${gfAvg} goals per game${gcAvg ? ` and conceding ${gcAvg}` : ''}.`;
-  } else if (ts?.percentage !== undefined) {
+  } else if (!isCup && ts?.percentage !== undefined) {
     scoringNote = ` Their percentage of ${ts.percentage.toFixed(1)} reflects their season${ts.percentage >= 100 ? ' in the black' : ' with room to improve'}.`;
   }
 
@@ -562,7 +570,6 @@ export function getAIPreview(
   let tipsNote = '';
   if (context?.tips) {
     const t = context.tips;
-    const pct = Math.round((t.tipsFor / t.tipsTotal) * 100);
     tipsNote = ` Squiggle models favour ${t.favouriteTeam} (${t.tipsFor}/${t.tipsTotal} tips, avg margin ${t.avgMargin} pts).`;
   }
 
@@ -575,7 +582,7 @@ export function getAIPreview(
 
   const content = [
     `${openingText}${formNote}.${recentStr}`,
-    opponentNote,
+    cupNote || opponentNote,
     scoringNote,
     tipsNote || closing,
   ].filter(Boolean).join('');
