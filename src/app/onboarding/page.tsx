@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation';
 import { Check, X, Search } from 'lucide-react';
 
 import { LEAGUES, filterTeams } from '@/lib/teams';
+
+// Leagues with real data built — NFL and MLB excluded (no fixture/results API yet)
+const BUILT_LEAGUE_IDS = new Set([
+  'afl', 'nrl', 'epl', 'super_rugby', 'rugby_int',
+  'nba', 'nhl', 'f1', 'cricket_int', 'bbl',
+]);
+const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
@@ -26,7 +33,8 @@ export default function OnboardingPage() {
   }, []);
 
   const filteredTeams = useMemo(
-    () => filterTeams(activeSport === 'all' ? 'all' : activeSport, query),
+    () => filterTeams(activeSport === 'all' ? 'all' : activeSport, query)
+            .filter(t => BUILT_LEAGUE_IDS.has(t.league)),
     [activeSport, query],
   );
 
@@ -57,7 +65,7 @@ export default function OnboardingPage() {
 
         {/* Sport filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4">
-          {[{ id: 'all' as const, name: 'All', icon: '🏆' }, ...LEAGUES].map(league => (
+          {[{ id: 'all' as const, name: 'All', icon: '🏆' }, ...BUILT_LEAGUES].map(league => (
             <button
               key={league.id}
               onClick={() => { setActiveSport(league.id); setQuery(''); }}
