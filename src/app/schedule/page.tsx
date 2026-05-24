@@ -366,7 +366,7 @@ function ScheduleRow({
   return (
     <div
       className={[
-        'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer',
+        'relative overflow-hidden flex items-center max-lg:items-start gap-4 glass px-4 py-4 cursor-pointer',
         'transition-all duration-300 ease-out select-none',
         isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
       ].join(' ')}
@@ -422,7 +422,7 @@ function ScheduleRow({
 
       {/* ── Team badge — oversized with neon glow ── */}
       <div
-        className="relative shrink-0 z-10 self-center"
+        className="relative shrink-0 z-10"
         style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}
       >
         <TeamBadge
