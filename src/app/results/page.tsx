@@ -291,11 +291,11 @@ function ResultRow({
 
       {/* Matchup */}
       <div className="flex-1 min-w-0 relative z-10">
-        <div className="flex items-center gap-1.5 flex-wrap max-lg:flex-nowrap">
-          <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[17px] font-semibold text-white/70 leading-none">
             {team.shortName}
           </span>
-          <span className="text-[14px] font-medium text-white/30 shrink-0">
+          <span className="text-[14px] font-medium text-white/30">
             {result.isHome ? 'vs' : '@'}
           </span>
           <TeamBadge
@@ -303,10 +303,10 @@ function ResultRow({
             abbreviation={result.opponentAbbr}
             primaryColor="#6B7280"
             size={30}
-            className="rounded-md shrink-0"
+            className="rounded-md"
             logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']}
           />
-          <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
+          <span className="text-[17px] font-semibold text-white/70 leading-none">
             {result.opponent}
           </span>
           <ResultBadge league={team.league} competition={result.competition} />

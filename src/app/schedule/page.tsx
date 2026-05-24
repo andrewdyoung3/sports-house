@@ -437,11 +437,11 @@ function ScheduleRow({
       {/* ── Matchup + metadata ── */}
       <div className="flex-1 min-w-0 relative z-10">
         {/* Primary line: team vs opponent */}
-        <div className="flex items-center gap-1.5 flex-wrap max-lg:flex-nowrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {/* For F1 in league-browse mode, show the Grand Prix name as the headline */}
           {isF1 ? (
             <>
-              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
+              <span className="text-[17px] font-semibold text-white/70 leading-none">
                 {game.opponent}
               </span>
               {game.competition && (
@@ -454,13 +454,13 @@ function ScheduleRow({
             </>
           ) : (
             <>
-              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
+              <span className="text-[17px] font-semibold text-white/70 leading-none">
                 {team.shortName}
               </span>
               {teamPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none shrink-0">({ordinal(teamPosition)})</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(teamPosition)})</span>
               )}
-              <span className="text-[14px] font-medium text-white/30 shrink-0">
+              <span className="text-[14px] font-medium text-white/30">
                 {game.isHome ? 'vs' : '@'}
               </span>
               <TeamBadge
@@ -468,14 +468,14 @@ function ScheduleRow({
                 abbreviation={game.opponentAbbr}
                 primaryColor={game.opponentColor}
                 size={30}
-                className="rounded-md shrink-0"
+                className="rounded-md"
                 logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']}
               />
-              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
+              <span className="text-[17px] font-semibold text-white/70 leading-none">
                 {game.opponent}
               </span>
               {opponentPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none shrink-0">({ordinal(opponentPosition)})</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(opponentPosition)})</span>
               )}
             </>
           )}
