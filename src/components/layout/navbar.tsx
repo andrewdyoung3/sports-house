@@ -17,16 +17,15 @@ export function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/25 backdrop-blur-xl border-b border-white/8">
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 group">
-          {/* S icon mark — purple/white version reads cleanly on dark navbar */}
+        {/* Logo — SVG icon mark (transparent bg) + white wordmark */}
+        <Link href="/" className="flex items-center gap-2 group opacity-90 hover:opacity-100 transition-opacity">
           <img
             src="/icon-mark.svg"
             alt=""
             aria-hidden="true"
-            className="h-8 w-auto drop-shadow-sm"
+            className="h-8 w-8 flex-shrink-0"
           />
-          <span className="font-bold text-white text-[15px] tracking-tight hidden sm:block group-hover:text-white/80 transition-colors">
+          <span className="text-white font-semibold text-lg tracking-tight leading-none hidden sm:block">
             SportHouse
           </span>
         </Link>
