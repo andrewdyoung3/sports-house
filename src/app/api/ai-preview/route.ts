@@ -381,7 +381,7 @@ HISTORICAL ACCURACY — year-specific claims are the risk, not historical contex
 COMPETITION CONTEXT — critical:
 • The COMPETITION field tells you what is actually being played. The PRIMARY LEAGUE field (when present) is background only.
 • For cup or European fixtures (e.g. Champions League, FA Cup, EFL Cup, Europa League, Rugby Championship, Six Nations), the "context" section must focus on the teams' form and journey in THAT competition — not their domestic league table position. A team's EPL standing is irrelevant to a Champions League preview.
-• COMPETITION STAGE — mandatory disclosure: when a COMPETITION STAGE is provided in the data, you MUST state the round clearly in the opening sentence of the "context" section. For the FA Cup and EFL Cup especially, this is the single most important contextual fact — a fan needs to know immediately whether this is a Third Round tie, a quarter-final, or the final. State it plainly and early: "This is the FA Cup Fifth Round", "Arsenal face Chelsea in the quarter-final", "A place in the final is at stake". Do not bury the round deep in the section or omit it.
+• COMPETITION STAGE — mandatory disclosure: when a COMPETITION STAGE is provided in the data, you MUST state the round clearly in the opening sentence of the "context" section. For cup and European competitions, this is the single most important contextual fact — a fan needs to know immediately whether this is a group stage match, a quarter-final, or the final. State it plainly and early: "This is the FA Cup Fifth Round", "Arsenal face Chelsea in the quarter-final", "A place in the final is at stake". Do not bury the round deep in the section or omit it.
 • When standings are labelled as "primary league context only", treat them as a footnote — do not lead with or centre the narrative on league position.
 • The recent form covers all competitions. Acknowledge this naturally ("across all fronts", "in recent weeks") rather than implying it is competition-specific.
 • TWO-LEGGED KNOCKOUT TIES: UEFA knockout rounds (Champions League, Europa League, Conference League) and most domestic cups are played over two legs on aggregate. A single leg is not a standalone elimination — both teams can progress from the first leg regardless of its result. Do not describe a first-leg draw or loss as existential ("need a result to keep hopes alive") unless the aggregate position actually eliminates a path to progress. State the tie situation plainly: "level on aggregate after the first leg" or "facing a deficit going into the second leg". If you do not have first-leg score data, acknowledge the two-legged format without fabricating the aggregate position.
@@ -402,7 +402,14 @@ COMPETITION CONTEXT — critical:
   — The ONLY things that matter in a knockout preview are: (1) the aggregate score and what result is needed to progress, (2) recent form across all competitions, (3) the tactical matchup.
   A knockout tie is binary — win and you're through, lose and you're out (on aggregate). Frame the stakes in exactly those terms.
 
-• KNOCKOUT STAKES — state what progression actually means: For a second-leg knockout tie, the "context" section should cover: (1) the aggregate position and what result is needed to progress, (2) who the winner is likely to face in the next round if that information is available or reasonably known. This forward-looking context is analytically useful — a team playing a quarter-final against a weakened opponent faces a different strategic situation than one facing the tournament favourite.
+• KNOCKOUT STAKES — state what progression actually means: For a second-leg knockout tie, the "context" section should cover: (1) the aggregate position and what result is needed to progress, (2) who the winner is likely to face in the next round if that information is available or reasonably known. This forward-looking context is analytically useful — a team playing a quarter-final against a weakened opponent faces a different strategic situation than one facing the tournament favourite. (This section applies only to two-legged knockout ties — not to finals. For finals, see CUP/COMPETITION FINAL below.)
+
+• CUP/COMPETITION FINAL: When the data block shows COMPETITION STAGE as "THE FINAL", the rules are categorically different from any other fixture:
+  — This is a single match, winner-takes-all. Do NOT use aggregate-score framing, "needing a result to stay alive", or two-leg language — none of it applies.
+  — Open the "context" section by naming the competition and stating clearly that this is the final. Do not treat it as another knockout-round summary. The reader needs to feel immediately that this is the destination, not a step along the way.
+  — HISTORICAL GROUNDING: Draw on your training knowledge of the clubs' records in this specific competition. How many times has each side reached this stage? Have they ever won it? A club in their first final, a club chasing a first title, a club completing an unprecedented run — these facts carry analytical weight and are reliable from training knowledge (without pinning a specific year or scoreline). Use them.
+  — THE DOUBLE: If the data block includes a DOMESTIC COMPETITION STATUS note confirming the team has already clinched their domestic league title, name the "double" explicitly and lead with it. Winning both the domestic league and a major cup/European trophy in the same season is rare and historic. This is the single most compelling narrative frame for the preview and should be stated plainly in the first sentence of "context".
+  — Tone: the magnitude of a final is real — state it plainly without purple prose. "This is the Champions League Final" is enough; you do not need metaphors. The context, stakes, and tactical analysis should all reflect that everything the season has built toward culminates here.
 
 COACHING ANALYSIS — when HEAD COACHES are provided:
 • MANDATORY: When HEAD COACHES are provided in the data block, both coaches must be named by surname in the tacticalBattle field. Frame the tactical contest as a clash between two specific systems — "Postecoglou's high press against Dyche's compact mid-block", "Bellamy's defensive structure against Griffin's ball-in-hand attack". The name must connect to the system; do not drop names without analytical content.
@@ -597,6 +604,14 @@ function buildDataBlock(
   // A fixture is "off-league" when it's in a cup, European, or international
   // tournament that differs from the primary league (e.g. CL, FA Cup, RC).
   const isOffLeague = !!competition;
+  // Detect a cup/European final — single match, not two-legged.
+  // 'Final' is set by normaliseRoundName() in the preview route; 'semi' guard avoids
+  // matching 'Semi-finals' (which ARE two-legged ties).
+  const isFinal = (() => {
+    const cs = context.competitionStage;
+    return !!cs && !cs.isGroupPhase &&
+      /\bfinal\b/i.test(cs.roundName) && !/semi/i.test(cs.roundName);
+  })();
   const lines: string[] = [];
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
@@ -609,12 +624,20 @@ function buildDataBlock(
     const { competitionStage: cs } = context;
     if (cs.isGroupPhase) {
       lines.push(`COMPETITION STAGE: ${cs.groupName ?? 'Group/League Phase'}`);
+    } else if (isFinal) {
+      lines.push(
+        `COMPETITION STAGE: THE FINAL — single match at a neutral venue. ` +
+        `Winner-takes-all: 90 minutes (plus extra time and penalties if level after 90). ` +
+        `There is no second leg, no aggregate score. The winner lifts the trophy. ` +
+        `This is the highest-stakes fixture in this competition.`
+      );
     } else {
       lines.push(`COMPETITION STAGE: ${cs.roundName} (two-legged knockout tie — league phase records are now irrelevant; this tie is decided on aggregate over both legs only)`);
     }
   }
-  // First-leg result for knockout ties — gives Claude the aggregate position
-  if (context.firstLegResult) {
+  // First-leg result for knockout ties — gives Claude the aggregate position.
+  // Finals are single matches — no first-leg result exists.
+  if (context.firstLegResult && !isFinal) {
     const { teamScore: ts, opponentScore: os } = context.firstLegResult;
     const aggLine = ts === os
       ? `Level ${ts}–${os} on aggregate — either team can win the tie`
@@ -628,6 +651,22 @@ function buildDataBlock(
     lines.push(`OPPONENT LEAGUE: ${opponentName} are currently playing in the ${context.opponentLeague} (NOT the Premier League). Factor this division gap into the analysis — do not describe them as a PL side or in a PL relegation battle.`);
     lines.push('');
   }
+
+  // For finals: surface domestic competition status (title clinched, etc.) even though
+  // the full league table is suppressed as irrelevant to the cup fixture.
+  // This gives Claude the "double" narrative context when a team has already won the league.
+  if (isFinal && context.leagueTable && context.leagueTable.length > 0) {
+    const domTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
+    if (domTotalRounds) {
+      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+      if (statusNotes.length > 0) {
+        lines.push('DOMESTIC COMPETITION STATUS (key context for this fixture — informs the "double" narrative; the final itself is independent of league position):');
+        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+        lines.push('');
+      }
+    }
+  }
+
   // Season phase — only for primary-league fixtures with a known total-rounds count
   const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
   const played = context.teamStanding?.played ?? context.opponentStanding?.played;
@@ -918,7 +957,7 @@ async function callClaude(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callClaude(prompt, compact, maxTokensOverride),
-  ['ai-preview-v32'],
+  ['ai-preview-v33'],
   { revalidate: 21600 }, // 6 hours
 );
 
