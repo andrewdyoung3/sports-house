@@ -815,13 +815,16 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function GameExpandPanel({ game, className, compact = false, onStandingsUpdate }: GameExpandPanelProps) {
-  const { team } = game;
-
-  // F1 has its own dedicated panel — no AI preview, just circuit info + standings.
-  if (team.league === 'f1') {
-    return <F1ExpandPanel game={game} className={className} />;
+// Wrapper: routes F1 to its own panel before any hooks are called in the inner component.
+export function GameExpandPanel(props: GameExpandPanelProps) {
+  if (props.game.team.league === 'f1') {
+    return <F1ExpandPanel game={props.game} className={props.className} />;
   }
+  return <GameExpandPanelInner {...props} />;
+}
+
+function GameExpandPanelInner({ game, className, compact = false, onStandingsUpdate }: GameExpandPanelProps) {
+  const { team } = game;
 
   // AI only makes sense for imminent fixtures — too much changes further out.
   const daysUntilGame = (new Date(game.date).getTime() - Date.now()) / 86_400_000;
