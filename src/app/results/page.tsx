@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 import { getFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
@@ -573,6 +573,14 @@ export default function ResultsPage() {
   const [expandedId,     setExpandedId]     = useState<string | null>(null);
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
 
+  // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  useEffect(() => {
+    const handler = () => setCalendarOpen(true);
+    window.addEventListener('sporthouse:open-calendar', handler);
+    return () => window.removeEventListener('sporthouse:open-calendar', handler);
+  }, []);
+
   const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -766,6 +774,36 @@ export default function ResultsPage() {
           <FollowedTeamsWidget teams={teams} />
         </aside>
       </div>
+
+      {/* ── Mobile calendar bottom sheet ── */}
+      {calendarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm"
+            onClick={() => setCalendarOpen(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold text-white/80">Calendar</p>
+              <button
+                onClick={() => setCalendarOpen(false)}
+                className="text-white/40 hover:text-white transition-colors p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            {!loading && (
+              <ResultsCalendar
+                results={filteredResults}
+                userTz={userTz}
+                hoveredDateKey={hoveredDateKey}
+                onHover={handleCalendarHover}
+                onDayClick={(dk) => { handleDayClick(dk); setCalendarOpen(false); }}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

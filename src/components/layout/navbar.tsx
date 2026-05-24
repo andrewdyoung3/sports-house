@@ -13,6 +13,7 @@ const NAV_LINKS = [
 export function Navbar() {
   const pathname = usePathname();
   const onSchedule = pathname === '/schedule';
+  const onResults  = pathname === '/results';
 
   function openCalendar() {
     window.dispatchEvent(new CustomEvent('sporthouse:open-calendar'));
@@ -55,8 +56,8 @@ export function Navbar() {
             );
           })}
 
-          {/* Calendar — only shown on the schedule page on mobile (desktop has sidebar) */}
-          {onSchedule && (
+          {/* Calendar — shown on schedule & results pages on mobile (desktop has sidebar) */}
+          {(onSchedule || onResults) && (
             <button
               onClick={openCalendar}
               className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all"
