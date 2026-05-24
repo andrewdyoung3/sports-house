@@ -262,10 +262,11 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   },
   'State of Origin': {
     // SOO: maroon/gold — official Ampol State of Origin series logo
+    // logoRight manual override: wide banner logo needs extra inward offset vs the auto-formula
     label: 'SOO',
     bg: '#1a0000', color: '#F5A623', border: 'rgba(245,166,35,0.35)',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png',
-    logoOpacity: 0.18, logoHeight: '98%',
+    logoOpacity: 0.18, logoHeight: '98%', logoRight: '45px',
   },
 };
 

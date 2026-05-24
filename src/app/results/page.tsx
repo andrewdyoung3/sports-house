@@ -63,6 +63,8 @@ interface ResultBadgeMeta {
   logoFilter?: string;
   /** Override the default h-[140%] height for this logo's watermark. */
   logoHeight?: string;
+  /** Manual right-position override (px string). Skips the auto-formula for wide/banner logos. */
+  logoRight?: string;
 }
 
 const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
@@ -77,7 +79,7 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
   'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
   'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%' },
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%', logoRight: '45px' },
 };
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
@@ -217,8 +219,8 @@ function ResultRow({
   const leagueLogoFilter  = leagueMeta?.logoFilter;
   const leagueLogoHeight  = leagueMeta?.logoHeight;
   // Auto-compute right from height to align logo midpoints at ~49px from the right edge.
-  // Formula: right = 49 - (heightPercent × 0.42) px
-  const leagueLogoRight = (() => {
+  // Formula: right = 49 - (heightPercent × 0.42) px. Manual logoRight overrides for wide/banner logos.
+  const leagueLogoRight = leagueMeta?.logoRight ?? (() => {
     const h = leagueMeta?.logoHeight ?? '140%';
     if (h.endsWith('%')) return `${49 - parseFloat(h) * 0.42}px`;
     return '-10px';
