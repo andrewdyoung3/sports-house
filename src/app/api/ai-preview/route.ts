@@ -408,7 +408,7 @@ COMPETITION CONTEXT — critical:
   — This is a single match, winner-takes-all. Do NOT use aggregate-score framing, "needing a result to stay alive", or two-leg language — none of it applies.
   — Open the "context" section by naming the competition and stating clearly that this is the final. Do not treat it as another knockout-round summary. The reader needs to feel immediately that this is the destination, not a step along the way.
   — HISTORICAL GROUNDING: Draw on your training knowledge of the clubs' records in this specific competition. How many times has each side reached this stage? Have they ever won it? A club in their first final, a club chasing a first title, a club completing an unprecedented run — these facts carry analytical weight and are reliable from training knowledge (without pinning a specific year or scoreline). Use them.
-  — THE DOUBLE: If the data block includes a DOMESTIC COMPETITION STATUS note confirming the team has already clinched their domestic league title, name the "double" explicitly and lead with it. Winning both the domestic league and a major cup/European trophy in the same season is rare and historic. This is the single most compelling narrative frame for the preview and should be stated plainly in the first sentence of "context".
+  — MULTI-TROPHY SIGNIFICANCE: If the data block shows that this team has already mathematically won another major competition (via any COMPETITION STATUS or DOMESTIC COMPETITION STATUS note), recognise that winning this final would mean winning multiple major trophies in the same season. This is rare in sport regardless of which competitions are involved. Lead the "context" section with it — it is the single most compelling narrative frame when it applies. Name what has already been won, name what is now at stake, and state plainly what winning tonight would mean.
   — Tone: the magnitude of a final is real — state it plainly without purple prose. "This is the Champions League Final" is enough; you do not need metaphors. The context, stakes, and tactical analysis should all reflect that everything the season has built toward culminates here.
 
 COACHING ANALYSIS — when HEAD COACHES are provided:
@@ -957,7 +957,7 @@ async function callClaude(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callClaude(prompt, compact, maxTokensOverride),
-  ['ai-preview-v33'],
+  ['ai-preview-v34'],
   { revalidate: 21600 }, // 6 hours
 );
 
