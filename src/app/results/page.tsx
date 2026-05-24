@@ -63,8 +63,6 @@ interface ResultBadgeMeta {
   logoFilter?: string;
   /** Override the default h-[140%] height for this logo's watermark. */
   logoHeight?: string;
-  /** Manual right-position override (px string). Skips the auto-formula for wide/banner logos. */
-  logoRight?: string;
 }
 
 const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
@@ -79,7 +77,7 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
   'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
   'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%', logoRight: '45px' },
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%' },
 };
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
@@ -218,13 +216,9 @@ function ResultRow({
   const leagueLogoBlend   = leagueMeta?.logoBlend;
   const leagueLogoFilter  = leagueMeta?.logoFilter;
   const leagueLogoHeight  = leagueMeta?.logoHeight;
-  // Auto-compute right from height to align logo midpoints at ~49px from the right edge.
-  // Formula: right = 49 - (heightPercent × 0.42) px. Manual logoRight overrides for wide/banner logos.
-  const leagueLogoRight = leagueMeta?.logoRight ?? (() => {
-    const h = leagueMeta?.logoHeight ?? '140%';
-    if (h.endsWith('%')) return `${49 - parseFloat(h) * 0.42}px`;
-    return '-10px';
-  })();
+  // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
+  // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
+  const LOGO_CENTER_RIGHT = '49px';
 
   return (
     <div
@@ -271,11 +265,11 @@ function ResultRow({
           alt=""
           aria-hidden="true"
           className={[
-            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-center',
+            'absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center',
             team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
           ].join(' ')}
           style={{
-            right: leagueLogoRight,
+            right: LOGO_CENTER_RIGHT,
             height: leagueLogoHeight ?? '140%',
             opacity: leagueLogoOpacity,
             ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),

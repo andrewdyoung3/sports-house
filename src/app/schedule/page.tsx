@@ -126,6 +126,8 @@ interface BadgeMeta {
   symbolColor?: string;
   /** Short display label. */
   label: string;
+  /** Abbreviated label for compact display when space is tight (e.g. 'UCL' for 'Champions League'). Falls back to label if unset. */
+  abbr?: string;
   /** Badge background — official brand colour, darkened for legibility. */
   bg: string;
   /** Label text colour. */
@@ -144,14 +146,6 @@ interface BadgeMeta {
   logoHeight?: string;
   /** Cap the width of wide/banner logos so they don't spill across the card. */
   logoMaxWidth?: string;
-  /**
-   * Manual override for the right position of this logo's watermark.
-   * Normally leave unset — the render derives right automatically from logoHeight
-   * using the reference-midpoint formula (midpoint = 49px from the right edge):
-   *   right = 49 - (heightPercent × 0.42)  px
-   * Only set this to escape the formula for special cases.
-   */
-  logoRight?: string;
 }
 
 // ── Primary-league badges ─────────────────────────────────────────────────────
@@ -224,7 +218,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   'Champions League': {
     // UCL: ★ (the iconic starball mark) in official gold on UCL dark navy
     symbol: '★\uFE0E', symbolColor: '#ffd700',
-    label: 'Champions League',
+    label: 'Champions League', abbr: 'UCL',
     bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
     logoOpacity: 0.68, logoBlend: 'screen',
@@ -232,7 +226,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   'Europa League': {
     // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
     symbol: '◎\uFE0E', symbolColor: '#f57320',
-    label: 'Europa League',
+    label: 'Europa League', abbr: 'UEL',
     bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
     logoOpacity: 0.56, logoBlend: 'screen',
@@ -240,7 +234,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   'Conference League': {
     // UECL: ◉ (inner circle = target / conference identity) in brand teal
     symbol: '◉\uFE0E', symbolColor: '#00c87a',
-    label: 'Conference League',
+    label: 'Conference League', abbr: 'UECL',
     bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
     logoOpacity: 0.56, logoBlend: 'screen',
@@ -262,21 +256,22 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
   },
   'State of Origin': {
     // SOO: maroon/gold — official Ampol State of Origin series logo
-    // logoRight manual override: wide banner logo needs extra inward offset vs the auto-formula
     label: 'SOO',
     bg: '#1a0000', color: '#F5A623', border: 'rgba(245,166,35,0.35)',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png',
-    logoOpacity: 0.18, logoHeight: '98%', logoRight: '45px',
+    logoOpacity: 0.18, logoHeight: '98%',
   },
 };
 
-function FixtureBadge({ league, competition }: { league: string; competition?: string }) {
+function FixtureBadge({ league, competition, compact }: { league: string; competition?: string; compact?: boolean }) {
   const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
   const meta = baseComp
     ? (COMPETITION_BADGE[baseComp] ?? null)
     : (LEAGUE_BADGE[league] ?? null);
 
-  const label    = meta?.label ?? (competition ?? league.toUpperCase());
+  const fullLabel = meta?.label ?? (competition ?? league.toUpperCase());
+  // In compact mode, prefer the abbreviation so the badge stays narrow and on-line
+  const label    = compact && meta?.abbr ? meta.abbr : fullLabel;
   const bg       = meta?.bg      ?? 'rgba(255,255,255,0.06)';
   const color    = meta?.color   ?? 'rgba(255,255,255,0.40)';
   const border   = meta?.border  ?? 'rgba(255,255,255,0.12)';
@@ -366,13 +361,14 @@ function ScheduleRow({
   const leagueLogoFilter   = leagueMeta?.logoFilter;
   const leagueLogoHeight   = leagueMeta?.logoHeight;
   const leagueLogoMaxWidth = leagueMeta?.logoMaxWidth;
-  // Auto-compute right from height to keep all logo midpoints aligned at ~49px from the right edge.
-  // Formula: right = 49 - (heightPercent × 0.42) px. Manual logoRight overrides this.
-  const leagueLogoRight = leagueMeta?.logoRight ?? (() => {
-    const h = leagueMeta?.logoHeight ?? '140%';
-    if (h.endsWith('%')) return `${49 - parseFloat(h) * 0.42}px`;
-    return '-10px';
-  })();
+  // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
+  // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
+  const LOGO_CENTER_RIGHT = '49px';
+
+  // Name-length responsive adjustments: shrink font + abbreviate badge when combined names are long
+  const combinedNameLen = (team.shortName + (game.opponent ?? '')).length;
+  const nameFontSize    = combinedNameLen > 22 ? '14px' : '17px';
+  const compactBadge    = combinedNameLen > 22;
 
   return (
     <div
@@ -422,11 +418,11 @@ function ScheduleRow({
           alt=""
           aria-hidden="true"
           className={[
-            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-center',
+            'absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center',
             // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
             team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
           ].join(' ')}
-          style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
+          style={{ right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
@@ -465,7 +461,7 @@ function ScheduleRow({
             </>
           ) : (
             <>
-              <span className="text-[17px] font-semibold text-white/70 leading-none">
+              <span className="font-semibold text-white/70 leading-none" style={{ fontSize: nameFontSize }}>
                 {team.shortName}
               </span>
               {teamPosition !== undefined && (
@@ -482,7 +478,7 @@ function ScheduleRow({
                 className="rounded-md"
                 logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']}
               />
-              <span className="text-[17px] font-semibold text-white/70 leading-none">
+              <span className="font-semibold text-white/70 leading-none" style={{ fontSize: nameFontSize }}>
                 {game.opponent}
               </span>
               {opponentPosition !== undefined && (
@@ -490,7 +486,7 @@ function ScheduleRow({
               )}
             </>
           )}
-          {!isF1 && team.league !== 'cricket_int' && <FixtureBadge league={team.league} competition={game.competition} />}
+          {!isF1 && team.league !== 'cricket_int' && <FixtureBadge league={team.league} competition={game.competition} compact={compactBadge} />}
           {isCricket && game.cricketFormat && (
             <span
               className="inline-flex items-center text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none border"
