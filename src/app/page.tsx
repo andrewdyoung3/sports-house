@@ -66,7 +66,7 @@ const FEATURES: Feature[] = [
     bg: 'bg-red-900/30',
     title: 'Multi-Sport',
     description:
-      'AFL, NRL, EPL, NBA, and more — all under one roof. Add or remove teams at any time from the Teams menu.',
+      'AFL, NRL, EPL, Super Rugby, F1, cricket, and more — all under one roof. Add or remove teams at any time from the Teams menu.',
   },
 ];
 
@@ -79,8 +79,6 @@ const LEAGUES = [
   { id: 'super_rugby', name: 'Super Rugby' },
   { id: 'rugby_int',   name: 'Int\'l Rugby' },
   { id: 'nba',         name: 'NBA' },
-  { id: 'nfl',         name: 'NFL' },
-  { id: 'mlb',         name: 'MLB' },
   { id: 'nhl',         name: 'NHL' },
   { id: 'f1',          name: 'Formula 1' },
   { id: 'cricket_int', name: 'Int\'l Cricket' },
