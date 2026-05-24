@@ -260,11 +260,19 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',
     logoOpacity: 0.43, logoBlend: 'screen',
   },
+  'State of Origin': {
+    // SOO: maroon/gold — official Ampol State of Origin series logo
+    label: 'SOO',
+    bg: '#1a0000', color: '#F5A623', border: 'rgba(245,166,35,0.35)',
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png',
+    logoOpacity: 0.18,
+  },
 };
 
 function FixtureBadge({ league, competition }: { league: string; competition?: string }) {
-  const meta = competition
-    ? (COMPETITION_BADGE[competition] ?? null)
+  const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
+  const meta = baseComp
+    ? (COMPETITION_BADGE[baseComp] ?? null)
     : (LEAGUE_BADGE[league] ?? null);
 
   const label    = meta?.label ?? (competition ?? league.toUpperCase());
@@ -340,14 +348,16 @@ function ScheduleRow({
   const isF1           = team.league === 'f1';
   const isCricket      = team.league === 'bbl' || team.league === 'cricket_int';
   const displayTime    = formatTimeInZone(game.date, userTz);
-  // Only show league positions for plain league fixtures — not cups or European games.
-  const isLeagueFixture = !game.competition || !COMPETITION_BADGE[game.competition];
+  // Normalise SOO competition strings ("State of Origin — Game N (…)") to the base key
+  const baseComp        = game.competition?.startsWith('State of Origin') ? 'State of Origin' : game.competition;
+  // Only show league positions for plain league fixtures — not cups or series games.
+  const isLeagueFixture = !baseComp || !COMPETITION_BADGE[baseComp];
   const teamPosition      = isLeagueFixture ? standingsMap?.get(team.id) : undefined;
   const opponentPosition  = isLeagueFixture && game.opponentId ? standingsMap?.get(game.opponentId) : undefined;
 
   const teamLogoUrl    = TEAM_LOGOS[team.id];
   const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
-  const leagueMeta     = (game.competition ? COMPETITION_BADGE[game.competition] : undefined)
+  const leagueMeta     = (baseComp ? COMPETITION_BADGE[baseComp] : undefined)
     ?? LEAGUE_BADGE[team.league];
   const leagueLogoUrl      = leagueMeta?.logoUrl;
   const leagueLogoOpacity  = leagueMeta?.logoOpacity ?? 0.18;
