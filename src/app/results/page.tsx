@@ -222,7 +222,7 @@ function ResultRow({
   return (
     <div
       className={[
-        'relative overflow-hidden flex items-center max-lg:items-start gap-4 glass px-4 py-4 cursor-pointer',
+        'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer min-h-[84px]',
         'transition-all duration-300 ease-out select-none',
         isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
       ].join(' ')}
@@ -279,7 +279,7 @@ function ResultRow({
       )}
 
       {/* Team badge */}
-      <div className="relative shrink-0 z-10" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
+      <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
         <TeamBadge
           logoUrl={teamLogoUrl}
           abbreviation={team.abbreviation}
