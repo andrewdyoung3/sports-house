@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { List, Trophy, Settings, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -11,12 +11,20 @@ const NAV_LINKS = [
 ];
 
 export function Navbar() {
-  const pathname = usePathname();
+  const pathname   = usePathname();
+  const router     = useRouter();
   const onSchedule = pathname === '/schedule';
   const onResults  = pathname === '/results';
+  const onHome     = pathname === '/';
 
   function openCalendar() {
-    window.dispatchEvent(new CustomEvent('sporthouse:open-calendar'));
+    if (onSchedule || onResults) {
+      // Pages with a calendar bottom sheet — trigger it via custom event
+      window.dispatchEvent(new CustomEvent('sporthouse:open-calendar'));
+    } else {
+      // Home page — navigate to schedule and auto-open the calendar there
+      router.push('/schedule?cal=1');
+    }
   }
 
   return (
@@ -56,8 +64,8 @@ export function Navbar() {
             );
           })}
 
-          {/* Calendar — shown on schedule & results pages on mobile (desktop has sidebar) */}
-          {(onSchedule || onResults) && (
+          {/* Calendar — visible on home, schedule, and results pages on mobile */}
+          {(onHome || onSchedule || onResults) && (
             <button
               onClick={openCalendar}
               className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all"

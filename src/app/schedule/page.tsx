@@ -795,12 +795,21 @@ export default function SchedulePage() {
   // Past results for calendar (fetched on load, filtered to last 2 months)
   const [pastResults, setPastResults] = useState<(import('@/types').GameResult & { team: Team })[]>([]);
 
-  // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event
+  // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event,
+  // or via ?cal=1 URL param (used when navigating from the home page).
   const [calendarOpen, setCalendarOpen] = useState(false);
   useEffect(() => {
     const handler = () => setCalendarOpen(true);
     window.addEventListener('sporthouse:open-calendar', handler);
     return () => window.removeEventListener('sporthouse:open-calendar', handler);
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('cal') === '1') {
+      setCalendarOpen(true);
+      // Clean the param from the URL without a page reload
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   // Calendar click — temporary glow on the clicked date's fixtures
