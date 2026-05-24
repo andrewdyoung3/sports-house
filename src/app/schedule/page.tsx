@@ -410,7 +410,11 @@ function ScheduleRow({
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
-          className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
+          className={[
+            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-center',
+            // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
+            team.league !== 'f1' && !game.competition ? 'max-lg:scale-[0.7]' : '',
+          ].join(' ')}
           style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
@@ -418,7 +422,7 @@ function ScheduleRow({
 
       {/* ── Team badge — oversized with neon glow ── */}
       <div
-        className="relative shrink-0 z-10"
+        className="relative shrink-0 z-10 self-center"
         style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}
       >
         <TeamBadge
