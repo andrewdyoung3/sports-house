@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Calendar, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'lucide-react';
+import { Calendar, List, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
@@ -1078,7 +1078,7 @@ export default function SchedulePage() {
       {/* ── Header ── */}
       <div className="mb-6">
         <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
-          <Calendar className="h-6 w-6 text-indigo-400" />
+          <List className="h-6 w-6 text-indigo-400" />
           {isLeagueMode
             ? `${BROWSABLE_LEAGUES.find(l => l.id === activeLeagueId)?.fullName ?? 'League'} — All Fixtures`
             : 'Your Schedule'}
