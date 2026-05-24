@@ -413,7 +413,7 @@ function ScheduleRow({
           className={[
             'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-center',
             // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
-            team.league !== 'f1' && !game.competition ? 'max-lg:scale-[0.7]' : '',
+            team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
           ].join(' ')}
           style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -437,11 +437,11 @@ function ScheduleRow({
       {/* ── Matchup + metadata ── */}
       <div className="flex-1 min-w-0 relative z-10">
         {/* Primary line: team vs opponent */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap max-lg:flex-nowrap">
           {/* For F1 in league-browse mode, show the Grand Prix name as the headline */}
           {isF1 ? (
             <>
-              <span className="text-[15px] font-black tracking-tight text-white/85 leading-none">
+              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
                 {game.opponent}
               </span>
               {game.competition && (
@@ -454,13 +454,13 @@ function ScheduleRow({
             </>
           ) : (
             <>
-              <span className="text-[17px] font-semibold text-white/70 leading-none">
+              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
                 {team.shortName}
               </span>
               {teamPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(teamPosition)})</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none shrink-0">({ordinal(teamPosition)})</span>
               )}
-              <span className="text-[14px] font-medium text-white/30">
+              <span className="text-[14px] font-medium text-white/30 shrink-0">
                 {game.isHome ? 'vs' : '@'}
               </span>
               <TeamBadge
@@ -468,14 +468,14 @@ function ScheduleRow({
                 abbreviation={game.opponentAbbr}
                 primaryColor={game.opponentColor}
                 size={30}
-                className="rounded-md"
+                className="rounded-md shrink-0"
                 logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']}
               />
-              <span className="text-[17px] font-semibold text-white/70 leading-none">
+              <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
                 {game.opponent}
               </span>
               {opponentPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(opponentPosition)})</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none shrink-0">({ordinal(opponentPosition)})</span>
               )}
             </>
           )}

@@ -48,19 +48,47 @@ async function loadResults(team: Team): Promise<ResultEntry[]> {
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 
-const COMPETITION_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  'Champions League': { bg: '#071432', color: '#dce8ff', label: 'UCL' },
-  'Europa League':    { bg: '#200e00', color: '#f57320', label: 'UEL' },
-  'FA Cup':           { bg: '#1a0005', color: '#ff2244', label: 'FA Cup' },
-  'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup' },
+interface ResultBadgeMeta {
+  bg: string;
+  color: string;
+  label: string;
+  /** URL for the watermark logo shown in the result row background. */
+  logoUrl?: string;
+  /** Opacity for the watermark (default 0.18). */
+  logoOpacity?: number;
+  /** CSS mix-blend-mode for the watermark — 'screen' dissolves dark backgrounds. */
+  logoBlend?: string;
+  /** CSS filter applied to the watermark logo. */
+  logoFilter?: string;
+  /** Override the default h-[140%] height for this logo's watermark. */
+  logoHeight?: string;
+}
+
+const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
+  'Champions League': { bg: '#071432', color: '#dce8ff', label: 'UCL',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', logoOpacity: 0.68, logoBlend: 'screen' },
+  'Europa League':    { bg: '#200e00', color: '#f57320', label: 'UEL',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', logoOpacity: 0.56, logoBlend: 'screen' },
+  'Conference League': { bg: '#001a10', color: '#00c87a', label: 'UECL',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', logoOpacity: 0.56, logoBlend: 'screen' },
+  'FA Cup':           { bg: '#1a0005', color: '#ff2244', label: 'FA Cup',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png', logoOpacity: 0.47, logoBlend: 'screen' },
+  'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
 };
 
-const LEAGUE_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  afl:         { bg: '#001d3d', color: '#f4ac20',  label: 'AFL' },
-  nrl:         { bg: '#002955', color: '#ffffff',  label: 'NRL' },
-  epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL' },
-  super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR' },
+const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
+  afl:         { bg: '#001d3d', color: '#f4ac20',  label: 'AFL',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', logoOpacity: 0.10 },
+  nrl:         { bg: '#002955', color: '#ffffff',  label: 'NRL',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png', logoOpacity: 0.27, logoHeight: '98%' },
+  epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL',
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)' },
+  super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR',
+    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', logoOpacity: 0.18, logoHeight: '110%' },
   rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test' },
+  f1:          { bg: '#1a0000', color: '#E8002D',  label: 'F1',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png', logoOpacity: 0.15 },
   bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL' },
   cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT' },
 };
@@ -175,6 +203,22 @@ function ResultRow({
     timeZone: userTz,
   });
 
+  // League / competition watermark metadata
+  const leagueMeta      = (result.competition ? COMPETITION_BADGE[result.competition] : undefined)
+    ?? LEAGUE_BADGE[team.league];
+  const leagueLogoUrl     = leagueMeta?.logoUrl;
+  const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
+  const leagueLogoBlend   = leagueMeta?.logoBlend;
+  const leagueLogoFilter  = leagueMeta?.logoFilter;
+  const leagueLogoHeight  = leagueMeta?.logoHeight;
+  // Auto-compute right from height to align logo midpoints at ~49px from the right edge.
+  // Formula: right = 49 - (heightPercent × 0.42) px
+  const leagueLogoRight = (() => {
+    const h = leagueMeta?.logoHeight ?? '140%';
+    if (h.endsWith('%')) return `${49 - parseFloat(h) * 0.42}px`;
+    return '-10px';
+  })();
+
   return (
     <div
       className={[
@@ -203,35 +247,66 @@ function ResultRow({
         style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }}
       />
 
+      {/* ── Background watermarks ── */}
+      {teamLogoUrl && (
+        <img
+          src={teamLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
+          style={{ right: '88px', opacity: 0.10 }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+      {leagueLogoUrl && (
+        <img
+          src={leagueLogoUrl}
+          alt=""
+          aria-hidden="true"
+          className={[
+            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-center',
+            team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
+          ].join(' ')}
+          style={{
+            right: leagueLogoRight,
+            height: leagueLogoHeight ?? '140%',
+            opacity: leagueLogoOpacity,
+            ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
+            ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
+          }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      )}
+
       {/* Team badge */}
-      <div className="relative shrink-0 z-10" style={{ filter: `drop-shadow(0 0 12px ${team.primaryColor}55)` }}>
+      <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
         <TeamBadge
           logoUrl={teamLogoUrl}
           abbreviation={team.abbreviation}
           primaryColor={team.primaryColor}
-          size={44}
+          size={52}
           logoFilter={teamLogoFilter}
         />
       </div>
 
       {/* Matchup */}
       <div className="flex-1 min-w-0 relative z-10">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[15px] font-black tracking-tight text-white/85 leading-none">
+        <div className="flex items-center gap-1.5 flex-wrap max-lg:flex-nowrap">
+          <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
             {team.shortName}
           </span>
-          <span className="text-[11px] font-medium text-white/30">
+          <span className="text-[14px] font-medium text-white/30 shrink-0">
             {result.isHome ? 'vs' : '@'}
           </span>
           <TeamBadge
             logoUrl={result.opponentLogoUrl}
             abbreviation={result.opponentAbbr}
             primaryColor="#6B7280"
-            size={22}
-            className="rounded-md"
+            size={30}
+            className="rounded-md shrink-0"
             logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']}
           />
-          <span className="text-[13px] font-semibold text-white/70 leading-none">
+          <span className="text-[17px] font-semibold text-white/70 leading-none max-lg:min-w-0 max-lg:truncate">
             {result.opponent}
           </span>
           <ResultBadge league={team.league} competition={result.competition} />
