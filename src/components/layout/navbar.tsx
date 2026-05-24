@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Flag, Trophy, Settings, Calendar } from 'lucide-react';
+import { List, Trophy, Settings, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
-  { href: '/schedule', label: 'Schedule', icon: Flag },
+  { href: '/schedule', label: 'Schedule', icon: List },
   { href: '/results',  label: 'Results',  icon: Trophy },
 ];
 
