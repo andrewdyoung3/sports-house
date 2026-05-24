@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Calendar, MapPin, Tv, Plus, ChevronDown, UserMinus } from 'lucide-react';
+import { Calendar, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
@@ -782,6 +782,9 @@ export default function SchedulePage() {
   const [expandedId,      setExpandedId]      = useState<string | null>(null);
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
 
+  // Mobile calendar bottom sheet
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
   // Calendar click — temporary glow on the clicked date's fixtures
   const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1048,7 +1051,7 @@ export default function SchedulePage() {
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}
-      <div className="lg:grid lg:grid-cols-[1fr_270px] lg:gap-6 lg:items-start">
+      <div className="lg:grid lg:grid-cols-[1fr_270px] lg:gap-6 lg:items-start pb-20 lg:pb-0">
 
         {/* ── Left column: filters + schedule ── */}
         <div>
@@ -1238,6 +1241,49 @@ export default function SchedulePage() {
         </aside>
       </div>
       </div>{/* end transition-opacity wrapper */}
+
+      {/* ── Mobile-only: fixed bottom bar ── */}
+      {!activeLoading && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 lg:hidden bg-black/70 backdrop-blur-xl border-t border-white/8 flex items-center justify-around px-6 py-2">
+          <button
+            onClick={() => setCalendarOpen(true)}
+            className="flex flex-col items-center gap-1 text-white/50 hover:text-white transition-colors py-1"
+          >
+            <Calendar className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Calendar</span>
+          </button>
+        </div>
+      )}
+
+      {/* ── Mobile calendar bottom sheet ── */}
+      {calendarOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm"
+            onClick={() => setCalendarOpen(false)}
+          />
+          {/* Sheet */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-sm font-semibold text-white/80">Calendar</p>
+              <button
+                onClick={() => setCalendarOpen(false)}
+                className="text-white/40 hover:text-white transition-colors p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ScheduleCalendar
+              games={displayedGames}
+              userTz={userTz}
+              hoveredDateKey={hoveredDateKey}
+              onHover={handleCalendarHover}
+              onDayClick={(dk) => { handleDayClick(dk); setCalendarOpen(false); }}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

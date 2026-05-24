@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus, Cloud } from 'lucide-react';
 // mock-data intentionally NOT imported — this component never shows mock results.
+import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
@@ -843,6 +844,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   const [aiLoading,  setAiLoading]  = useState(aiEnabled);
   const [aiUpdating, setAiUpdating] = useState(false);
   const [weather,    setWeather]    = useState<WeatherData | null>(null);
+  // Mobile tab — 'preview' | 'table'. Desktop always shows full content.
+  const [activeTab,  setActiveTab]  = useState<'preview' | 'table'>('preview');
 
   // Fetch weather independently — not tied to the panel-data cache so it always
   // runs even when results/standings are served from sessionStorage.
@@ -1026,11 +1029,55 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   const hasNews = (context?.teamNews?.length ?? 0) > 0 || (context?.opponentNews?.length ?? 0) > 0;
   const hasTips = !!context?.tips;
 
+  const hasTable = standings && standings.length > 0;
+
   return (
     <div
-      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
+      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
       style={{ animation: 'slideDown 0.22s ease-out' }}
     >
+      {/* ── Mobile tab bar — Preview / Table ── */}
+      {hasTable && (
+        <div className="flex lg:hidden gap-0 border-b border-white/8 -mx-4 px-4 mb-4">
+          <button
+            onClick={() => setActiveTab('preview')}
+            className={cn(
+              'flex-1 py-2 text-xs font-semibold tracking-wide transition-colors border-b-2',
+              activeTab === 'preview'
+                ? 'text-white border-white/70'
+                : 'text-white/35 border-transparent hover:text-white/60',
+            )}
+          >
+            Preview
+          </button>
+          <button
+            onClick={() => setActiveTab('table')}
+            className={cn(
+              'flex-1 py-2 text-xs font-semibold tracking-wide transition-colors border-b-2',
+              activeTab === 'table'
+                ? 'text-white border-white/70'
+                : 'text-white/35 border-transparent hover:text-white/60',
+            )}
+          >
+            Table
+          </button>
+        </div>
+      )}
+
+      {/* ── Table tab (mobile only) ── */}
+      {hasTable && activeTab === 'table' && (
+        <div className="lg:hidden">
+          <LeagueTable
+            league={team.league as import('@/types').SportKey}
+            rows={standings!}
+            followedTeamIds={new Set([team.id])}
+          />
+        </div>
+      )}
+
+      {/* ── Main panel content — hidden on mobile when table tab is active ── */}
+      <div className={cn('space-y-5', hasTable && activeTab === 'table' ? 'hidden lg:block' : '')}>
+
       {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
       {aiLoading && aiEnabled && (
         <AILoadingCard color={team.primaryColor} />
@@ -1390,6 +1437,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           Add to calendar
         </button>
       </div>
+
+      </div>{/* end main content wrapper */}
     </div>
   );
 }
