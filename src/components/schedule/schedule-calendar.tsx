@@ -29,22 +29,6 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-// Result outcome colours
-const WIN_COLOR  = '#22c55e';
-const DRAW_COLOR = '#f59e0b';
-const LOSS_COLOR = '#ef4444';
-
-function resultDotColor(r: PastResultEntry): string {
-  if (r.isWin)   return WIN_COLOR;
-  if (r.isDraw)  return DRAW_COLOR;
-  return LOSS_COLOR;
-}
-
-function resultLabel(r: PastResultEntry): string {
-  if (r.isWin)  return 'W';
-  if (r.isDraw) return 'D';
-  return 'L';
-}
 
 /** Parse a YYYY-MM-DD key into a short label like "Tue 18 Mar" */
 function labelFromDateKey(dk: string): string {
@@ -179,11 +163,11 @@ export function ScheduleCalendar({
           const hasPast     = !!dayPast?.length;
           const hasActivity = hasUpcoming || hasPast;
 
-          // Glow uses team colour for upcoming; win/loss colour for past-only
+          // Glow always uses team primary colour
           const glowColor = hasUpcoming
             ? dayGames![0].team.primaryColor
             : hasPast
-              ? resultDotColor(dayPast![0])
+              ? dayPast![0].team.primaryColor
               : undefined;
 
           return (
@@ -233,14 +217,14 @@ export function ScheduleCalendar({
                   ))}
                 </div>
               )}
-              {/* Past result dots — W/L/D colour, shown only when no upcoming fixture */}
+              {/* Past game dots — team primary colour, slightly dimmed */}
               {!hasUpcoming && hasPast && (
                 <div className="flex gap-0.5 justify-center">
                   {dayPast!.slice(0, 3).map((r, ri) => (
                     <span
                       key={ri}
-                      className="w-1 h-1 rounded-full opacity-70"
-                      style={{ backgroundColor: resultDotColor(r) }}
+                      className="w-1 h-1 rounded-full opacity-50"
+                      style={{ backgroundColor: r.team.primaryColor }}
                     />
                   ))}
                 </div>
@@ -304,14 +288,14 @@ export function ScheduleCalendar({
               </div>
             )}
 
-            {/* Past results */}
+            {/* Past games — matchup only, no result shown */}
             {previewPast.length > 0 && (
               <div className="space-y-2 mt-1">
                 {previewPast.map((r, ri) => (
                   <div
                     key={ri}
                     className="flex items-center gap-1.5"
-                    style={{ borderLeft: `2px solid ${resultDotColor(r)}50`, paddingLeft: '6px' }}
+                    style={{ borderLeft: `2px solid ${r.team.primaryColor}60`, paddingLeft: '6px' }}
                   >
                     <TeamBadge
                       logoUrl={TEAM_LOGOS[r.team.id]}
@@ -335,16 +319,6 @@ export function ScheduleCalendar({
                     />
                     <span className="text-[11px] text-white/70 leading-none flex-1 min-w-0 truncate">
                       {r.opponent}
-                    </span>
-                    {/* Score + W/L/D badge */}
-                    <span
-                      className="text-[10px] font-black shrink-0 leading-none px-1.5 py-0.5 rounded"
-                      style={{
-                        color:           resultDotColor(r),
-                        backgroundColor: `${resultDotColor(r)}18`,
-                      }}
-                    >
-                      {resultLabel(r)} {r.teamScore}–{r.opponentScore}
                     </span>
                   </div>
                 ))}
