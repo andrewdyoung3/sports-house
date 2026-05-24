@@ -27,7 +27,7 @@ type ScheduleEntry = UpcomingGame & { team: Team };
 const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 
 /** All competitions with browse support (real or mock fixtures + standings). */
-const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'bbl', 'cricket_int']);
+const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'f1', 'bbl', 'cricket_int']);
 
 /** Ordered list for the competition filter pills. */
 const BROWSABLE_LEAGUES = LEAGUES.filter(l => BROWSABLE_LEAGUE_IDS.has(l.id));

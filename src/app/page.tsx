@@ -79,7 +79,6 @@ const LEAGUES = [
   { id: 'super_rugby', name: 'Super Rugby' },
   { id: 'rugby_int',   name: 'Int\'l Rugby' },
   { id: 'nba',         name: 'NBA' },
-  { id: 'nhl',         name: 'NHL' },
   { id: 'f1',          name: 'Formula 1' },
   { id: 'cricket_int', name: 'Int\'l Cricket' },
   { id: 'bbl',         name: 'Big Bash' },
