@@ -100,3 +100,27 @@ export function seededRandom(seed: string, index = 0): number {
   }
   return Math.abs(h) / 2147483647;
 }
+
+/**
+ * Smooth-scroll the window to a target Y position over `duration` ms.
+ * Uses an ease-in-out cubic curve — slightly slower than the browser
+ * default `behavior:'smooth'` for a more deliberate feel.
+ */
+export function smoothScrollTo(targetY: number, duration = 750): void {
+  const startY    = window.scrollY;
+  const distance  = targetY - startY;
+  const startTime = performance.now();
+
+  function easeInOutCubic(t: number): number {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function step(now: number) {
+    const elapsed  = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    window.scrollTo(0, startY + distance * easeInOutCubic(progress));
+    if (progress < 1) requestAnimationFrame(step);
+  }
+
+  requestAnimationFrame(step);
+}

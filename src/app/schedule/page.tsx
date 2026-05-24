@@ -8,7 +8,7 @@ import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES } from '@/lib/teams';
-import { contrastColor, formatTimeInZone, datekeyInZone } from '@/lib/utils';
+import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -801,20 +801,35 @@ export default function SchedulePage() {
 
   // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event,
   // or via ?cal=1 URL param (used when navigating from the home page).
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarOpen,    setCalendarOpen]    = useState(false);
+  const [calendarVisible, setCalendarVisible] = useState(false);
+
+  const openCalendar = useCallback(() => {
+    setCalendarOpen(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => setCalendarVisible(true)));
+  }, []);
+
+  const closeCalendar = useCallback((afterClose?: () => void) => {
+    setCalendarVisible(false);
+    setTimeout(() => {
+      setCalendarOpen(false);
+      afterClose?.();
+    }, 420);
+  }, []);
+
   useEffect(() => {
-    const handler = () => setCalendarOpen(true);
+    const handler = () => openCalendar();
     window.addEventListener('sporthouse:open-calendar', handler);
     return () => window.removeEventListener('sporthouse:open-calendar', handler);
-  }, []);
+  }, [openCalendar]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('cal') === '1') {
-      setCalendarOpen(true);
+      openCalendar();
       // Clean the param from the URL without a page reload
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [openCalendar]);
 
   // Calendar click — temporary glow on the clicked date's fixtures
   const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
@@ -1303,17 +1318,27 @@ export default function SchedulePage() {
       {/* ── Mobile calendar bottom sheet (triggered from navbar Calendar button) ── */}
       {calendarOpen && (
         <>
-          {/* Backdrop */}
+          {/* Backdrop — fades in/out with the sheet */}
           <div
-            className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm"
-            onClick={() => setCalendarOpen(false)}
+            className={[
+              'fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm',
+              'transition-opacity duration-[420ms] ease-out',
+              calendarVisible ? 'opacity-100' : 'opacity-0',
+            ].join(' ')}
+            onClick={() => closeCalendar()}
           />
-          {/* Sheet */}
-          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto">
+          {/* Sheet — slides up on open, down on close */}
+          <div
+            className={[
+              'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
+              'transition-transform duration-[420ms] ease-out',
+              calendarVisible ? 'translate-y-0' : 'translate-y-full',
+            ].join(' ')}
+          >
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold text-white/80">Calendar</p>
               <button
-                onClick={() => setCalendarOpen(false)}
+                onClick={() => closeCalendar()}
                 className="text-white/40 hover:text-white transition-colors p-1"
               >
                 <X className="h-5 w-5" />
@@ -1324,9 +1349,20 @@ export default function SchedulePage() {
               userTz={userTz}
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
-              onDayClick={(dk) => { handleDayClick(dk); setCalendarOpen(false); }}
+              onDayClick={(dk) => {
+                closeCalendar(() => {
+                  const el = document.getElementById(`date-section-${dk}`);
+                  if (el) {
+                    const y = el.getBoundingClientRect().top + window.scrollY - 88;
+                    smoothScrollTo(Math.max(0, y), 750);
+                  }
+                  if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+                  setClickedDateKey(dk);
+                  clickTimerRef.current = setTimeout(() => setClickedDateKey(null), 2500);
+                });
+              }}
               pastResults={pastResults}
-              onPastDayClick={(dk) => { setCalendarOpen(false); handlePastDayClick(dk); }}
+              onPastDayClick={(dk) => closeCalendar(() => handlePastDayClick(dk))}
             />
           </div>
         </>

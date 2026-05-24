@@ -7,7 +7,7 @@ import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-
 import { getFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { contrastColor, datekeyInZone } from '@/lib/utils';
+import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
@@ -649,12 +649,28 @@ export default function ResultsPage() {
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
 
   // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarOpen,   setCalendarOpen]   = useState(false);
+  const [calendarVisible, setCalendarVisible] = useState(false);
+
+  const openCalendar = useCallback(() => {
+    setCalendarOpen(true);
+    // Wait for the DOM node to mount, then trigger the slide-up transition
+    requestAnimationFrame(() => requestAnimationFrame(() => setCalendarVisible(true)));
+  }, []);
+
+  const closeCalendar = useCallback((afterClose?: () => void) => {
+    setCalendarVisible(false);
+    setTimeout(() => {
+      setCalendarOpen(false);
+      afterClose?.();
+    }, 420);
+  }, []);
+
   useEffect(() => {
-    const handler = () => setCalendarOpen(true);
+    const handler = () => openCalendar();
     window.addEventListener('sporthouse:open-calendar', handler);
     return () => window.removeEventListener('sporthouse:open-calendar', handler);
-  }, []);
+  }, [openCalendar]);
 
   const [clickedDateKey, setClickedDateKey] = useState<string | null>(null);
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -853,15 +869,27 @@ export default function ResultsPage() {
       {/* ── Mobile calendar bottom sheet ── */}
       {calendarOpen && (
         <>
+          {/* Backdrop — fades in/out with the sheet */}
           <div
-            className="fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm"
-            onClick={() => setCalendarOpen(false)}
+            className={[
+              'fixed inset-0 z-50 lg:hidden bg-black/60 backdrop-blur-sm',
+              'transition-opacity duration-[420ms] ease-out',
+              calendarVisible ? 'opacity-100' : 'opacity-0',
+            ].join(' ')}
+            onClick={() => closeCalendar()}
           />
-          <div className="fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto">
+          {/* Sheet — slides up on open, down on close */}
+          <div
+            className={[
+              'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
+              'transition-transform duration-[420ms] ease-out',
+              calendarVisible ? 'translate-y-0' : 'translate-y-full',
+            ].join(' ')}
+          >
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold text-white/80">Calendar</p>
               <button
-                onClick={() => setCalendarOpen(false)}
+                onClick={() => closeCalendar()}
                 className="text-white/40 hover:text-white transition-colors p-1"
               >
                 <X className="h-5 w-5" />
@@ -873,7 +901,18 @@ export default function ResultsPage() {
                 userTz={userTz}
                 hoveredDateKey={hoveredDateKey}
                 onHover={handleCalendarHover}
-                onDayClick={(dk) => { handleDayClick(dk); setCalendarOpen(false); }}
+                onDayClick={(dk) => {
+                  closeCalendar(() => {
+                    const el = document.getElementById(`result-date-${dk}`);
+                    if (el) {
+                      const y = el.getBoundingClientRect().top + window.scrollY - 88;
+                      smoothScrollTo(Math.max(0, y), 750);
+                    }
+                    if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+                    setClickedDateKey(dk);
+                    clickTimerRef.current = setTimeout(() => setClickedDateKey(null), 2500);
+                  });
+                }}
               />
             )}
           </div>
