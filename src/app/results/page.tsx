@@ -77,7 +77,7 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
   'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
   'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18 },
+    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%' },
 };
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {

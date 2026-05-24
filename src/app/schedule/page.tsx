@@ -265,7 +265,7 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'SOO',
     bg: '#1a0000', color: '#F5A623', border: 'rgba(245,166,35,0.35)',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png',
-    logoOpacity: 0.18,
+    logoOpacity: 0.18, logoHeight: '98%',
   },
 };
 
