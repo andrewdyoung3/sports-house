@@ -18,14 +18,17 @@ export function Navbar() {
     <nav className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/25 backdrop-blur-xl border-b border-white/8">
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center group">
-          <div className="bg-white rounded-lg px-2 py-1 shadow-md shadow-black/30 group-hover:brightness-95 transition-all">
-            <img
-              src="/transparent-logo.svg"
-              alt="SportHouse"
-              className="h-6 w-auto"
-            />
-          </div>
+        <Link href="/" className="flex items-center gap-2 group">
+          {/* S icon mark — purple/white version reads cleanly on dark navbar */}
+          <img
+            src="/icon-mark.svg"
+            alt=""
+            aria-hidden="true"
+            className="h-8 w-auto drop-shadow-sm"
+          />
+          <span className="font-bold text-white text-[15px] tracking-tight hidden sm:block group-hover:text-white/80 transition-colors">
+            SportHouse
+          </span>
         </Link>
 
         {/* Nav links */}
