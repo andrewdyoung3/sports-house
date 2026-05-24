@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   },
   description: 'Your teams. Your sports. All in one place. Personalized schedules, live scores, AI matchup previews, and breaking news.',
   keywords: ['sports', 'NFL', 'NBA', 'MLB', 'NHL', 'Premier League', 'scores', 'schedule'],
+  icons: {
+    icon:             '/colored-logo.svg',
+    shortcut:         '/colored-logo.png',
+    apple:            '/colored-logo.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
