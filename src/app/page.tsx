@@ -143,7 +143,7 @@ export default function LandingPage() {
             Every whistle in one feed. Absolutely SportHouse.
           </h2>
           <p className="text-white/55 max-w-xl mx-auto">
-            A clean, personalised view of what matters — when games are on, where to watch, and how your team is travelling.
+            A clean, personalised view of what matters — when games are on, where to watch, and how your teams are playing.
           </p>
         </div>
 

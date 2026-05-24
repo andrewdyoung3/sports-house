@@ -237,6 +237,51 @@ const GAME_TIMES_UTC: Record<string, KickoffUTC[]> = {
   f1:          [{ h: 2, m: 0 }, { h: 6, m: 0 }, { h: 13, m: 0 }, { h: 14, m: 0 }],
 };
 
+// ─── Cricket mock helpers ─────────────────────────────────────────────────────
+
+function makeCricketMockResult(
+  team: Team,
+  opp: string,
+  oppAbbr: string,
+  isHome: boolean,
+  dateOffset: number, // negative = past
+  format: 'test' | 'odi' | 't20',
+  seed: number,
+): GameResult {
+  const r = seededRandom(team.id + opp, seed);
+  const maxOvers = format === 't20' ? 20 : format === 'odi' ? 50 : 90;
+  const ourRuns = Math.floor(r * 80 + (format === 'test' ? 220 : format === 'odi' ? 180 : 130));
+  const ourWkts = Math.floor(r * 10);
+  const ourOvers = Math.floor(r * (maxOvers * 0.7) + maxOvers * 0.3);
+  const oppRuns = Math.floor(seededRandom(team.id + opp, seed + 1) * 80 + (format === 'test' ? 200 : format === 'odi' ? 165 : 120));
+  const oppWkts = Math.floor(seededRandom(team.id + opp, seed + 2) * 10);
+  const oppOvers = Math.floor(seededRandom(team.id + opp, seed + 3) * (maxOvers * 0.7) + maxOvers * 0.3);
+  const isWin = ourRuns > oppRuns;
+  const isDraw = format === 'test' && Math.abs(ourRuns - oppRuns) < 20;
+  const margin = Math.abs(ourRuns - oppRuns);
+  const cricketResult = isDraw
+    ? 'Match drawn'
+    : isWin
+      ? `Won by ${margin} runs`
+      : `Lost by ${Math.abs(oppRuns - ourRuns)} runs`;
+  const fmtOvers = (o: number) => `${o} ov`;
+  const date = new Date(Date.now() + dateOffset * 86400000).toISOString();
+  return {
+    opponent: opp,
+    opponentAbbr: oppAbbr,
+    isHome,
+    isWin: isDraw ? false : isWin,
+    isDraw: isDraw || undefined,
+    teamScore: ourRuns,
+    opponentScore: oppRuns,
+    date,
+    cricketScore: `${ourRuns}/${ourWkts} (${fmtOvers(ourOvers)})`,
+    cricketOppScore: `${oppRuns}/${oppWkts} (${fmtOvers(oppOvers)})`,
+    cricketResult,
+    cricketFormat: format,
+  };
+}
+
 // ─── Upcoming games ───────────────────────────────────────────────────────────
 
 export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
@@ -267,6 +312,46 @@ export function getUpcomingGames(team: Team, count = 2): UpcomingGame[] {
         competition:    session,
       };
     });
+  }
+
+  // Cricket leagues — return cricket-flavoured mock fixtures
+  if (team.league === 'bbl') {
+    const opps = ['Perth Scorchers', 'Sydney Sixers', 'Hobart Hurricanes', 'Brisbane Heat', 'Adelaide Strikers', 'Melbourne Stars', 'Melbourne Renegades', 'Sydney Thunder']
+      .filter(o => o !== team.name).slice(0, count);
+    return opps.map((opp, i): UpcomingGame => ({
+      id: `bbl-mock-${team.id}-${i}`,
+      teamId: team.id,
+      opponent: opp,
+      opponentAbbr: opp.split(' ').map(w => w[0]).join('').slice(0, 2),
+      opponentColor: '#888888',
+      isHome: i % 2 === 0,
+      date: new Date(Date.now() + (i + 1) * 7 * 86400000).toISOString(),
+      time: '7:45 PM AEST',
+      venue: i % 2 === 0 ? team.venue : 'Away',
+      broadcast: ['Fox Cricket', 'Channel 7'],
+      streaming: ['Kayo Sports', '7plus'],
+      cricketFormat: 't20',
+    }));
+  }
+  if (team.league === 'cricket_int') {
+    const formats: Array<'test' | 'odi' | 't20'> = ['test', 'odi', 't20', 'test', 'odi'];
+    const opps = ['England', 'India', 'Pakistan', 'New Zealand', 'South Africa', 'West Indies', 'Sri Lanka']
+      .filter(o => o !== team.name).slice(0, count);
+    return opps.map((opp, i): UpcomingGame => ({
+      id: `cint-mock-${team.id}-${i}`,
+      teamId: team.id,
+      opponent: opp,
+      opponentAbbr: opp.slice(0, 3).toUpperCase(),
+      opponentColor: '#888888',
+      isHome: i % 2 === 0,
+      date: new Date(Date.now() + (i + 1) * 10 * 86400000).toISOString(),
+      time: formats[i % formats.length] === 'test' ? 'TBC' : '7:30 PM AEST',
+      venue: i % 2 === 0 ? team.venue : 'TBC',
+      broadcast: ['Fox Cricket'],
+      streaming: ['Kayo Sports'],
+      cricketFormat: formats[i % formats.length],
+      matchDays: formats[i % formats.length] === 'test' ? 5 : undefined,
+    }));
   }
 
   const pool   = OPPONENT_POOLS[team.league]    ?? AFL_OPPONENTS;
@@ -354,6 +439,24 @@ export function getRecentResults(team: Team, count = 5): GameResult[] {
     });
   }
 
+  // Cricket leagues — return cricket-flavoured mock results
+  if (team.league === 'bbl') {
+    const opps = [
+      { name: 'Perth Scorchers', abbr: 'PS' },
+      { name: 'Sydney Sixers', abbr: 'SS' },
+      { name: 'Hobart Hurricanes', abbr: 'HH' },
+      { name: 'Brisbane Heat', abbr: 'BH' },
+      { name: 'Adelaide Strikers', abbr: 'AS' },
+    ].filter(o => o.name !== team.name).slice(0, count);
+    return opps.map((opp, i) => makeCricketMockResult(team, opp.name, opp.abbr, i % 2 === 0, -(i + 1) * 5, 't20', i + 10));
+  }
+  if (team.league === 'cricket_int') {
+    const formats: Array<'test' | 'odi' | 't20'> = ['test', 'odi', 't20', 'test', 'odi'];
+    const opps = ['England', 'India', 'Pakistan', 'New Zealand', 'South Africa']
+      .filter(o => o !== team.name).slice(0, count);
+    return opps.map((opp, i) => makeCricketMockResult(team, opp, opp.slice(0, 3).toUpperCase(), i % 2 === 0, -(i + 1) * 7, formats[i % formats.length], i + 20));
+  }
+
   const pool      = OPPONENT_POOLS[team.league] ?? AFL_OPPONENTS;
   const now       = Date.now();
   const dayMs     = 86_400_000;
@@ -419,10 +522,11 @@ export function getRecentResults(team: Team, count = 5): GameResult[] {
           teamScore = Math.floor(r1 * 3);   // 0–2 typical draw scoreline
           oppScore  = teamScore;
         } else {
-          teamScore = Math.floor(r1 * 4);
+          // For wins, start from 1 to guarantee room for a strict winning margin
+          teamScore = isWin ? (1 + Math.floor(r1 * 3)) : Math.floor(r1 * 4);
           oppScore  = isWin
-            ? Math.max(0, teamScore - Math.floor(r2 * 2))
-            : teamScore + 1 + Math.floor(r2 * 2);
+            ? Math.max(0, teamScore - 1 - Math.floor(r2 * 2))  // always < teamScore
+            : teamScore + 1 + Math.floor(r2 * 2);              // always > teamScore
         }
       }
     }

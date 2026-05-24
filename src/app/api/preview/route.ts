@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage } from '@/types';
+import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage, LeagueTableRow } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 
@@ -166,9 +166,11 @@ async function fetchAFLPreview(
   // ── Standings ──
   let teamStanding: TeamStanding | undefined;
   let opponentStanding: TeamStanding | undefined;
+  let leagueTable: LeagueTableRow[] | undefined;
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value.ok) {
     const { standings = [] } = await standingsRes.value.json();
+    const oppSqName = SQUIGGLE_NAME[Object.keys(SQUIGGLE_NAME).find(k => SQUIGGLE_NAME[k].toLowerCase() === opponentName.toLowerCase()) ?? ''];
     for (const s of standings as any[]) {
       const entry: TeamStanding = {
         name:       s.name,
@@ -180,10 +182,18 @@ async function fetchAFLPreview(
         percentage: parseFloat(s.percentage ?? '0'),
       };
       if (s.name === sqTeam) teamStanding = entry;
-      // Match opponent by squiggle name or display name
-      const oppSqName = SQUIGGLE_NAME[Object.keys(SQUIGGLE_NAME).find(k => SQUIGGLE_NAME[k].toLowerCase() === opponentName.toLowerCase()) ?? ''];
       if (s.name === (oppSqName ?? opponentName)) opponentStanding = entry;
     }
+    // Full table for mathematical analysis (AFL: 4pts/win, 2pts/draw)
+    leagueTable = (standings as any[]).map((s: any): LeagueTableRow => ({
+      name:     String(s.name ?? ''),
+      position: Number(s.rank ?? 0),
+      played:   Number(s.played ?? 0),
+      wins:     Number(s.wins ?? 0),
+      draws:    Number(s.draws ?? 0),
+      losses:   Number(s.losses ?? 0),
+      points:   Number(s.points ?? 0),
+    })).filter(r => r.name);
   }
 
   // ── Tips for the specific upcoming game ──
@@ -259,7 +269,14 @@ async function fetchAFLPreview(
     }
   }
 
-  return { teamStanding, opponentStanding, tips, teamSquad, opponentSquad };
+  return {
+    teamStanding,
+    opponentStanding,
+    leagueTable: leagueTable && leagueTable.length > 0 ? leagueTable : undefined,
+    tips,
+    teamSquad,
+    opponentSquad,
+  };
 }
 
 // ─── NRL — ESPN (league ID: 3) ────────────────────────────────────────────────
@@ -384,12 +401,26 @@ async function fetchNRLPreview(
 
   let teamStanding: TeamStanding | undefined;
   let opponentStanding: TeamStanding | undefined;
+  let leagueTable: LeagueTableRow[] | undefined;
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
     const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
     teamStanding     = parseNRLStandings(entries, teamESPNName);
     opponentStanding = parseNRLStandings(entries, oppESPNName);
+    leagueTable = entries.map((e: any, i: number): LeagueTableRow => {
+      const s = e.stats ?? [];
+      const sv = (n: string) => Number(s.find((x: any) => x.name === n)?.value ?? 0);
+      return {
+        name:     e.team?.displayName ?? '',
+        position: i + 1,
+        played:   sv('gamesPlayed'),
+        wins:     sv('gamesWon'),
+        draws:    sv('gamesDrawn'),
+        losses:   sv('gamesLost'),
+        points:   sv('points'),
+      };
+    }).filter(r => r.name);
   }
 
   const teamNews: NewsHeadline[] = [];
@@ -417,6 +448,7 @@ async function fetchNRLPreview(
   return {
     teamStanding,
     opponentStanding,
+    leagueTable:           leagueTable && leagueTable.length > 0 ? leagueTable : undefined,
     teamNews:              teamNews.length > 0     ? teamNews     : undefined,
     opponentNews:          opponentNews.length > 0 ? opponentNews : undefined,
     teamLastLineup:        teamLastLineup.length > 0 ? teamLastLineup : undefined,
@@ -597,6 +629,26 @@ async function fetchCompetitionStage(
           if (oi >= 0) opponentStanding = parseEntry(entries[oi], oi);
         }
       }
+    }
+  }
+
+  // If the scoreboard explicitly names a knockout round, the league phase is
+  // over — ESPN's standings endpoint still returns the historical league-phase
+  // table but it is no longer meaningful for this fixture.
+  if (roundName) {
+    const rl = roundName.toLowerCase();
+    if (
+      rl.includes('semi') ||
+      rl.includes('quarter') ||
+      rl.includes('final') ||
+      rl.includes('round of') ||
+      rl.includes('play-off') ||
+      rl.includes('playoff') ||
+      rl.includes('knockout')
+    ) {
+      isGroupPhase      = false;
+      teamStanding      = undefined;
+      opponentStanding  = undefined;
     }
   }
 
@@ -851,6 +903,7 @@ async function fetchEPLPreview(
   // ── Standings ──
   let teamStanding: TeamStanding | undefined;
   let opponentStanding: TeamStanding | undefined;
+  let leagueTable: LeagueTableRow[] | undefined;
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
@@ -858,6 +911,16 @@ async function fetchEPLPreview(
     const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
+    // Full table — used server-side for mathematical clinching/elimination analysis
+    leagueTable = entries.map((e: any, i: number): LeagueTableRow => ({
+      name:     e.team?.displayName ?? '',
+      position: i + 1,
+      played:   statVal(e.stats ?? [], 'gamesPlayed'),
+      wins:     statVal(e.stats ?? [], 'wins'),
+      draws:    statVal(e.stats ?? [], 'ties'),
+      losses:   statVal(e.stats ?? [], 'losses'),
+      points:   statVal(e.stats ?? [], 'points'),
+    })).filter(r => r.name);
   }
 
   // ── Cup fixture: look up opponent division if not in PL standings ──
@@ -937,6 +1000,7 @@ async function fetchEPLPreview(
   return {
     teamStanding,
     opponentStanding,
+    leagueTable:           leagueTable && leagueTable.length > 0 ? leagueTable : undefined,
     opponentLeague,
     teamNews:              teamNews.length > 0     ? teamNews     : undefined,
     opponentNews:          opponentNews.length > 0 ? opponentNews : undefined,
@@ -1097,6 +1161,24 @@ async function fetchSRUPreview(
   const teamStanding:     TeamStanding | undefined = teamIdx >= 0 ? parseSRUStandings(entries, teamName, teamIdx)     : undefined;
   const opponentStanding: TeamStanding | undefined = oppIdx  >= 0 ? parseSRUStandings(entries, opponentName, oppIdx)  : undefined;
 
+  // Full table — Super Rugby has bonus points (max 5/game: 4 win + 1 try bonus)
+  // We record raw competition points; the computeCompetitionStatus function uses
+  // ppw=5 for SRU to be conservative (only flags clinching when mathematically certain).
+  const leagueTable: LeagueTableRow[] = entries.map((e: any, i: number): LeagueTableRow => {
+    const stats = e.stats ?? [];
+    const sv = (...names: string[]): number =>
+      Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
+    return {
+      name:     e.team?.displayName ?? e.team?.name ?? '',
+      position: i + 1,
+      played:   sv('gamesPlayed'),
+      wins:     sv('wins', 'gamesWon'),
+      draws:    sv('ties', 'gamesDrawn'),
+      losses:   sv('losses', 'gamesLost'),
+      points:   sv('points'),
+    };
+  }).filter(r => r.name);
+
   // Injury fetches — fan out in parallel
   const teamESPNId = SRU_ESPN_ID_P[teamId];
   const oppTeamKey = Object.entries(SRU_ESPN_NAME).find(([, v]) => v === opponentName)?.[0];
@@ -1113,6 +1195,7 @@ async function fetchSRUPreview(
   return {
     teamStanding,
     opponentStanding,
+    leagueTable: leagueTable.length > 0 ? leagueTable : undefined,
     teamInjuryReport:     teamInjuries.length > 0 ? teamInjuries : undefined,
     opponentInjuryReport: oppInjuries.length  > 0 ? oppInjuries  : undefined,
   };

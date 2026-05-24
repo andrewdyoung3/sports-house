@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { GameResult } from '@/types';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+import { TEAM_LOGOS } from '@/lib/team-logos';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -36,6 +37,22 @@ function unknownTeam(name: string): { color: string; abbr: string } {
     ? words.map(w => w[0]).join('').slice(0, 3).toUpperCase()
     : name.slice(0, 3).toUpperCase();
   return { color: '#6B7280', abbr };
+}
+
+function parseCricketFormat(eventType: string): 'test' | 'odi' | 't20' {
+  const t = (eventType ?? '').toLowerCase();
+  if (t.includes('twenty') || t === 't20' || t.includes('t20')) return 't20';
+  if (t.includes('one day') || t.includes('odi') || t.includes('list a')) return 'odi';
+  if (t.includes('test') || t.includes('first class') || t.includes('first-class')) return 'test';
+  return 't20';
+}
+
+function espnDateRange(daysBack: number, daysForward: number): string {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const now = new Date();
+  const start = new Date(now.getTime() - daysBack * 86400000);
+  const end   = new Date(now.getTime() + daysForward * 86400000);
+  return `${fmt(start)}-${fmt(end)}`;
 }
 
 // ─── AFL — Squiggle API ───────────────────────────────────────────────────────
@@ -294,19 +311,31 @@ async function fetchESPNResultsForSlug(
     const opp        = EPL_TEAM[oppName] ?? unknownTeam(oppName);
     const teamScore  = Number(ourComp?.score ?? 0);
     const oppScore   = Number(oppComp?.score ?? 0);
-    const isDraw     = teamScore === oppScore;
+
+    // Use ESPN's winner field — correctly handles penalty shootouts in cup knockout
+    // ties (e.g. 3-3 AET → one team is marked winner=true, the other is not).
+    // For regular-season draws, neither team has winner=true → isDraw = true.
+    const ourWinner = ourComp?.winner === true || ourComp?.winner === 'true';
+    const oppWinner = oppComp?.winner === true || oppComp?.winner === 'true';
+    const isDraw    = !ourWinner && !oppWinner;
+    // Penalty win: cup game where our team won but scores are level (e.g. 3-3 after ET)
+    const isPenWin  = ourWinner && teamScore === oppScore;
 
     return {
       opponent:        oppName,
       opponentAbbr:    opp.abbr,
       opponentLogoUrl: (oppComp?.team?.logo as string | undefined) ?? undefined,
       isHome,
-      isWin:           teamScore > oppScore,
+      isWin:           ourWinner,
       isDraw:          isDraw || undefined,
       teamScore,
       opponentScore:   oppScore,
       date:            new Date(e.date).toISOString(),
-      competition:     label === 'Premier League' ? undefined : label,
+      competition:     label === 'Premier League'
+        ? undefined
+        : isPenWin
+          ? `${label} (Pens)`
+          : label,
     };
   });
 }
@@ -743,9 +772,210 @@ async function fetchF1Results(teamId: string): Promise<GameResult[]> {
     });
 }
 
+// ─── BBL — ESPN public API (league ID: 8044) ──────────────────────────────────
+
+const BBL_RESULTS_ESPN_NAME: Record<string, string> = {
+  'bbl-scorchers':  'Perth Scorchers',
+  'bbl-sixers':     'Sydney Sixers',
+  'bbl-hurricanes': 'Hobart Hurricanes',
+  'bbl-heat':       'Brisbane Heat',
+  'bbl-strikers':   'Adelaide Strikers',
+  'bbl-stars':      'Melbourne Stars',
+  'bbl-renegades':  'Melbourne Renegades',
+  'bbl-thunder':    'Sydney Thunder',
+};
+const BBL_RESULTS_DISP_TO_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(BBL_RESULTS_ESPN_NAME).map(([id, name]) => [name, id]),
+);
+
+async function fetchBBLResults(teamId: string): Promise<GameResult[]> {
+  const teamName = BBL_RESULTS_ESPN_NAME[teamId];
+  if (!teamName) return [];
+
+  const range = espnDateRange(200, 0); // look 200 days back (full season)
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const events = ((data.events ?? []) as any[]).filter((e: any) => {
+    const state       = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state;
+    const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+    return state === 'post' && competitors.some((c: any) => c.team?.displayName === teamName);
+  });
+
+  return events
+    .map((e: any): GameResult => {
+      const comp:        any   = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const ourComp = competitors.find((c: any) => c.team?.displayName === teamName);
+      const oppComp = competitors.find((c: any) => c.team?.displayName !== teamName);
+      const isHome  = ourComp?.homeAway === 'home';
+      const isWin   = ourComp?.winner === 'true' || ourComp?.winner === true;
+      const oppName = oppComp?.team?.displayName ?? 'Unknown';
+
+      const rawScore    = (ourComp?.score ?? '') as string;
+      const rawOppScore = (oppComp?.score ?? '') as string;
+      // Extract runs for the numeric field (used for sorting / form dots)
+      const parseRuns = (s: string) => { const m = /^(\d+)/.exec(s); return m ? parseInt(m[1], 10) : 0; };
+
+      const eventType = comp.class?.eventType ?? comp.class?.name ?? 'T20';
+      const fmt = parseCricketFormat(eventType);
+      const resultSummary = (comp.status?.summary ?? '') as string;
+
+      // Build innings array from linescores if available
+      const innings: Array<{ team: string; score: string; overs?: number }> = [];
+      (ourComp?.linescores ?? []).forEach((ls: any) => {
+        innings.push({ team: teamName, score: `${ls.runs ?? 0}/${ls.wickets ?? 0}`, overs: ls.overs });
+      });
+      (oppComp?.linescores ?? []).forEach((ls: any) => {
+        innings.push({ team: oppName, score: `${ls.runs ?? 0}/${ls.wickets ?? 0}`, overs: ls.overs });
+      });
+
+      const oppId = BBL_RESULTS_DISP_TO_ID[oppName];
+      return {
+        opponent:        oppName,
+        opponentAbbr:    oppComp?.team?.abbreviation ?? unknownTeam(oppName).abbr,
+        opponentLogoUrl: TEAM_LOGOS[oppId ?? ''] ?? (oppComp?.team?.logo as string | undefined),
+        opponentId:      oppId,
+        isHome,
+        isWin,
+        isDraw:          !ourComp?.winner && !oppComp?.winner && comp.status?.type?.state === 'post',
+        teamScore:       parseRuns(rawScore),
+        opponentScore:   parseRuns(rawOppScore),
+        date:            new Date(e.date).toISOString(),
+        cricketScore:    rawScore || undefined,
+        cricketOppScore: rawOppScore || undefined,
+        cricketResult:   resultSummary || undefined,
+        cricketFormat:   fmt,
+        cricketInnings:  innings.length > 0 ? innings : undefined,
+      };
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
+// ─── International Cricket — ESPN per-team series results ────────────────────
+//
+// Uses the same series/event ID map as the fixtures route.
+// For completed matches the scoreboard returns the most recently finished event,
+// so we also try individual event IDs (same CRICKET_INT_EVENT_IDS map) to
+// surface full series history.
+
+const CRICKET_INT_RESULTS_ESPN_NAME: Record<string, string> = {
+  'int-aus': 'Australia',
+  'int-eng': 'England',
+  'int-ind': 'India',
+  'int-pak': 'Pakistan',
+  'int-nz':  'New Zealand',
+  'int-sa':  'South Africa',
+  'int-sl':  'Sri Lanka',
+  'int-wi':  'West Indies',
+  'int-ban': 'Bangladesh',
+  'int-zim': 'Zimbabwe',
+  'int-ire': 'Ireland',
+  'int-afg': 'Afghanistan',
+};
+const CRICKET_INT_RESULTS_DISP_TO_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(CRICKET_INT_RESULTS_ESPN_NAME).map(([id, name]) => [name, id]),
+);
+
+// Per-team series IDs for results (same as fixtures, including recently completed ICC events)
+const CRICKET_INT_RESULTS_TEAM_SERIES: Partial<Record<string, number[]>> = {
+  'int-aus': [
+    8604,     // ICC Men's T20 World Cup 2025/26 (completed Mar 2026)
+    24231,    // Bangladesh tour of Australia 2026
+    1530201,  // Australia tour of Zimbabwe 2026
+    24203,    // Australia tour of South Africa 2026/27
+  ],
+};
+const CRICKET_INT_RESULTS_GENERIC_SERIES = [8037, 8604];
+
+async function fetchCricketIntResults(teamId: string): Promise<GameResult[]> {
+  const teamName = CRICKET_INT_RESULTS_ESPN_NAME[teamId];
+  if (!teamName) return [];
+
+  const seriesIds = CRICKET_INT_RESULTS_TEAM_SERIES[teamId] ?? CRICKET_INT_RESULTS_GENERIC_SERIES;
+
+  // Fetch the scoreboard (last/current event) for each series
+  const allEvents: any[] = [];
+  await Promise.allSettled(
+    seriesIds.map(async (seriesId) => {
+      try {
+        const res = await fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/cricket/${seriesId}/scoreboard`,
+          { next: { revalidate: 3600 } },
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        allEvents.push(...(data.events ?? []));
+      } catch { /* skip */ }
+    }),
+  );
+
+  const completed = allEvents.filter((e: any) => {
+    const state       = e.competitions?.[0]?.status?.type?.state ?? '';
+    const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+    return state === 'post' && competitors.some((c: any) => c.team?.displayName === teamName);
+  });
+
+  return completed
+    .map((e: any): GameResult => {
+      const comp:        any   = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const ourComp = competitors.find((c: any) => c.team?.displayName === teamName);
+      const oppComp = competitors.find((c: any) => c.team?.displayName !== teamName);
+      const isHome  = ourComp?.homeAway === 'home';
+      const isWin   = ourComp?.winner === 'true' || ourComp?.winner === true;
+      const oppName = oppComp?.team?.displayName ?? 'Unknown';
+
+      const rawScore    = (ourComp?.score ?? '') as string;
+      const rawOppScore = (oppComp?.score ?? '') as string;
+      const parseRuns = (s: string) => { const m = /^(\d+)/.exec(s); return m ? parseInt(m[1], 10) : 0; };
+
+      const eventType = comp.class?.eventType ?? comp.class?.name ?? '';
+      const fmt = parseCricketFormat(eventType);
+      const resultSummary = (comp.status?.summary ?? '') as string;
+      const seriesName = e.name ?? comp.description ?? '';
+
+      const innings: Array<{ team: string; score: string; overs?: number }> = [];
+      (ourComp?.linescores ?? []).forEach((ls: any) => {
+        innings.push({ team: teamName, score: `${ls.runs ?? 0}/${ls.wickets ?? 0}`, overs: ls.overs });
+      });
+      (oppComp?.linescores ?? []).forEach((ls: any) => {
+        innings.push({ team: oppName, score: `${ls.runs ?? 0}/${ls.wickets ?? 0}`, overs: ls.overs });
+      });
+
+      const oppId = CRICKET_INT_RESULTS_DISP_TO_ID[oppName];
+      return {
+        opponent:        oppName,
+        opponentAbbr:    oppComp?.team?.abbreviation ?? unknownTeam(oppName).abbr,
+        // Prefer our internal ICC logo over ESPN's (which returns country flags for int'l cricket)
+        opponentLogoUrl: TEAM_LOGOS[oppId ?? ''] ?? (oppComp?.team?.logo as string | undefined),
+        opponentId:      oppId,
+        isHome,
+        isWin,
+        isDraw:          !ourComp?.winner && !oppComp?.winner && comp.status?.type?.state === 'post',
+        teamScore:       parseRuns(rawScore),
+        opponentScore:   parseRuns(rawOppScore),
+        date:            new Date(e.date).toISOString(),
+        cricketScore:    rawScore || undefined,
+        cricketOppScore: rawOppScore || undefined,
+        cricketResult:   resultSummary || undefined,
+        cricketFormat:   fmt,
+        cricketInnings:  innings.length > 0 ? innings : undefined,
+        competition:     seriesName || undefined,
+      };
+    })
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
@@ -780,6 +1010,8 @@ export async function GET(req: NextRequest) {
     else if (league === 'super_rugby') results = await fetchSuperRugbyResults(teamId);
     else if (league === 'rugby_int')   results = await fetchInternationalRugbyResults(teamId);
     else if (league === 'f1')          results = await fetchF1Results(teamId);
+    else if (league === 'bbl')         results = await fetchBBLResults(teamId);
+    else if (league === 'cricket_int') results = await fetchCricketIntResults(teamId);
 
     return NextResponse.json(results, { headers: CACHE_HEADERS });
   } catch (err) {

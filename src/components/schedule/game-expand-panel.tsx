@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus, Cloud } from 'lucide-react';
-import { getAIPreview, getRecentResults } from '@/lib/mock-data';
+// mock-data intentionally NOT imported — this component never shows mock results.
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
@@ -26,7 +26,7 @@ interface GameExpandPanelProps {
 }
 
 /** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
+const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
 /** Outdoor sports where weather affects play. */
 const OUTDOOR_SPORTS       = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
@@ -48,7 +48,7 @@ interface PanelData {
 }
 
 const PANEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches API Cache-Control
-const PANEL_SESSION_KEY  = 'panel-data-cache-v2';
+const PANEL_SESSION_KEY  = 'panel-data-cache-v3';
 
 /** Seed the in-memory map from sessionStorage (lazy — only parsed on first access). */
 function loadPanelSessionCache(): Map<string, PanelData> {
@@ -148,8 +148,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v30: Prohibit chronological ordering claims between past results.
-const CACHE_KEY = (gameId: string) => `ai-preview-v31:${gameId}`;
+// v33: Full league table + mathematical competition status in AI data block.
+const CACHE_KEY = (gameId: string) => `ai-preview-v33:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -827,10 +827,10 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
   const daysUntilGame = (new Date(game.date).getTime() - Date.now()) / 86_400_000;
   const aiEnabled     = REAL_DATA_LEAGUES.has(team.league) && daysUntilGame <= AI_PREVIEW_DAYS;
 
-  const [results,    setResults]    = useState<GameResult[]>(() => getRecentResults(team, 5));
-  const [oppResults, setOppResults] = useState<GameResult[]>(() =>
-    getRecentResults({ id: `opp-${game.opponentAbbr}`, league: team.league } as Team, 5),
-  );
+  // Start with empty arrays — real data arrives from /api/results.
+  // Never use mock data: if the API returns nothing, show "Data unavailable".
+  const [results,    setResults]    = useState<GameResult[]>([]);
+  const [oppResults, setOppResults] = useState<GameResult[]>([]);
   const [context,   setContext]   = useState<PreviewContext | null>(null);
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
   const [loading,   setLoading]   = useState(REAL_DATA_LEAGUES.has(team.league) || STANDINGS_ONLY_LEAGUES.has(team.league));
@@ -1018,7 +1018,6 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
 
   const wins   = results.filter(r => r.isWin).length;
   const draws  = results.filter(r => r.isDraw).length;
-  const preview = getAIPreview(team, game.opponent, results, context, game.competition);
 
   const hasStandings = context?.teamStanding || context?.opponentStanding;
   const hasNews = (context?.teamNews?.length ?? 0) > 0 || (context?.opponentNews?.length ?? 0) > 0;
@@ -1034,8 +1033,8 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
         <AILoadingCard color={team.primaryColor} />
       )}
 
-      {/* ── Match Preview ── */}
-      {!aiLoading && (
+      {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
+      {aiEnabled && !aiLoading && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
             <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
@@ -1047,9 +1046,11 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
               Refreshing with latest news…
             </p>
           )}
-          <p className="text-sm text-white/65 leading-relaxed">
-            {aiPreview?.context ?? preview.content}
-          </p>
+          {aiPreview?.context ? (
+            <p className="text-sm text-white/65 leading-relaxed">{aiPreview.context}</p>
+          ) : (
+            <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
+          )}
         </div>
       )}
 
@@ -1086,9 +1087,21 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
       )}
 
       {/* ── Form + Standings / Key Factors + Weather ── */}
-      <div className={`grid gap-5 ${weather ? 'grid-cols-3' : 'grid-cols-2'}`}>
+      {(() => {
+        const isCricket = team.league === 'cricket_int' || team.league === 'bbl';
+        const twoMonthsBefore = new Date(new Date(game.date).getTime() - 60 * 24 * 60 * 60 * 1000);
+        const formResults    = isCricket ? results.filter(r => new Date(r.date) >= twoMonthsBefore)    : results;
+        const formOppResults = isCricket ? oppResults.filter(r => new Date(r.date) >= twoMonthsBefore) : oppResults;
+        // For cricket: hide form section once loaded if no games fall within 2 months of the fixture
+        const showForm = !isCricket || loading || formResults.length > 0 || formOppResults.length > 0;
+        const cols = showForm
+          ? (weather ? 'grid-cols-3' : 'grid-cols-2')
+          : (weather ? 'grid-cols-2' : 'grid-cols-1');
+        return (
+      <div className={`grid gap-5 ${cols}`}>
 
         {/* Recent form — both teams */}
+        {showForm && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
             <Trophy className="h-3 w-3" />
@@ -1107,7 +1120,7 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
                   <LogoThumb src={TEAM_LOGOS[team.id]} abbr={team.abbreviation} />
                   <span className="text-[12px] text-white/70 font-semibold truncate">{team.shortName}</span>
                 </div>
-                <CompactForm results={results} />
+                <CompactForm results={formResults} />
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1116,11 +1129,12 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
                     {game.opponent}
                   </span>
                 </div>
-                <CompactForm results={oppResults} />
+                <CompactForm results={formOppResults} />
               </div>
             </div>
           )}
         </div>
+        )}
 
         {/* Standings / Cup Stage / Key Factors */}
         <div>
@@ -1213,27 +1227,31 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
                 <TrendingUp className="h-3 w-3" />
                 Key Factors
               </p>
-              <ul className="space-y-1.5">
-                {(aiPreview?.keyInsights ?? preview.keyInsights).map((ins, i) => (
-                  <li key={i} className="text-[11px] text-white/55 flex items-start gap-1.5 leading-tight">
-                    <span
-                      className="w-1.5 h-1.5 rounded-full mt-1 shrink-0"
-                      style={{ backgroundColor: team.primaryColor }}
-                    />
-                    {ins}
-                  </li>
-                ))}
-              </ul>
+              {aiPreview?.keyInsights && aiPreview.keyInsights.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {aiPreview.keyInsights.map((ins, i) => (
+                    <li key={i} className="text-[11px] text-white/55 flex items-start gap-1.5 leading-tight">
+                      <span
+                        className="w-1.5 h-1.5 rounded-full mt-1 shrink-0"
+                        style={{ backgroundColor: team.primaryColor }}
+                      />
+                      {ins}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-white/25 italic">Data unavailable</p>
+              )}
             </>
           )}
         </div>
 
-        {/* Kickoff Forecast */}
+        {/* Local Weather Forecast */}
         {weather && (
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
               <Cloud className="h-3 w-3" />
-              Kickoff Forecast
+              Local Weather Forecast
             </p>
             <div className="space-y-1.5">
               <p className="text-[13px] font-bold text-white/80 leading-none">
@@ -1252,6 +1270,8 @@ export function GameExpandPanel({ game, className, compact = false, onStandingsU
           </div>
         )}
       </div>
+        );
+      })()}
 
       {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}
       {!compact && !aiLoading && aiPreview && (

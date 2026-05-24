@@ -17,7 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
-import type { PreviewContext, GameResult, AIPreview, WeatherData } from '@/types';
+import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
@@ -52,6 +52,224 @@ const LEAGUE_LABELS: Record<string, string> = {
   rugby_int:   'International Rugby Union',
   f1:          'Formula 1',
 };
+
+/** Total regular-season rounds for each league — used to compute season phase. */
+const LEAGUE_TOTAL_ROUNDS: Record<string, number> = {
+  nrl:         27,
+  afl:         23,
+  epl:         38,
+  super_rugby: 14,
+};
+
+// ─── Competition rules ────────────────────────────────────────────────────────
+//
+// Each entry documents how competition points are earned and what the key
+// thresholds are (title, finals, relegation). This is the single source of
+// truth used for mathematical clinching/elimination analysis.
+
+/**
+ * Maximum points a team can earn per game in each league.
+ *
+ * For Super Rugby Pacific we use 5 (4 for a win + 1 try bonus) rather than 4
+ * so that we only flag clinching when it's certain even with bonus points.
+ * AFL uses 4 (bonus points don't exist in AFL).
+ * NRL uses 2 (win), 1 (draw), 0 (loss) — no bonus points.
+ * EPL uses 3 (win), 1 (draw), 0 (loss) — no bonus points.
+ */
+const MAX_PTS_PER_GAME: Record<string, number> = {
+  epl:         3,  // Win=3, Draw=1, Loss=0
+  nrl:         2,  // Win=2, Draw=1, Loss=0
+  afl:         4,  // Win=4, Draw=2, Loss=0 (percentage breaks ties)
+  super_rugby: 5,  // Win=4, Draw=2, Loss=0 + try bonus (+1) + losing bonus (+1)
+                   // Conservative: assume opponents can earn max 5/game
+};
+
+/** Positions that earn finals / playoff qualification. */
+const FINALS_SPOTS: Record<string, number> = {
+  nrl:         8,
+  afl:         8,
+  super_rugby: 8,
+};
+
+/** Position at which EPL relegation begins (inclusive — 18th, 19th, 20th go down). */
+const EPL_RELEGATION_FROM = 18;
+
+/** EPL: top-N positions earn Champions League group-stage entry next season. */
+const EPL_UCL_SPOTS = 4;
+
+/**
+ * Derives mathematically confirmed competition outcomes from the full standings.
+ * Returns plain-English fact strings injected verbatim into the Claude data block.
+ *
+ * Conservative — only flags certainties:
+ * • A title is "clinched" only when even max points for 2nd can't reach 1st.
+ * • Relegation is "confirmed" only when even max points can't reach safety.
+ * • Finals are "locked" only when 9th can't mathematically overtake 8th.
+ */
+function computeCompetitionStatus(
+  league: string,
+  table: LeagueTableRow[],
+): string[] {
+  const maxPpg = MAX_PTS_PER_GAME[league];
+  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
+  if (!maxPpg || !totalRounds || table.length === 0) return [];
+
+  const sorted = [...table].sort((a, b) => b.points - a.points);
+  const notes: string[] = [];
+  const rem = (t: LeagueTableRow) => Math.max(0, totalRounds - t.played);
+
+  // ── Title / minor premiership ─────────────────────────────────────────────
+  if (sorted.length >= 2) {
+    const leader = sorted[0];
+    const second = sorted[1];
+    // Even if leader loses all remaining AND second wins all remaining with max pts:
+    if (leader.points > second.points + rem(second) * maxPpg) {
+      const titleLabel: Record<string, string> = {
+        epl:         'Premier League title',
+        nrl:         'NRL minor premiership (1st on ladder)',
+        afl:         'AFL minor premiership (1st on ladder)',
+        super_rugby: 'Super Rugby Pacific minor premiership',
+      };
+      notes.push(
+        `TITLE/MINOR PREMIERSHIP CLINCHED: ${leader.name} have mathematically won the ${titleLabel[league] ?? 'league title'}. ` +
+        `Even if ${leader.name} lose every remaining game and ${second.name} win every remaining game with maximum available points, ` +
+        `${second.name} cannot reach ${leader.name}'s current tally of ${leader.points} points.`
+      );
+    }
+  }
+
+  // ── EPL: Champions League spots ───────────────────────────────────────────
+  if (league === 'epl' && sorted.length >= EPL_UCL_SPOTS + 1) {
+    const fifth = sorted[EPL_UCL_SPOTS]; // 5th place
+    const maxFifthPts = fifth.points + rem(fifth) * maxPpg;
+    const clinched = sorted.slice(0, EPL_UCL_SPOTS).filter(t => t.points > maxFifthPts);
+    if (clinched.length === EPL_UCL_SPOTS) {
+      notes.push(
+        `ALL FOUR CHAMPIONS LEAGUE SPOTS CLINCHED: The top four are mathematically confirmed. ` +
+        `Fifth place (${fifth.name}, ${fifth.points} pts, max achievable: ${maxFifthPts} pts) ` +
+        `cannot break into the top four regardless of remaining results.`
+      );
+    } else if (clinched.length > 0) {
+      const names = clinched.map(t => t.name).join(', ');
+      notes.push(
+        `CHAMPIONS LEAGUE SPOT CLINCHED: ${names} have mathematically secured top-four finishes — ` +
+        `fifth place cannot reach their current points totals.`
+      );
+    }
+  }
+
+  // ── EPL: relegation ───────────────────────────────────────────────────────
+  if (league === 'epl' && sorted.length >= EPL_RELEGATION_FROM) {
+    const seventeenth = sorted[EPL_RELEGATION_FROM - 2]; // 17th place (safe)
+    const relegated: string[] = [];
+    for (const team of sorted.slice(EPL_RELEGATION_FROM - 1)) { // 18th+
+      if (team.points + rem(team) * maxPpg < seventeenth.points) {
+        relegated.push(team.name);
+      }
+    }
+    if (relegated.length > 0) {
+      notes.push(
+        `RELEGATED: ${relegated.join(', ')} are mathematically relegated — ` +
+        `they cannot reach the safety line (17th place, ${seventeenth.name}, ${seventeenth.points} pts) ` +
+        `even by winning every remaining game.`
+      );
+    }
+  }
+
+  // ── NRL / AFL / Super Rugby: finals clinched / eliminated ─────────────────
+  const finalsSpots = FINALS_SPOTS[league];
+  if (finalsSpots && sorted.length > finalsSpots) {
+    const eighth = sorted[finalsSpots - 1];
+    const ninth  = sorted[finalsSpots];
+
+    // Finals locked: 9th can't reach 8th
+    if (eighth.points > ninth.points + rem(ninth) * maxPpg) {
+      const finalsLabel: Record<string, string> = {
+        nrl:         'NRL finals series',
+        afl:         'AFL finals series',
+        super_rugby: 'Super Rugby Pacific finals',
+      };
+      notes.push(
+        `FINALS SPOTS LOCKED: All eight finalists are mathematically confirmed. ` +
+        `${ninth.name} in ninth (${ninth.points} pts, max achievable: ${ninth.points + rem(ninth) * maxPpg} pts) ` +
+        `cannot overtake ${eighth.name} in eighth (${eighth.points} pts) to reach the ${finalsLabel[league] ?? 'finals'}.`
+      );
+    }
+
+    // Individually eliminated teams outside the top 8
+    const eliminated = sorted.slice(finalsSpots).filter(t =>
+      t.points + rem(t) * maxPpg < eighth.points,
+    );
+    if (eliminated.length > 0 && eighth.points <= ninth.points + rem(ninth) * maxPpg) {
+      // Finals not fully locked but some teams are out — report individually
+      const names = eliminated.map(t => t.name).join(', ');
+      notes.push(
+        `FINALS ELIMINATED: ${names} cannot mathematically reach the top eight — ` +
+        `even winning every remaining game they cannot reach ${eighth.name}'s current ${eighth.points} points.`
+      );
+    }
+  }
+
+  return notes;
+}
+
+/**
+ * Builds a condensed league table string for the Claude data block.
+ * Shows the most strategically relevant rows: title/top-4 contenders, relegation
+ * zone, and both fixture teams if not already in those ranges.
+ */
+function buildTableSection(
+  league: string,
+  table: LeagueTableRow[],
+  teamName: string,
+  opponentName: string,
+  totalRounds: number,
+): string[] {
+  if (table.length === 0) return [];
+  const sorted = [...table].sort((a, b) => a.position - b.position);
+  const lines: string[] = [];
+
+  // Determine which rows to always show
+  const alwaysShow = new Set<number>();
+
+  if (league === 'epl') {
+    // Top 5 (title + CL spots) and bottom 4 (relegation)
+    sorted.slice(0, 5).forEach(t => alwaysShow.add(t.position));
+    sorted.slice(-4).forEach(t => alwaysShow.add(t.position));
+  } else if (league === 'nrl' || league === 'afl') {
+    // Top 9 (finals bubble) and bottom 2
+    sorted.slice(0, 9).forEach(t => alwaysShow.add(t.position));
+    sorted.slice(-2).forEach(t => alwaysShow.add(t.position));
+  } else {
+    // Super Rugby and others: show all (≤12 teams)
+    sorted.forEach(t => alwaysShow.add(t.position));
+  }
+
+  // Always include both fixture teams
+  sorted.filter(t => t.name === teamName || t.name === opponentName)
+    .forEach(t => alwaysShow.add(t.position));
+
+  const rowLabel = (league === 'epl' || league === 'nrl') ? 'pts' : 'pts';
+  lines.push(`LEAGUE TABLE (${totalRounds} rounds total — ${totalRounds} games each):`);
+
+  let lastPos = 0;
+  for (const t of sorted) {
+    if (!alwaysShow.has(t.position)) continue;
+    if (lastPos > 0 && t.position > lastPos + 1) {
+      lines.push('  ...');
+    }
+    const remaining = Math.max(0, totalRounds - t.played);
+    const marker = (t.name === teamName || t.name === opponentName) ? ' ◄' : '';
+    lines.push(
+      `  ${String(t.position).padStart(2)}. ${t.name.padEnd(28)} ` +
+      `${t.played}P  ${t.wins}W ${t.draws}D ${t.losses}L  ` +
+      `${t.points} ${rowLabel}  (${remaining} remaining)${marker}`,
+    );
+    lastPos = t.position;
+  }
+
+  return lines;
+}
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -109,23 +327,48 @@ SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring
 • APPLY THIS ALWAYS: Before using words like "heavy", "comprehensive", "comfortable", "thrashing", "outscored heavily" — calculate the actual margin (not the raw score) and compare it to the sport's scale above. Never call a sub-10-point NRL defeat "heavy". Never call a sub-30-point AFL defeat "heavy".
 
 CALIBRATING HOW MUCH WEIGHT TO GIVE THE DATA:
-• The CURRENT LADDER/TABLE data includes a "played" count. Use it to judge how much you can read into the standings.
-• Early season (≤4 games played): Apply lower weight to the standings. You may note seasonal context when it is genuinely relevant — but only once, briefly, and as a natural part of the analysis rather than a boilerplate opener. The problem to avoid is repetitive, formulaic early-season hedging that reads the same way every preview: "X rounds in, neither position tells you much", "too soon to read into the ladder", "it's still early days". If you have already noted the stage of the season, do not repeat it in another section. Prefer spending the analytical space on what IS useful regardless of how many games have been played: the coaching setup, the structural matchup, player availability, tactical disparity. The exception: genuinely striking early patterns (three straight wins by big margins, three straight heavy losses) are worth naming directly — state the pattern, let it speak for itself.
+• The data block includes a SEASON PHASE field (e.g. "Round 4 of 27 — first third"). Use it to calibrate how strongly you can speak about trajectory, finals, or finishing places.
 • Short form sample (≤3 results): Only discuss form momentum if there is a clear, specific pattern worth noting. If there isn't, omit it entirely — don't explain the absence, just move on.
-• Exception — genuinely striking early patterns ARE worth calling out: three straight wins by big margins, three straight heavy losses, a dominant set-piece in every game. Call it out directly and let the result speak for itself — don't qualify it to death.
-• Mid-season (5–15 games): patterns are becoming real. Discuss trends with confidence.
-• Late season (16+ games): form, ladder position, and momentum carry full weight.
+• Genuinely striking early patterns ARE worth calling out: three straight wins by big margins, three straight heavy losses. State the pattern directly; don't qualify it to death.
 • Uneven played counts: if one team has played significantly more games, mention it if it affects how you read the relative form.
-
-SEASONAL DYNAMICS — how much the table means at different points:
-• Different competitions settle at different rates. Use the "played" count to calibrate how much trust to put in the standings:
-  - AFL/NRL (22–27 rounds): The first four rounds are volatile — use ladder positions for structural context but not for projections. Things start to mean something around Round 8; genuine finals contenders are separating by Rounds 14–18; by Round 19+ every game matters.
-  - EPL (38 rounds): The first five rounds are chaotic — newly promoted sides spike, strong sides rotate. The table starts reflecting real quality around Round 6–14; the mid-table and top-four shape is fairly reliable by Round 15–25; by Round 26+ the title, top-four, and relegation groups are largely sorted.
-  - Super Rugby Pacific (14 regular-season rounds + finals): The short format means things matter faster — by Round 6 the table is already meaningful; by Round 10 finals spots are largely locked in.
-  - Six Nations / Rugby Championship (5–6 rounds): Every single game from Round 1 matters. These are short tournaments — no "too early" needed.
 • Weight the quality of opposition. Beating a bottom-half side in Round 2 tells you much less than beating a top-four rival.
 • If a team's form tells a different story from their ladder position — strong play but mid-table, or flat form but high up — point that out. That tension is usually more interesting than the number itself.
-• Save trajectory talk (finals race, relegation, title challenge) for mid-season and later. Don't project it from five games or fewer in a long competition.
+
+COMPETITION STATUS — non-negotiable mathematical facts:
+When the data block contains a "COMPETITION STATUS" section, those facts are mathematically certain — computed from the live points table and games remaining. They OVERRIDE any framing you might otherwise apply based on the seasonal-dynamics rules below. Do NOT soften, hedge, or contradict them.
+
+• TITLE/MINOR PREMIERSHIP CLINCHED: The competition is already decided. Do NOT write as if the title is still winnable — it is not. Do NOT say "Arsenal know the title is within reach", "anything other than a win leaves the door open", "this result matters for the title race", or any similar phrase. The champion has won. Pivot the narrative entirely to what IS now at stake in this specific fixture: chasing a record points tally, extending an unbeaten run, a final league appearance, cup preparation, individual accolades (Golden Boot, Player of the Season), or what the opponent is still fighting for. The champion's narrative is consolidation and record-setting — not pursuit.
+
+• CHAMPIONS LEAGUE / TOP-4 / FINALS SPOT CLINCHED: The achievement is secured. Focus on what still differentiates within the locked-in band — seeding advantages, goal difference, head-to-head records, or the opponent's remaining stakes.
+
+• RELEGATED / FINALS ELIMINATED: The outcome is final regardless of this result. Frame the fixture around the opponent's stakes (they likely still have something to play for), dignity, damage limitation, avoiding a worst-ever statistical record, or preparation for next season.
+
+• FULL LEAGUE TABLE in data block: Use it to accurately assess the points gaps between teams and games remaining. A team 15 points clear with 2 games left is in a categorically different position to a team 15 points clear with 10 games left. Always check the "remaining" column.
+
+SEASONAL DYNAMICS — what trajectory language is permitted at each stage:
+The SEASON PHASE line in the data block tells you exactly where we are. Apply the rules for the relevant third. These rules cover all standard league competitions (AFL, NRL, EPL, Super Rugby Pacific).
+
+FIRST THIRD of the season:
+— The table is too unsettled for projections about where teams will finish. FORBIDDEN language: "a loss here puts pressure on their finals calculations", "fighting for a top-eight spot", "in a relegation battle", "needs to string wins together to stay in contention", any phrasing that treats current position as predictive of final placement.
+— EXCEPTION — genuine outliers only: a team with a substantial points lead or deficit relative to the entire field may be named with cautious language. For positive outliers: "setting themselves up for a strong finals campaign", "among the early frontrunners". For struggling outliers: "already starting to fall away from the pack". Reserve this ONLY for teams where the points gap is large enough to be meaningful — one or two positions of difference is not an outlier.
+— Points totals matter as much as ladder position. A team on top with 8 points when second has 6 is not a meaningful gap. A team on top with 14 points when the field averages 4–6 is a genuine outlier.
+— Spend the analytical space on what holds up regardless of season stage: structural matchup, coaching system, player availability, tactical disparity.
+— If you note the stage of the season, do it once, briefly, as natural context — never as a formulaic opener or repeated hedge.
+
+SECOND THIRD of the season:
+— The table is starting to take shape. Measured trajectory talk is appropriate. You may note that a team is "building a genuine case for the finals", "in the mix for the top eight", "drifting toward the bottom of the table" — but only when grounded in both their position AND the points gaps around them.
+— Points gaps are critical: if three points separate positions 5th through 10th, the table is compressed and language should be tentative ("in contention, but the field is tightly bunched"). If the gap between 8th and 9th is significant, name it.
+— Do not call any result "season-defining" or "must-win" unless the points mathematics genuinely support it (e.g. a team already well behind the pack).
+
+FINAL THIRD of the season:
+— The table is largely crystallising. Strong, specific trajectory statements are appropriate. You may say a team "faces a genuine relegation fight", "is in contention for the final finals spot", "needs results from their remaining fixtures to reach the finals".
+— Tie points totals, games remaining, and head-to-head records (if available) to ground these statements. A team five points behind the cutoff with six games remaining is in a different position to one five points behind with two games left.
+— Be precise about the actual scenario rather than vague urgency. "Three wins from their last four would likely get them home" is better than "desperate for points".
+
+ACROSS ALL THIRDS — the underlying principle:
+— Never rely on ladder position alone. Always consider: the points total, the points gap to the relevant threshold (finals cutoff, relegation zone, top four, etc.), and games remaining. A team in 9th with the same points as 5th needs different language to a team in 9th ten points adrift.
+— Short competition formats (Six Nations, Rugby Championship — 5–6 rounds total): every game is meaningful from Round 1. The thirds framework does not apply — treat every fixture as consequential from the outset.
+— Super Rugby Pacific (14 rounds): the shorter format compresses the timeline. Apply thirds logic but with tighter thresholds — patterns become meaningful faster.
 
 HISTORICAL ACCURACY — year-specific claims are the risk, not historical context:
 • You may draw on your knowledge of genuine rivalries, historical patterns, and competition history where it adds analytical value. A Brisbane–Sydney AFL fixture, a Liverpool–Manchester United league match, or an All Blacks–Springboks Test all carry genuine historical weight — use it.
@@ -144,12 +387,12 @@ COMPETITION CONTEXT — critical:
 • TWO-LEGGED KNOCKOUT TIES: UEFA knockout rounds (Champions League, Europa League, Conference League) and most domestic cups are played over two legs on aggregate. A single leg is not a standalone elimination — both teams can progress from the first leg regardless of its result. Do not describe a first-leg draw or loss as existential ("need a result to keep hopes alive") unless the aggregate position actually eliminates a path to progress. State the tie situation plainly: "level on aggregate after the first leg" or "facing a deficit going into the second leg". If you do not have first-leg score data, acknowledge the two-legged format without fabricating the aggregate position.
 
 • UEFA CHAMPIONS LEAGUE STRUCTURE (2024–25 format onwards) — know this precisely:
-  LEAGUE PHASE: 36 clubs in a single table (no groups). Each club plays 8 matches against 8 different opponents drawn from four seeded pots (two opponents per pot). All 36 teams share one table ranked by points.
-  — 1st–8th: qualify directly for the Round of 16.
-  — 9th–24th: enter two-legged knockout play-offs. Teams finishing 9th–16th are seeded and play the second leg at home against teams finishing 17th–24th. Winners advance to the Round of 16.
-  — 25th–36th: eliminated entirely. They do NOT drop into the Europa League (unlike the old group-stage format).
-  KNOCKOUT PHASE: Round of 16, quarter-finals, and semi-finals are all two-legged ties. The final is a single match at a neutral venue. A higher league phase finish means better seeding and an easier potential path through the bracket.
-  KEY IMPLICATION: a team finishing 9th has a meaningfully harder road than one finishing 8th — one gets a bye to the last 16, the other must win an extra two-legged tie first.
+  LEAGUE PHASE ("Swiss Model"): 36 clubs (increased from 32) in a single table — no groups. Each club plays 8 matches against 8 different opponents drawn from four seeded pots (2 opponents per pot), 4 home and 4 away. Standard points (3W/1D).
+  — 1st–8th: qualify directly for the Round of 16 (seeded; play second leg at home).
+  — 9th–24th: enter two-legged knockout play-offs. Teams 9th–16th are seeded and host the second leg against teams 17th–24th. Winners advance to the Round of 16.
+  — 25th–36th: eliminated entirely — they do NOT drop into the Europa League (old format dropped 3rd-place finishers into UEL; that no longer applies).
+  KNOCKOUT PHASE: Play-offs (if applicable), Round of 16, quarter-finals, and semi-finals are all two-legged ties (home & away; no away goals rule — level on aggregate goes to extra time then penalties). The final is a single match at a neutral venue (2025/26 final: 30 May 2026, Puskás Aréna, Budapest).
+  KEY IMPLICATION: a team finishing 9th has a meaningfully harder road than one finishing 8th — one gets a bye to the Round of 16, the other must win an extra two-legged tie first.
 
 • PHASE TRANSITION — ABSOLUTE RULE, NO EXCEPTIONS: Once the knockout phase begins, the league phase does not exist for the purpose of this preview. This means:
   — DO NOT mention where either team finished in the league phase (not "9th", not "16th", not "top eight", nothing).
@@ -162,6 +405,8 @@ COMPETITION CONTEXT — critical:
 • KNOCKOUT STAKES — state what progression actually means: For a second-leg knockout tie, the "context" section should cover: (1) the aggregate position and what result is needed to progress, (2) who the winner is likely to face in the next round if that information is available or reasonably known. This forward-looking context is analytically useful — a team playing a quarter-final against a weakened opponent faces a different strategic situation than one facing the tournament favourite.
 
 COACHING ANALYSIS — when HEAD COACHES are provided:
+• MANDATORY: When HEAD COACHES are provided in the data block, both coaches must be named by surname in the tacticalBattle field. Frame the tactical contest as a clash between two specific systems — "Postecoglou's high press against Dyche's compact mid-block", "Bellamy's defensive structure against Griffin's ball-in-hand attack". The name must connect to the system; do not drop names without analytical content.
+• Sport-specific title conventions: In football/soccer use "manager". In AFL/NRL/rugby use "coach". For F1 the team principal is the relevant figure (covered in F1 section separately). Use the appropriate title naturally in the text — do not over-label.
 • Use your knowledge of each coach's system and tendencies to inform the tactical analysis. This is especially important in football/soccer, where a manager's philosophy directly shapes how their side sets up — press triggers, defensive shape, width, set-piece approach, squad rotation habits.
 • Examples of the kind of coach-specific insight that is analytically useful:
   - Sean Dyche (Everton): compact mid-block, physicality in duels, set-piece threat, direct in transition — this defines how Everton defend and how they create. A technically gifted opponent may exploit their lack of press variation.
@@ -170,7 +415,7 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
   - Mikel Arteta (Arsenal): structured build-up, inverted wide players, high pressing triggers, set-piece investment — opponents with direct runners who bypass the press can expose the high line.
   - Arne Slot (Liverpool): similar positional principles to Klopp but more structured transitions, press is more organised and less frantic — still expects high line and ball-dominant play.
 • For AFL/NRL/rugby coaches, apply the same principle: identify their structural tendencies (e.g. defensive schemes, kick-to-run balance, risk appetite in attack) where these are well-established and relevant.
-• Do NOT invent coaching tendencies you are not confident about. If you don't have reliable knowledge of a coach's system, refer to the team's play style based on results data instead.
+• Do NOT invent coaching tendencies you are not confident about. If you don't have reliable knowledge of a coach's system, refer to the team's play style based on results data instead, but still name the coach by surname.
 • Keep coach references analytical, not biographical. "Dyche's side will be compact and physical from the first whistle" is useful. "Dyche, who was appointed in January 2023..." is not.
 
 LINEUP AND AVAILABILITY ANALYSIS:
@@ -214,7 +459,7 @@ F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORM
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
   "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
-  "tacticalBattle": "2–3 sentences. The specific structural contest where this fixture will be decided — name the actual system clash or matchup, not a generic description. Use sport-specific terminology. If the coaching data reveals a structural tension (e.g. a high press vs a deep defensive block), lead with that.",
+  "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically — name the actual system clash.",
   "playerSpotlight": "REQUIRED — always populate this field, never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: lead with the single most analytically compelling player's full name, then 1–2 sentences connecting them to concrete gamestate factors. Draw on training knowledge of current squads when no roster data is provided.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
   "keyInsights": [
@@ -383,6 +628,22 @@ function buildDataBlock(
     lines.push(`OPPONENT LEAGUE: ${opponentName} are currently playing in the ${context.opponentLeague} (NOT the Premier League). Factor this division gap into the analysis — do not describe them as a PL side or in a PL relegation battle.`);
     lines.push('');
   }
+  // Season phase — only for primary-league fixtures with a known total-rounds count
+  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
+  const played = context.teamStanding?.played ?? context.opponentStanding?.played;
+  if (!isOffLeague && totalRounds && played !== undefined) {
+    const third = Math.ceil(totalRounds / 3);
+    const phase = played <= third
+      ? 'first third — early season'
+      : played <= third * 2
+        ? 'second third — mid-season'
+        : 'final third — late season';
+    const roundsRemaining = totalRounds - played;
+    lines.push(
+      `SEASON PHASE: Round ${played} of ${totalRounds} — ` +
+      `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} remaining (${phase})`
+    );
+  }
   lines.push(`SPORT: ${sportCtx}`);
   if (context.teamManager || context.opponentManager) {
     const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
@@ -413,25 +674,41 @@ function buildDataBlock(
   // model to misuse it. Exception: F1 driver championship standing is always relevant.
   const isKnockoutTie = !!cs && !cs.isGroupPhase;
   const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie;
-  if (!suppressStandings && (context.teamStanding || context.opponentStanding)) {
+  if (!suppressStandings) {
     const isF1Standing = league === 'f1';
-    const standingsHeading = isF1Standing
-      ? 'DRIVERS\' CHAMPIONSHIP STANDING:'
-      : 'CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):';
-    lines.push(standingsHeading);
-    // For F1, only show the driver's own standing (no "opponent" standing — it's a circuit)
-    const standingPairs: [string, typeof context.teamStanding][] = isF1Standing
-      ? [[teamName, context.teamStanding]]
-      : [
-          [teamName, context.teamStanding],
-          [opponentName, context.opponentStanding],
-        ];
-    for (const [name, s] of standingPairs) {
-      if (!s) continue;
-      if (isF1Standing) {
+
+    if (isF1Standing) {
+      // F1: show driver championship standing only
+      if (context.teamStanding) {
+        lines.push('DRIVERS\' CHAMPIONSHIP STANDING:');
+        const s = context.teamStanding;
         const constructor = s.constructorName ? ` (${s.constructorName})` : '';
-        lines.push(`  ${name}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
-      } else {
+        lines.push(`  ${teamName}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
+        lines.push('');
+      }
+    } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
+      // Full table with mathematical status analysis
+      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+      const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
+
+      if (tableLines.length > 0) {
+        lines.push(...tableLines);
+        lines.push('');
+      }
+
+      if (statusNotes.length > 0) {
+        lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
+        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+        lines.push('');
+      }
+    } else if (context.teamStanding || context.opponentStanding) {
+      // Fallback: just the two teams' rows (no full table available)
+      lines.push('CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):');
+      for (const [name, s] of [
+        [teamName, context.teamStanding],
+        [opponentName, context.opponentStanding],
+      ] as [string, typeof context.teamStanding][]) {
+        if (!s) continue;
         const draws = s.draws > 0 ? ` ${s.draws}D` : '';
         const record = `${s.wins}W${draws} ${s.losses}L`;
         const extra = s.points !== undefined
@@ -441,8 +718,8 @@ function buildDataBlock(
             : '';
         lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
       }
+      lines.push('');
     }
-    lines.push('');
   }
 
   // Recent form — spans all competitions
@@ -641,7 +918,7 @@ async function callClaude(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callClaude(prompt, compact, maxTokensOverride),
-  ['ai-preview-v31'],
+  ['ai-preview-v32'],
   { revalidate: 21600 }, // 6 hours
 );
 

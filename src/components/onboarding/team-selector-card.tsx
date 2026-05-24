@@ -3,7 +3,7 @@
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TeamBadge } from '@/components/ui/team-badge';
-import { TEAM_LOGOS } from '@/lib/team-logos';
+import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { F1_CONSTRUCTOR_LOGOS, isF1ConstructorTeam } from '@/lib/f1-data';
 import type { Team } from '@/types';
 
@@ -14,7 +14,8 @@ interface TeamSelectorCardProps {
 }
 
 export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardProps) {
-  const logoUrl = TEAM_LOGOS[team.id];
+  const logoUrl    = TEAM_LOGOS[team.id];
+  const logoFilter = TEAM_LOGO_FILTERS[team.id];
 
   return (
     <button
@@ -51,6 +52,7 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
         primaryColor={team.primaryColor}
         size={72}
         className="rounded-2xl"
+        logoFilter={logoFilter}
         overlayLogoUrl={
           team.league === 'f1' && !isF1ConstructorTeam(team.id)
             ? F1_CONSTRUCTOR_LOGOS[team.division ?? '']
@@ -72,6 +74,8 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
         )}>
           {team.league === 'f1'
             ? (isF1ConstructorTeam(team.id) ? team.country : (team.division ?? team.city))
+            : team.league === 'cricket_int'
+            ? team.country
             : team.city
           }
         </p>

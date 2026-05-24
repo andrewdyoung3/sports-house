@@ -29,6 +29,7 @@
 @layer base {
   :root {
     color-scheme: dark;
+    --bg-left-color: rgba(96, 26, 44, 0.44);
   }
 
   html {
@@ -42,17 +43,19 @@
     min-height: 100vh;
     background-color: #080809;
     /*
-     * Minimal ambient atmosphere — just enough depth to feed backdrop-filter
-     * without competing with team-color neon accents on the cards.
-     * Opacities kept deliberately low so the obsidian base dominates.
+     * Volumetric light wash — image_2 palette, heavily desaturated and dimmed.
+     * Left: dark obsidian-rose.  Right: dark charcoal-plum.
+     * Opacities kept low enough that white text and glass cards stay legible.
      */
     background-image:
-      /* Top crown — deep indigo halo */
-      radial-gradient(ellipse 120% 55% at 50% -15%, rgba(99, 40, 210, 0.22) 0%, transparent 60%),
-      /* Bottom-right — faint violet warmth */
-      radial-gradient(ellipse 65% 55% at 108% 100%, rgba(160, 32, 200, 0.10) 0%, transparent 60%),
-      /* Left-centre — cool blue edge */
-      radial-gradient(ellipse 45% 55% at -5% 58%,  rgba(30, 80, 220, 0.08)  0%, transparent 60%);
+      /* Right — dark charcoal-plum mass */
+      radial-gradient(ellipse 75% 90% at 108% 58%, rgba(44, 13, 68, 0.58) 0%, transparent 65%),
+      /* Left — dark obsidian-rose mass (adaptive via --bg-left-color) */
+      radial-gradient(ellipse 68% 85% at -8%  54%, var(--bg-left-color) 0%, transparent 62%),
+      /* Top centre — faint plum crown */
+      radial-gradient(ellipse 90% 40% at 50% -6%,  rgba(62, 18, 82, 0.30) 0%, transparent 55%),
+      /* Bottom floor — whisper of dark rose */
+      radial-gradient(ellipse 80% 32% at 50% 108%, rgba(68, 18, 44, 0.24) 0%, transparent 55%);
   }
 
   /* Slim obsidian scrollbar */
@@ -80,25 +83,26 @@
     background: rgba(255, 255, 255, 0.055);
     backdrop-filter: blur(28px) saturate(200%);
     -webkit-backdrop-filter: blur(28px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    /* Neutral white shifted toward cool desaturated amethyst */
+    border: 1px solid rgba(105, 65, 165, 0.13);
   }
 
   .glass-strong {
     background: rgba(255, 255, 255, 0.09);
     backdrop-filter: blur(36px) saturate(220%);
     -webkit-backdrop-filter: blur(36px) saturate(220%);
-    border: 1px solid rgba(255, 255, 255, 0.13);
+    border: 1px solid rgba(108, 68, 170, 0.18);
   }
 
   .glass-hero {
     background: rgba(255, 255, 255, 0.065);
     backdrop-filter: blur(52px) saturate(220%);
     -webkit-backdrop-filter: blur(52px) saturate(220%);
-    border: 1px solid rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(112, 62, 175, 0.20);
     box-shadow:
-      0 0  0  1px rgba(255, 255, 255, 0.04),
+      0 0  0  1px rgba(95, 52, 160, 0.07),
       0 24px 80px rgba(0, 0, 0, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.13),
+      inset 0 1px 0 rgba(255, 255, 255, 0.11),
       inset 0 -1px 0 rgba(0, 0, 0, 0.12);
   }
 

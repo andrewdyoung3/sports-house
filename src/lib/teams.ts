@@ -14,6 +14,8 @@ export const LEAGUES: League[] = [
   { id: 'mlb',         name: 'MLB',          fullName: 'Major League Baseball',         sport: 'Baseball',                  icon: '⚾', country: 'USA' },
   { id: 'nhl',         name: 'NHL',          fullName: 'National Hockey League',        sport: 'Ice Hockey',                icon: '🏒', country: 'USA/Canada' },
   { id: 'f1',          name: 'F1',           fullName: 'Formula 1 World Championship',  sport: 'Motorsport',                icon: '🏎', country: 'International' },
+  { id: 'cricket_int', name: 'Int\'l Cricket', fullName: 'International Cricket',        sport: 'Cricket',                   icon: '🏏', country: 'International' },
+  { id: 'bbl',         name: 'Big Bash',       fullName: 'Big Bash League',              sport: 'Cricket',                   icon: '🏏', country: 'Australia' },
 ];
 
 // ─── All Teams ────────────────────────────────────────────────────────────────
@@ -242,6 +244,30 @@ export const TEAMS: Team[] = [
   // ── Formula 1 — 2025 drivers and constructor teams ───────────────────────
   ...F1_DRIVERS,
   ...F1_CONSTRUCTOR_TEAMS,
+
+  // ── International Cricket ────────────────────────────────────────────────
+  { id: 'int-aus', name: 'Australia',    shortName: 'Australia',    abbreviation: 'AUS', league: 'cricket_int', sport: 'Cricket', city: 'Sydney',        country: 'Australia',    primaryColor: '#f5c518', secondaryColor: '#007a3d', venue: 'Melbourne Cricket Ground' },
+  { id: 'int-eng', name: 'England',      shortName: 'England',      abbreviation: 'ENG', league: 'cricket_int', sport: 'Cricket', city: 'London',        country: 'England',      primaryColor: '#003082', secondaryColor: '#cf142b', venue: 'Lord\'s Cricket Ground' },
+  { id: 'int-ind', name: 'India',        shortName: 'India',        abbreviation: 'IND', league: 'cricket_int', sport: 'Cricket', city: 'Mumbai',        country: 'India',        primaryColor: '#003082', secondaryColor: '#ff9933', venue: 'Wankhede Stadium' },
+  { id: 'int-pak', name: 'Pakistan',     shortName: 'Pakistan',     abbreviation: 'PAK', league: 'cricket_int', sport: 'Cricket', city: 'Lahore',        country: 'Pakistan',     primaryColor: '#01411c', secondaryColor: '#ffffff', venue: 'National Stadium' },
+  { id: 'int-nz',  name: 'New Zealand',  shortName: 'New Zealand',  abbreviation: 'NZ',  league: 'cricket_int', sport: 'Cricket', city: 'Auckland',      country: 'New Zealand',  primaryColor: '#000000', secondaryColor: '#ffffff', venue: 'Eden Park' },
+  { id: 'int-sa',  name: 'South Africa', shortName: 'South Africa', abbreviation: 'SA',  league: 'cricket_int', sport: 'Cricket', city: 'Cape Town',     country: 'South Africa', primaryColor: '#007a4d', secondaryColor: '#ffb612', venue: 'Newlands Cricket Ground' },
+  { id: 'int-sl',  name: 'Sri Lanka',    shortName: 'Sri Lanka',    abbreviation: 'SL',  league: 'cricket_int', sport: 'Cricket', city: 'Colombo',       country: 'Sri Lanka',    primaryColor: '#003478', secondaryColor: '#8d153a', venue: 'R Premadasa Stadium' },
+  { id: 'int-wi',  name: 'West Indies',  shortName: 'West Indies',  abbreviation: 'WI',  league: 'cricket_int', sport: 'Cricket', city: 'Bridgetown',    country: 'West Indies',  primaryColor: '#7b0041', secondaryColor: '#ffd700', venue: 'Kensington Oval' },
+  { id: 'int-ban', name: 'Bangladesh',   shortName: 'Bangladesh',   abbreviation: 'BAN', league: 'cricket_int', sport: 'Cricket', city: 'Dhaka',         country: 'Bangladesh',   primaryColor: '#006a4e', secondaryColor: '#f42a41', venue: 'Sher-e-Bangla Stadium' },
+  { id: 'int-zim', name: 'Zimbabwe',     shortName: 'Zimbabwe',     abbreviation: 'ZIM', league: 'cricket_int', sport: 'Cricket', city: 'Harare',        country: 'Zimbabwe',     primaryColor: '#007a3d', secondaryColor: '#ef3340', venue: 'Harare Sports Club' },
+  { id: 'int-ire', name: 'Ireland',      shortName: 'Ireland',      abbreviation: 'IRE', league: 'cricket_int', sport: 'Cricket', city: 'Dublin',        country: 'Ireland',      primaryColor: '#169b62', secondaryColor: '#ffffff', venue: 'Malahide Cricket Club' },
+  { id: 'int-afg', name: 'Afghanistan',  shortName: 'Afghanistan',  abbreviation: 'AFG', league: 'cricket_int', sport: 'Cricket', city: 'Kabul',         country: 'Afghanistan',  primaryColor: '#000000', secondaryColor: '#d32011', venue: 'Kabul International Cricket Stadium' },
+
+  // ── Big Bash League (BBL) ────────────────────────────────────────────────
+  { id: 'bbl-scorchers',  name: 'Perth Scorchers',    shortName: 'Scorchers',  abbreviation: 'PS',  league: 'bbl', sport: 'Cricket', city: 'Perth',     country: 'Australia', primaryColor: '#ef660b', secondaryColor: '#ffffff', venue: 'Optus Stadium' },
+  { id: 'bbl-sixers',     name: 'Sydney Sixers',      shortName: 'Sixers',     abbreviation: 'SS',  league: 'bbl', sport: 'Cricket', city: 'Sydney',    country: 'Australia', primaryColor: '#d917a5', secondaryColor: '#ffffff', venue: 'SCG' },
+  { id: 'bbl-hurricanes', name: 'Hobart Hurricanes',  shortName: 'Hurricanes', abbreviation: 'HH',  league: 'bbl', sport: 'Cricket', city: 'Hobart',    country: 'Australia', primaryColor: '#5b0db7', secondaryColor: '#00e5ff', venue: 'Blundstone Arena' },
+  { id: 'bbl-heat',       name: 'Brisbane Heat',      shortName: 'Heat',       abbreviation: 'BH',  league: 'bbl', sport: 'Cricket', city: 'Brisbane',  country: 'Australia', primaryColor: '#c8102e', secondaryColor: '#ffd900', venue: 'The Gabba' },
+  { id: 'bbl-strikers',   name: 'Adelaide Strikers',  shortName: 'Strikers',   abbreviation: 'AS',  league: 'bbl', sport: 'Cricket', city: 'Adelaide',  country: 'Australia', primaryColor: '#005aab', secondaryColor: '#ffd900', venue: 'Adelaide Oval' },
+  { id: 'bbl-stars',      name: 'Melbourne Stars',    shortName: 'Stars',      abbreviation: 'MS',  league: 'bbl', sport: 'Cricket', city: 'Melbourne', country: 'Australia', primaryColor: '#00b140', secondaryColor: '#ffffff', venue: 'MCG' },
+  { id: 'bbl-renegades',  name: 'Melbourne Renegades', shortName: 'Renegades', abbreviation: 'MR',  league: 'bbl', sport: 'Cricket', city: 'Melbourne', country: 'Australia', primaryColor: '#c8102e', secondaryColor: '#000000', venue: 'Marvel Stadium' },
+  { id: 'bbl-thunder',    name: 'Sydney Thunder',     shortName: 'Thunder',    abbreviation: 'ST',  league: 'bbl', sport: 'Cricket', city: 'Sydney',    country: 'Australia', primaryColor: '#8dc63f', secondaryColor: '#00473e', venue: 'ENGIE Stadium' },
 ];
 
 /** Look up a team by its ID. */

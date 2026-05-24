@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { getFollowedTeams } from '@/lib/user-prefs';
-import { getRecentResults } from '@/lib/mock-data';
-import { TEAM_LOGOS } from '@/lib/team-logos';
+// mock-data intentionally NOT imported — results page only shows real API data.
+import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { contrastColor, datekeyInZone } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
@@ -17,7 +17,7 @@ import type { Team, GameResult, SportKey } from '@/types';
 
 type ResultEntry = GameResult & { team: Team; id: string };
 
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -35,19 +35,15 @@ function makeResultId(teamId: string, result: GameResult): string {
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function loadResults(team: Team): Promise<ResultEntry[]> {
-  if (REAL_DATA_LEAGUES.has(team.league)) {
-    try {
-      const res  = await fetch(`/api/results?league=${team.league}&teamId=${team.id}`);
-      const data = res.ok ? await res.json() : [];
-      if (Array.isArray(data) && data.length > 0) {
-        return data.map((r: GameResult) => ({ ...r, team, id: makeResultId(team.id, r) }));
-      }
-    } catch {
-      // fall through to mock
+  if (!REAL_DATA_LEAGUES.has(team.league)) return [];
+  try {
+    const res  = await fetch(`/api/results?league=${team.league}&teamId=${team.id}`);
+    const data = res.ok ? await res.json() : [];
+    if (Array.isArray(data) && data.length > 0) {
+      return data.map((r: GameResult) => ({ ...r, team, id: makeResultId(team.id, r) }));
     }
-  }
-  const mock = getRecentResults(team, 5);
-  return mock.map(r => ({ ...r, team, id: makeResultId(team.id, r) }));
+  } catch { /* network error — return empty */ }
+  return [];
 }
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
@@ -65,6 +61,8 @@ const LEAGUE_BADGE: Record<string, { bg: string; color: string; label: string }>
   epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL' },
   super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR' },
   rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test' },
+  bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL' },
+  cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT' },
 };
 
 function ResultBadge({ league, competition }: { league: string; competition?: string }) {
@@ -94,6 +92,13 @@ function f1PositionColor(pos: string): string {
   return '#f87171'; // DNF / DNS / DSQ etc.
 }
 
+function cricketFormatLabel(fmt?: string): string {
+  if (fmt === 'test') return 'Test';
+  if (fmt === 'odi')  return 'ODI';
+  if (fmt === 't20')  return 'T20';
+  return '';
+}
+
 function OutcomeBadge({ result }: { result: ResultEntry }) {
   if (result.f1Position) {
     const color = f1PositionColor(result.f1Position);
@@ -107,6 +112,28 @@ function OutcomeBadge({ result }: { result: ResultEntry }) {
       </span>
     );
   }
+  // Cricket: show result text or W/D/L
+  if (result.cricketFormat) {
+    const isDraw = result.isDraw === true;
+    const label  = isDraw ? 'D' : result.isWin ? 'W' : 'L';
+    const cls    = isDraw
+      ? 'bg-amber-400/20 text-amber-300 border-amber-600/30'
+      : result.isWin
+        ? 'bg-emerald-400/20 text-emerald-400 border-emerald-600/30'
+        : 'bg-red-400/20 text-red-400 border-red-700/30';
+    const fmtLabel = cricketFormatLabel(result.cricketFormat);
+    return (
+      <div className="flex items-center gap-1">
+        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black border ${cls} shrink-0`}>
+          {label}
+        </span>
+        {fmtLabel && (
+          <span className="text-[9px] font-bold text-white/30 uppercase tracking-wider">{fmtLabel}</span>
+        )}
+      </div>
+    );
+  }
+  // Existing W/D/L badge
   const isDraw = result.isDraw === true;
   const label  = isDraw ? 'D' : result.isWin ? 'W' : 'L';
   const cls    = isDraw
@@ -137,7 +164,8 @@ function ResultRow({
   result, userTz, dateKey, isHighlighted, isExpanded, onHover, onToggle,
 }: ResultRowProps) {
   const { team } = result;
-  const teamLogoUrl = TEAM_LOGOS[team.id];
+  const teamLogoUrl    = TEAM_LOGOS[team.id];
+  const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
 
   const isDraw = result.isDraw === true;
   const scoreColor = isDraw ? '#f59e0b' : result.isWin ? '#34d399' : '#f87171';
@@ -182,6 +210,7 @@ function ResultRow({
           abbreviation={team.abbreviation}
           primaryColor={team.primaryColor}
           size={44}
+          logoFilter={teamLogoFilter}
         />
       </div>
 
@@ -200,6 +229,7 @@ function ResultRow({
             primaryColor="#6B7280"
             size={22}
             className="rounded-md"
+            logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']}
           />
           <span className="text-[13px] font-semibold text-white/70 leading-none">
             {result.opponent}
@@ -213,6 +243,11 @@ function ResultRow({
             ? <span className="text-[10px] text-white/20">Home</span>
             : <span className="text-[10px] text-white/20">Away</span>
           }
+          {result.cricketResult && (
+            <span className="text-[10px] text-white/30 truncate max-w-[140px]" title={result.cricketResult}>
+              {result.cricketResult}
+            </span>
+          )}
         </div>
       </div>
 
@@ -223,6 +258,17 @@ function ResultRow({
             <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: f1PositionColor(result.f1Position) }}>
               {result.f1Position}
             </p>
+          ) : result.cricketScore ? (
+            <div className="text-right">
+              <p className="text-[13px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
+                {result.cricketScore}
+              </p>
+              {result.cricketOppScore && (
+                <p className="text-[11px] font-semibold leading-none text-white/40 mt-0.5">
+                  {result.cricketOppScore}
+                </p>
+              )}
+            </div>
           ) : (
             <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
               {result.teamScore}–{result.opponentScore}
@@ -376,7 +422,7 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
                   : isDraw ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
                 return (
                   <div key={r.id} className="flex items-center gap-1.5" style={{ borderLeft: `2px solid ${r.team.primaryColor}60`, paddingLeft: '6px' }}>
-                    <TeamBadge logoUrl={TEAM_LOGOS[r.team.id]} abbreviation={r.team.abbreviation} primaryColor={r.team.primaryColor} size={20} className="rounded-md shrink-0" />
+                    <TeamBadge logoUrl={TEAM_LOGOS[r.team.id]} logoFilter={TEAM_LOGO_FILTERS[r.team.id]} abbreviation={r.team.abbreviation} primaryColor={r.team.primaryColor} size={20} className="rounded-md shrink-0" />
                     <span className="text-[11px] font-bold text-white leading-none">{r.team.shortName}</span>
                     <span className="text-[10px] text-white/35">{r.isHome ? 'vs' : 'at'}</span>
                     <span className="text-[11px] text-white/70 flex-1 min-w-0 truncate">{r.opponent}</span>
@@ -401,9 +447,9 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
 // ─── Filter pill ──────────────────────────────────────────────────────────────
 
 function TeamFilterPill({
-  label, logoUrl, primaryColor, active, onClick,
+  label, logoUrl, logoFilter, primaryColor, active, onClick,
 }: {
-  label: string; logoUrl?: string; primaryColor?: string; active: boolean; onClick: () => void;
+  label: string; logoUrl?: string; logoFilter?: string; primaryColor?: string; active: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -420,6 +466,7 @@ function TeamFilterPill({
     >
       {logoUrl && (
         <img src={logoUrl} alt="" className="w-4 h-4 object-contain shrink-0"
+          style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       )}
       {label}
@@ -439,6 +486,7 @@ function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
           <div key={team.id} className="relative group">
             <TeamBadge
               logoUrl={TEAM_LOGOS[team.id]}
+              logoFilter={TEAM_LOGO_FILTERS[team.id]}
               abbreviation={team.abbreviation}
               primaryColor={team.primaryColor}
               size={44}
@@ -630,6 +678,7 @@ export default function ResultsPage() {
                     key={team.id}
                     label={team.abbreviation}
                     logoUrl={TEAM_LOGOS[team.id]}
+                    logoFilter={TEAM_LOGO_FILTERS[team.id]}
                     primaryColor={team.primaryColor}
                     active={activeTeamId === team.id}
                     onClick={() => setActiveTeamId(team.id)}

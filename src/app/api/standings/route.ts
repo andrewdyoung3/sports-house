@@ -398,9 +398,51 @@ async function fetchF1ConstructorStandings(): Promise<StandingRow[]> {
   });
 }
 
+// ─── BBL — ESPN public API (league ID: 8044) ──────────────────────────────────
+
+const BBL_ESPN_TO_ID: Record<string, string> = {
+  'Perth Scorchers':    'bbl-scorchers',
+  'Sydney Sixers':      'bbl-sixers',
+  'Hobart Hurricanes':  'bbl-hurricanes',
+  'Brisbane Heat':      'bbl-heat',
+  'Adelaide Strikers':  'bbl-strikers',
+  'Melbourne Stars':    'bbl-stars',
+  'Melbourne Renegades':'bbl-renegades',
+  'Sydney Thunder':     'bbl-thunder',
+};
+
+async function fetchBBLStandings(): Promise<StandingRow[]> {
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/cricket/8044/standings',
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+  const data    = await res.json();
+  const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+  const stat = (e: any, n: string) =>
+    (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
+  return entries.map((e, i): StandingRow => {
+    const cur  = i + 1;
+    const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
+    const nrr  = stat(e, 'netrr');
+    return {
+      name:       e.team?.displayName ?? '',
+      teamId:     BBL_ESPN_TO_ID[e.team?.displayName ?? ''],
+      position:   cur,
+      played:     stat(e, 'matchesPlayed'),
+      wins:       stat(e, 'matchesWon'),
+      draws:      stat(e, 'matchesTied') + stat(e, 'noresult'),
+      losses:     stat(e, 'matchesLost'),
+      points:     stat(e, 'matchPoints'),
+      percentage: nrr !== 0 ? Math.round(nrr * 1000) / 1000 : undefined,  // Net Run Rate
+      rankChange: prev !== undefined ? prev - cur : undefined,
+    };
+  });
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
+const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'bbl']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -418,6 +460,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'rugby_int')   rows = await fetchRINTStandings();
     else if (league === 'f1' && type === 'constructors') rows = await fetchF1ConstructorStandings();
     else if (league === 'f1')          rows = await fetchF1Standings();
+    else if (league === 'bbl')         rows = await fetchBBLStandings();
 
     return NextResponse.json(rows, { headers: CACHE_HEADERS });
   } catch (err) {

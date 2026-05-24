@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { Calendar, MapPin, Tv, Plus, ChevronDown, UserMinus } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
-import { getUpcomingGames } from '@/lib/mock-data';
-import { TEAM_LOGOS } from '@/lib/team-logos';
+// mock-data intentionally NOT imported — schedule page only shows real API fixtures.
+import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES } from '@/lib/teams';
 import { contrastColor, formatTimeInZone, datekeyInZone } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -24,12 +24,12 @@ import type { Team, UpcomingGame, SportKey } from '@/types';
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** Leagues backed by real APIs — all others use deterministic mock data. */
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1']);
+const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 
-/** All leagues with browse support (real or mock fixtures + standings). */
-const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
+/** All competitions with browse support (real or mock fixtures + standings). */
+const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'bbl', 'cricket_int']);
 
-/** Ordered list for the league filter pills. */
+/** Ordered list for the competition filter pills. */
 const BROWSABLE_LEAGUES = LEAGUES.filter(l => BROWSABLE_LEAGUE_IDS.has(l.id));
 
 /** Build a minimal Team stub for games whose teamId isn't in the TEAMS array. */
@@ -50,21 +50,39 @@ function makeFallbackTeam(game: UpcomingGame, league: string): Team {
   };
 }
 
-const MOCK_GAMES_PER_TEAM = 10;
+// ─── Adaptive background helpers ─────────────────────────────────────────────
+
+const DEFAULT_BG_LEFT = 'rgba(96, 26, 44, 0.44)';
+
+/** Darken a hex team color and return an rgba() string for the left background wash. */
+function teamColorToBgStop(hex: string, opacity = 0.44): string {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return DEFAULT_BG_LEFT;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  const f = 0.30; // darken factor — keeps the wash very subtle
+  return `rgba(${Math.round(r * f)}, ${Math.round(g * f)}, ${Math.round(b * f)}, ${opacity})`;
+}
+
+function setBgLeft(color: string) {
+  document.documentElement.style.setProperty('--bg-left-color', color);
+}
+
+function resetBgLeft() {
+  document.documentElement.style.setProperty('--bg-left-color', DEFAULT_BG_LEFT);
+}
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
 async function loadFixtures(team: Team): Promise<UpcomingGame[]> {
-  if (REAL_DATA_LEAGUES.has(team.league)) {
-    try {
-      const res  = await fetch(`/api/fixtures?league=${team.league}&teamId=${team.id}`);
-      const data = res.ok ? await res.json() : [];
-      if (Array.isArray(data) && data.length > 0) return data;
-    } catch {
-      // fall through to mock
-    }
-  }
-  return getUpcomingGames(team, MOCK_GAMES_PER_TEAM);
+  if (!REAL_DATA_LEAGUES.has(team.league)) return [];
+  try {
+    const res  = await fetch(`/api/fixtures?league=${team.league}&teamId=${team.id}`);
+    const data = res.ok ? await res.json() : [];
+    if (Array.isArray(data) && data.length > 0) return data;
+  } catch { /* network error — return empty */ }
+  return [];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -180,6 +198,14 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     bg: '#1a0000', color: '#E8002D', border: 'rgba(232,0,45,0.40)',
     logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',
     logoOpacity: 0.15,
+  },
+  bbl: {
+    symbol: '🏏', label: 'BBL',
+    bg: '#001428', color: '#d917a5', border: '#d917a550',
+  },
+  cricket_int: {
+    symbol: '🏏', label: 'Cricket',
+    bg: '#0a1a00', color: '#78be20', border: '#78be2050',
   },
 };
 
@@ -302,14 +328,17 @@ function ScheduleRow({
 }: ScheduleRowProps) {
   const { team } = game;
   const isF1           = team.league === 'f1';
+  const isCricket      = team.league === 'bbl' || team.league === 'cricket_int';
   const displayTime    = formatTimeInZone(game.date, userTz);
-  const teamPosition   = standingsMap?.get(team.id);
-  const opponentPosition = game.opponentId ? standingsMap?.get(game.opponentId) : undefined;
+  // Only show league positions for plain league fixtures — not cups or European games.
+  const isLeagueFixture = !game.competition || !COMPETITION_BADGE[game.competition];
+  const teamPosition      = isLeagueFixture ? standingsMap?.get(team.id) : undefined;
+  const opponentPosition  = isLeagueFixture && game.opponentId ? standingsMap?.get(game.opponentId) : undefined;
 
   const teamLogoUrl    = TEAM_LOGOS[team.id];
-  const leagueMeta     = game.competition
-    ? COMPETITION_BADGE[game.competition]
-    : LEAGUE_BADGE[team.league];
+  const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
+  const leagueMeta     = (game.competition ? COMPETITION_BADGE[game.competition] : undefined)
+    ?? LEAGUE_BADGE[team.league];
   const leagueLogoUrl      = leagueMeta?.logoUrl;
   const leagueLogoOpacity  = leagueMeta?.logoOpacity ?? 0.18;
   const leagueLogoBlend    = leagueMeta?.logoBlend;
@@ -387,6 +416,7 @@ function ScheduleRow({
           abbreviation={team.abbreviation}
           primaryColor={team.primaryColor}
           size={52}
+          logoFilter={teamLogoFilter}
         />
       </div>
 
@@ -414,7 +444,7 @@ function ScheduleRow({
                 {team.shortName}
               </span>
               {teamPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none">#{teamPosition}</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(teamPosition)})</span>
               )}
               <span className="text-[14px] font-medium text-white/30">
                 {game.isHome ? 'vs' : '@'}
@@ -425,16 +455,31 @@ function ScheduleRow({
                 primaryColor={game.opponentColor}
                 size={30}
                 className="rounded-md"
+                logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']}
               />
               <span className="text-[17px] font-semibold text-white/70 leading-none">
                 {game.opponent}
               </span>
               {opponentPosition !== undefined && (
-                <span className="text-[13px] font-bold text-white/35 leading-none">#{opponentPosition}</span>
+                <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(opponentPosition)})</span>
               )}
             </>
           )}
-          {!isF1 && <FixtureBadge league={team.league} competition={game.competition} />}
+          {!isF1 && team.league !== 'cricket_int' && <FixtureBadge league={team.league} competition={game.competition} />}
+          {isCricket && game.cricketFormat && (
+            <span
+              className="inline-flex items-center text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none border"
+              style={
+                game.cricketFormat === 'test'
+                  ? { color: '#e2a84b', background: 'rgba(226,168,75,0.12)', borderColor: 'rgba(226,168,75,0.35)' }
+                  : game.cricketFormat === 'odi'
+                  ? { color: '#60a5fa', background: 'rgba(96,165,250,0.12)', borderColor: 'rgba(96,165,250,0.35)' }
+                  : { color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderColor: 'rgba(167,139,250,0.35)' }
+              }
+            >
+              {game.cricketFormat === 'test' ? 'Test Match' : game.cricketFormat.toUpperCase()}
+            </span>
+          )}
           {isFollowed && (
             <span
               className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none"
@@ -471,7 +516,11 @@ function ScheduleRow({
             {displayTime}
           </p>
           <p className="text-[11px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
-            {isF1 ? (game.competition ?? 'F1') : game.isHome ? 'Home' : 'Away'}
+            {isF1
+              ? (game.competition ?? 'F1')
+              : isCricket && game.cricketFormat
+              ? (game.cricketFormat === 'test' ? 'Test' : game.cricketFormat === 'odi' ? 'ODI' : 'T20')
+              : game.isHome ? 'Home' : 'Away'}
           </p>
         </div>
         <ChevronDown
@@ -483,6 +532,17 @@ function ScheduleRow({
 }
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
+
+function ordinal(n: number): string {
+  const s = n % 100;
+  if (s >= 11 && s <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
 
 function ScheduleSkeleton() {
   return (
@@ -547,9 +607,9 @@ function FilterPill({
 // ─── TeamFilterPill ────────────────────────────────────────────────────────────
 
 function TeamFilterPill({
-  label, logoUrl, primaryColor, league, active, onClick,
+  label, logoUrl, logoFilter, primaryColor, league, active, onClick,
 }: {
-  label: string; logoUrl?: string; primaryColor?: string; league?: string; active: boolean; onClick: () => void;
+  label: string; logoUrl?: string; logoFilter?: string; primaryColor?: string; league?: string; active: boolean; onClick: () => void;
 }) {
   return (
     <button
@@ -575,6 +635,7 @@ function TeamFilterPill({
           src={logoUrl}
           alt=""
           className="w-[13px] h-[13px] object-contain shrink-0"
+          style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
@@ -653,6 +714,7 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
                 primaryColor={team.primaryColor}
                 size={44}
                 className="rounded-xl"
+                logoFilter={TEAM_LOGO_FILTERS[team.id]}
               />
             </button>
 
@@ -703,11 +765,15 @@ export default function SchedulePage() {
 
   const [activeTeamId,    setActiveTeamId]    = useState<string>('all');
   const [activeLeagueId,  setActiveLeagueId]  = useState<string | null>(null);
-  const [leagueGames,     setLeagueGames]     = useState<ScheduleEntry[]>([]);
   const [leagueLoading,   setLeagueLoading]   = useState(false);
+  // Keyed cache — reading synchronously in the same render as activeLeagueId changes
+  // avoids the one-render lag that caused the flash of the previous league's games.
+  const leagueCacheRef    = useRef<Map<string, ScheduleEntry[]>>(new Map());
+  const [leagueCacheVersion, setLeagueCacheVersion] = useState(0);
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
-  const [standings,       setStandings]       = useState<StandingRow[] | null>(null);
+  const standingsCacheRef     = useRef<Map<string, StandingRow[] | null>>(new Map());
+  const [standingsCacheVersion, setStandingsCacheVersion] = useState(0);
 
   // Cross-highlight state: shared between calendar and schedule rows
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
@@ -729,6 +795,26 @@ export default function SchedulePage() {
     }
   }, []);
 
+  // Adaptive left-background color — reflects active team or first followed team.
+  useEffect(() => {
+    if (activeTeamId !== 'all') {
+      const team = teams.find(t => t.id === activeTeamId);
+      if (team?.primaryColor) {
+        setBgLeft(teamColorToBgStop(team.primaryColor));
+        return;
+      }
+    }
+    // "All teams" mode — use first followed team as ambient tint
+    if (teams.length > 0 && teams[0].primaryColor) {
+      setBgLeft(teamColorToBgStop(teams[0].primaryColor));
+    } else {
+      resetBgLeft();
+    }
+  }, [activeTeamId, teams]);
+
+  // Reset on unmount so other pages keep the default
+  useEffect(() => () => { resetBgLeft(); }, []);
+
   // Resolve which league's standings to show. Memoised so the fetch below only
   // re-runs when the resolved league actually changes — not on every card expand.
   const standingsLeague = useMemo((): string | null => {
@@ -739,19 +825,37 @@ export default function SchedulePage() {
     return league && REAL_DATA_LEAGUES.has(league) ? league : null;
   }, [activeLeagueId, activeTeamId, expandedId, teams, allGames]);
 
-  // Fetch standings when the resolved league changes (not on every expand/collapse).
+  // Standings derived synchronously from cache — no render lag, no flicker.
+  const standings = standingsLeague
+    ? (standingsCacheRef.current.has(standingsLeague)
+        ? standingsCacheRef.current.get(standingsLeague) ?? null
+        : null)
+    : null;
+
+  // Fetch standings on first visit to each league; cache hit = instant, no re-fetch.
   useEffect(() => {
-    if (!standingsLeague) { setStandings(null); return; }
-    setStandings(null);
+    if (!standingsLeague) return;
+    if (standingsCacheRef.current.has(standingsLeague)) return;
     fetch(`/api/standings?league=${standingsLeague}`)
       .then(r => r.ok ? r.json() : [])
-      .then((rows: StandingRow[]) => setStandings(rows.length > 0 ? rows : null))
-      .catch(() => setStandings(null));
+      .then((rows: StandingRow[]) => {
+        standingsCacheRef.current.set(standingsLeague, rows.length > 0 ? rows : null);
+        setStandingsCacheVersion(v => v + 1);
+      })
+      .catch(() => {
+        standingsCacheRef.current.set(standingsLeague, null);
+        setStandingsCacheVersion(v => v + 1);
+      });
   }, [standingsLeague]);
 
-  // Fetch all fixtures for a league when the user activates league-browse mode.
+  // Fetch league fixtures on first visit; subsequent visits are served from the
+  // ref cache synchronously (same render as activeLeagueId changes — no flash).
   useEffect(() => {
-    if (!activeLeagueId) { setLeagueGames([]); return; }
+    if (!activeLeagueId) return;
+    if (leagueCacheRef.current.has(activeLeagueId)) {
+      setLeagueLoading(false);
+      return;
+    }
     setLeagueLoading(true);
     setExpandedId(null);
     fetch(`/api/league-fixtures?league=${activeLeagueId}`)
@@ -762,7 +866,8 @@ export default function SchedulePage() {
           return { ...g, team };
         });
         entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setLeagueGames(entries);
+        leagueCacheRef.current.set(activeLeagueId, entries);
+        setLeagueCacheVersion(v => v + 1); // trigger re-render to pick up new cache entry
       })
       .catch(() => {})
       .finally(() => setLeagueLoading(false));
@@ -803,14 +908,20 @@ export default function SchedulePage() {
     if (activeTeamId === teamId) setActiveTeamId('all');
   }, [teams, activeTeamId]);
 
-  // IDs of teams the user follows — used both for standings highlighting and
-  // for the "following" badge on league-browse rows.
+  // IDs of teams the user actually follows — stable across card expansions.
+  // Used for hero game selection and "following" badges.
+  const baseFollowedTeamIds = useMemo(() => new Set(teams.map(t => t.id)), [teams]);
+
+  // Augmented set: also includes the opponent of the currently-expanded game so
+  // downstream components (standings highlight, form panels) can style it correctly.
+  // Must NOT be used for hero game selection — see heroGame below.
   const followedTeamIds = useMemo(() => {
     const ids = teams.map(t => t.id);
-    const eg = [...allGames, ...leagueGames].find(g => g.id === expandedId);
+    const currentLeagueGames = activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [];
+    const eg = [...allGames, ...currentLeagueGames].find(g => g.id === expandedId);
     if (eg?.opponentId) ids.push(eg.opponentId);
     return new Set(ids);
-  }, [teams, expandedId, allGames, leagueGames]);
+  }, [teams, expandedId, allGames, activeLeagueId, leagueCacheVersion]);
 
   const isLeagueMode = activeLeagueId !== null;
 
@@ -824,19 +935,22 @@ export default function SchedulePage() {
     }
     return map;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [standings, isLeagueMode, activeLeagueId]);
+  }, [standings, isLeagueMode, activeLeagueId, standingsCacheVersion]);
 
   // In league-browse mode: show all league games (home/away filter still applies).
   // In team mode: show followed-team games filtered by active team pill.
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
-    const source = isLeagueMode ? leagueGames : allGames;
+    // Read directly from the ref — synchronous, no render lag, so switching
+    // league pills shows the correct league's games in the very first render.
+    const cachedLeagueGames = activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [];
+    const source = isLeagueMode ? (cachedLeagueGames.length > 0 ? cachedLeagueGames : allGames) : allGames;
     return source.filter(g => {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
       return true;
     });
-  }, [isLeagueMode, leagueGames, allGames, activeTeamId, homeAwayFilter]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -857,16 +971,18 @@ export default function SchedulePage() {
   }, [filteredGames, gameRangeFilter]);
 
   // Hero game: in league mode, prefer a followed team's next fixture.
+  // Uses baseFollowedTeamIds (not the augmented set) so expanding a card never
+  // changes which game is promoted to the hero slot.
   const heroGame = useMemo(() => {
     if (displayedGames.length === 0) return null;
     if (!isLeagueMode) return displayedGames[0];
     return (
       displayedGames.find(g =>
-        followedTeamIds.has(g.team.id) ||
-        (g.opponentId != null && followedTeamIds.has(g.opponentId)),
+        baseFollowedTeamIds.has(g.team.id) ||
+        (g.opponentId != null && baseFollowedTeamIds.has(g.opponentId)),
       ) ?? displayedGames[0]
     );
-  }, [displayedGames, isLeagueMode, followedTeamIds]);
+  }, [displayedGames, isLeagueMode, baseFollowedTeamIds]);
 
   // Group by calendar date in the user's timezone — hero game excluded (shown separately above)
   const groupedByDate = useMemo(() => {
@@ -908,7 +1024,7 @@ export default function SchedulePage() {
 
   if (!loading && !isLeagueMode && teams.length === 0) return <EmptyState />;
 
-  const activeLoading = isLeagueMode ? leagueLoading : loading;
+  const activeLoading = loading;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -923,6 +1039,8 @@ export default function SchedulePage() {
         </h1>
         {activeLoading && <p className="text-white/40 text-sm">Loading fixtures…</p>}
       </div>
+
+      <div>
 
       {/* ── Next Game Hero ── */}
       {!activeLoading && heroGame && (
@@ -952,6 +1070,7 @@ export default function SchedulePage() {
                       key={team.id}
                       label={team.abbreviation}
                       logoUrl={TEAM_LOGOS[team.id]}
+                      logoFilter={TEAM_LOGO_FILTERS[team.id]}
                       primaryColor={team.primaryColor}
                       league={team.league}
                       active={!isLeagueMode && activeTeamId === team.id}
@@ -963,7 +1082,7 @@ export default function SchedulePage() {
 
               {/* Row 2: Browse by league */}
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse League</p>
+                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse Competition</p>
                 <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill
@@ -1067,7 +1186,12 @@ export default function SchedulePage() {
                               <GameExpandPanel
                                 game={game}
                                 compact={isLeagueMode}
-                                onStandingsUpdate={rows => setStandings(rows)}
+                                onStandingsUpdate={rows => {
+                                  if (standingsLeague) {
+                                    standingsCacheRef.current.set(standingsLeague, rows.length > 0 ? rows : null);
+                                    setStandingsCacheVersion(v => v + 1);
+                                  }
+                                }}
                               />
                             </div>
                           )}
@@ -1101,7 +1225,7 @@ export default function SchedulePage() {
               league={(
                 activeLeagueId
                   ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league : undefined)
-                  ?? [...allGames, ...leagueGames].find(g => g.id === expandedId)?.team.league
+                  ?? [...allGames, ...(activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [])].find(g => g.id === expandedId)?.team.league
               ) as SportKey}
               rows={standings}
               followedTeamIds={followedTeamIds}
@@ -1113,6 +1237,7 @@ export default function SchedulePage() {
 
         </aside>
       </div>
+      </div>{/* end transition-opacity wrapper */}
     </div>
   );
 }

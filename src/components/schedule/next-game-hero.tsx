@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, Tv, MapPin } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
-import { TEAM_LOGOS } from '@/lib/team-logos';
+import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { formatTimeInZone } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
 
@@ -54,6 +54,8 @@ const LEAGUE_DISPLAY: Record<string, string> = {
   super_rugby: 'Super Rugby',
   rugby_int:   'Test Rugby',
   f1:          'Formula 1',
+  bbl:         'Big Bash',
+  cricket_int: "Int'l Cricket",
 };
 
 // Logo URLs + per-logo opacity for background watermarks
@@ -81,9 +83,8 @@ interface NextGameHeroProps {
 }
 
 /** How long until kickoff, as a short human string.
- *  Uses calendar-day counting in the user's timezone so "Thursday" is always
- *  3 days from Monday regardless of the time of day. */
-function timeUntil(isoDate: string, userTz: string): string {
+ *  Returns null for games 7+ days away (pill is hidden; the date label suffices). */
+function timeUntil(isoDate: string, userTz: string): string | null {
   const diff  = new Date(isoDate).getTime() - Date.now();
   const hours = diff / 3_600_000;
   if (hours < 0.5) return 'Starting soon';
@@ -98,7 +99,11 @@ function timeUntil(isoDate: string, userTz: string): string {
   );
 
   if (days === 1) return 'Tomorrow';
-  return `In ${days} days`;
+  if (days < 7) {
+    const dayName = new Intl.DateTimeFormat('en-AU', { timeZone: userTz, weekday: 'long' }).format(new Date(isoDate));
+    return `This ${dayName}`;
+  }
+  return null;
 }
 
 export function NextGameHero({ game, userTz }: NextGameHeroProps) {
@@ -110,9 +115,8 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
   const displayTime   = formatTimeInZone(game.date, userTz);
   const countdown     = timeUntil(game.date, userTz);
   const teamLogoUrl  = TEAM_LOGOS[team.id];
-  const leagueMeta        = game.competition
-    ? COMPETITION_LOGO[game.competition]
-    : LEAGUE_LOGO[team.league];
+  const leagueMeta        = (game.competition ? COMPETITION_LOGO[game.competition] : undefined)
+    ?? LEAGUE_LOGO[team.league];
   const leagueLogoUrl      = leagueMeta?.url;
   const leagueLogoOpacity  = leagueMeta?.opacity ?? 0.25;
   const leagueLogoBlend    = leagueMeta?.blend;
@@ -131,15 +135,22 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
     .concat(game.streaming)
     .filter((ch, i, arr) => arr.indexOf(ch) === i);
 
-  const outerGlow = `0 0 120px ${team.primaryColor}30, 0 32px 80px rgba(0,0,0,0.70)`;
+  // Outer glow uses a fixed desaturated amethyst-purple rather than the team
+  // primary colour, so all hero cards share the same cool hue regardless of team.
+  const outerGlow = `0 0 120px rgba(98, 50, 185, 0.26), 0 32px 80px rgba(0,0,0,0.70)`;
 
   return (
     <div className="mb-8" style={{ boxShadow: outerGlow }}>
 
       {/* ── Hero card ── */}
       <div
-        className={`relative overflow-hidden glass-hero ${expanded ? 'rounded-t-3xl' : 'rounded-3xl'}`}
-        style={{ borderColor: `${team.primaryColor}25` }}
+        className={`relative overflow-hidden glass-hero cursor-pointer ${expanded ? 'rounded-t-3xl' : 'rounded-3xl'}`}
+        style={{ borderColor: `rgba(105, 58, 182, 0.22)` }}
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('a, button')) return;
+          setExpanded(v => !v);
+          setEverExpanded(true);
+        }}
       >
         {/* Cinematic team-colour backdrop — large radial glow behind content */}
         <div
@@ -161,14 +172,19 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}
-        {/* Team logo — subtle aura behind the badge on the right */}
+        {/* Team logo / driver portrait — background watermark on the right.
+            F1 driver headshots are anchored to the bottom so the driver stands
+            up into the frame with face visible; other sports use the large
+            centre-crop treatment. */}
         {teamLogoUrl && (
           <img
             src={teamLogoUrl}
             alt=""
             aria-hidden="true"
-            className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
-            style={{ right: '-12px', height: '220%', opacity: 0.07, mixBlendMode: 'screen' as const }}
+            className={`absolute w-auto object-contain pointer-events-none select-none ${isF1 ? 'top-0' : 'top-1/2 -translate-y-1/2'}`}
+            style={isF1
+              ? { right: '185px', height: '104%', opacity: 0.13, mixBlendMode: 'screen' as const }
+              : { right: '-12px', height: '220%', opacity: 0.07, mixBlendMode: 'screen' as const }}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}
@@ -183,32 +199,33 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
         <div className="relative z-10 flex items-center justify-between px-6 pt-4 pb-0">
           <div className="flex items-center gap-2">
             <span
-              className="text-[10px] font-black uppercase tracking-[0.18em]"
+              className="text-[12px] font-black uppercase tracking-[0.18em]"
               style={{ color: team.primaryColor }}
             >
               {isF1 ? 'Next Session' : 'Next Game'}
             </span>
             {!isF1 && (
               <>
-                <span className="text-white/15">·</span>
-                <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">
-                  {game.competition ?? LEAGUE_DISPLAY[team.league] ?? team.league.toUpperCase()}
+                <span className="text-white/30">·</span>
+                <span className="text-[12px] font-bold text-white/60 uppercase tracking-widest">
+                  {LEAGUE_DISPLAY[team.league] ?? game.competition ?? team.league.toUpperCase()}
                 </span>
               </>
             )}
           </div>
-          {/* Countdown pill */}
-          <span
-            className="text-[11px] font-black rounded-full px-3 py-1 border"
-            style={{
-              color: team.primaryColor,
-              background: `${team.primaryColor}15`,
-              borderColor: `${team.primaryColor}45`,
-              textShadow: `0 0 12px ${team.primaryColor}80`,
-            }}
-          >
-            {countdown}
-          </span>
+          {/* Countdown pill — solid team colour so it reads instantly */}
+          {countdown && (
+            <span
+              className="text-[13px] font-black rounded-full px-4 py-1.5 leading-none"
+              style={{
+                color: '#ffffff',
+                background: team.primaryColor,
+                boxShadow: `0 0 22px ${team.primaryColor}80, 0 2px 8px rgba(0,0,0,0.45)`,
+              }}
+            >
+              {countdown}
+            </span>
+          )}
         </div>
 
         {/* ── Teams — editorial matchup ── */}
@@ -249,6 +266,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
                     primaryColor={game.opponentColor}
                     size={40}
                     className="rounded-xl"
+                    logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']}
                   />
                 </div>
                 <span className="text-[18px] font-bold text-white/80 leading-none">{game.opponent}</span>
@@ -264,18 +282,6 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             </p>
           </div>
 
-          {/* Team badge — moved to RIGHT with neon glow (hidden for F1 since there's no single team badge) */}
-          {!isF1 && (
-            <div className="shrink-0" style={{ filter: `drop-shadow(0 0 24px ${team.primaryColor}60)` }}>
-              <TeamBadge
-                logoUrl={TEAM_LOGOS[team.id]}
-                abbreviation={team.abbreviation}
-                primaryColor={team.primaryColor}
-                size={72}
-                className="rounded-2xl"
-              />
-            </div>
-          )}
         </div>
 
         {/* ── Venue ── (hidden for F1; circuit is shown inline in the matchup block) */}
@@ -321,7 +327,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
           {expanded ? (
             <>Collapse <ChevronUp className="h-3.5 w-3.5" /></>
           ) : (
-            <>{isF1 ? 'Circuit Info' : 'Match Details'} <ChevronDown className="h-3.5 w-3.5" /></>
+            <>{isF1 ? 'Race Information' : 'Match Details'} <ChevronDown className="h-3.5 w-3.5" /></>
           )}
         </button>
       </div>

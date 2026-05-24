@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
-import { getUpcomingGames } from '@/lib/mock-data';
+// mock-data intentionally NOT imported — this route only returns real API fixtures.
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -250,17 +250,40 @@ async function fetchEPLLeague(): Promise<UpcomingGame[]> {
   const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const range = `${fmt(now)}-${fmt(end)}`;
 
+  const now2 = Date.now();
+  const twoHoursAgo = now2 - 2 * 3600 * 1000;
+
   const settled = await Promise.allSettled(
     EPL_COMPS.map(async ({ slug, label }) => {
-      const res = await fetchTimeout(
+      // For UEFA knockout rounds the dated scoreboard often returns nothing;
+      // also try the undated endpoint (returns current/next round) and merge.
+      const isUEFA = slug.startsWith('uefa.');
+      const eventMap = new Map<string, any>();
+
+      const urls: string[] = [
         `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${range}&limit=200`,
-        { next: { revalidate: 3600 } },
-      );
-      if (!res.ok) return [] as UpcomingGame[];
-      const data   = await res.json();
+      ];
+      if (isUEFA) {
+        urls.push(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?limit=50`);
+      }
+
+      for (const url of urls) {
+        try {
+          const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+          if (!res.ok) continue;
+          const data = await res.json();
+          for (const e of (data.events ?? []) as any[]) {
+            if (!eventMap.has(e.id)) eventMap.set(e.id, e);
+          }
+        } catch { /* skip */ }
+      }
+
+      if (eventMap.size === 0) return [] as UpcomingGame[];
       const rights = EPL_RIGHTS[slug] ?? { broadcast: ['Stan Sport'], streaming: ['Stan Sport'] };
 
-      return ((data.events ?? []) as any[]).reduce<UpcomingGame[]>((acc, e) => {
+      return Array.from(eventMap.values()).reduce<UpcomingGame[]>((acc, e) => {
+        if (e.status?.type?.completed === true) return acc;
+        if (new Date(e.date).getTime() < twoHoursAgo) return acc;
         const comp:  any   = e.competitions?.[0] ?? {};
         const comps: any[] = comp.competitors ?? [];
         const homeComp = comps.find((c: any) => c.homeAway === 'home');
@@ -516,14 +539,8 @@ async function fetchRINTLeague(): Promise<UpcomingGame[]> {
   return unique.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
-// ─── NBA / NHL — mock fixtures for all teams in the league ────────────────────
-
-function fetchMockLeague(leagueId: string): UpcomingGame[] {
-  return TEAMS
-    .filter(t => t.league === leagueId)
-    .flatMap(team => getUpcomingGames(team, 2))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-}
+// NBA / NHL — no real fixture API implemented yet; return empty so the browse
+// tab shows "No upcoming fixtures" rather than fabricated data.
 
 // ─── F1 — Jolpi Ergast race calendar ──────────────────────────────────────────
 //
@@ -616,9 +633,201 @@ async function fetchF1League(): Promise<UpcomingGame[]> {
   return fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
+// ─── BBL — ESPN public API (league ID: 8044) ──────────────────────────────────
+
+function parseCricketFormat(eventType: string): 'test' | 'odi' | 't20' {
+  const t = (eventType ?? '').toLowerCase();
+  if (t.includes('twenty') || t === 't20' || t.includes('t20')) return 't20';
+  if (t.includes('one day') || t.includes('odi') || t.includes('list a')) return 'odi';
+  if (t.includes('test') || t.includes('first class') || t.includes('first-class')) return 'test';
+  return 't20';
+}
+
+const BBL_LEAGUE_TEAMS: Record<string, TeamEntry> = {
+  'Perth Scorchers':     { id: 'bbl-scorchers',  color: '#ef660b', abbr: 'PS'  },
+  'Sydney Sixers':       { id: 'bbl-sixers',     color: '#d917a5', abbr: 'SS'  },
+  'Hobart Hurricanes':   { id: 'bbl-hurricanes', color: '#5b0db7', abbr: 'HH'  },
+  'Brisbane Heat':       { id: 'bbl-heat',       color: '#c8102e', abbr: 'BH'  },
+  'Adelaide Strikers':   { id: 'bbl-strikers',   color: '#005aab', abbr: 'AS'  },
+  'Melbourne Stars':     { id: 'bbl-stars',      color: '#00b140', abbr: 'MS'  },
+  'Melbourne Renegades': { id: 'bbl-renegades',  color: '#c8102e', abbr: 'MR'  },
+  'Sydney Thunder':      { id: 'bbl-thunder',    color: '#8dc63f', abbr: 'ST'  },
+};
+
+async function fetchBBLLeague(): Promise<UpcomingGame[]> {
+  const now = new Date();
+  const end = new Date(now.getTime() + 150 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(now)}-${fmt(end)}`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const seen = new Set<string>();
+
+  return ((data.events ?? []) as any[])
+    .filter((e: any) => {
+      const state = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state;
+      return state !== 'post';
+    })
+    .reduce<UpcomingGame[]>((acc, e: any) => {
+      const id = `bbl-${e.id}`;
+      if (seen.has(id)) return acc;
+      seen.add(id);
+
+      const comp:  any   = e.competitions?.[0] ?? {};
+      const comps: any[] = comp.competitors ?? [];
+      const homeComp = comps.find((c: any) => c.homeAway === 'home');
+      const awayComp = comps.find((c: any) => c.homeAway === 'away');
+      const homeName = homeComp?.team?.displayName ?? '';
+      const awayName = awayComp?.team?.displayName ?? '';
+
+      const home = BBL_LEAGUE_TEAMS[homeName];
+      if (!home) return acc;
+      const away = BBL_LEAGUE_TEAMS[awayName];
+
+      const utcDate  = new Date(e.date);
+      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const fmt2 = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+
+      acc.push({
+        id,
+        teamId:          home.id,
+        opponent:        awayName,
+        opponentAbbr:    away?.abbr  ?? initials(awayName),
+        opponentColor:   away?.color ?? '#6B7280',
+        opponentLogoUrl: TEAM_LOGOS[away?.id ?? ''] ?? (awayComp?.team?.logo as string | undefined),
+        isHome:          true,
+        date:            utcDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast:       ['Fox Cricket', 'Channel 7'],
+        streaming:       ['Kayo Sports', '7plus'],
+        opponentId:      away?.id,
+        cricketFormat:   fmt2,
+      });
+      return acc;
+    }, [])
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+// ─── International Cricket — aggregated across all configured series ───────────
+
+const CRICKET_INT_LEAGUE_TEAMS: Record<string, TeamEntry & { abbr: string }> = {
+  'Australia':    { id: 'int-aus', color: '#f5c518', abbr: 'AUS' },
+  'England':      { id: 'int-eng', color: '#003082', abbr: 'ENG' },
+  'India':        { id: 'int-ind', color: '#003082', abbr: 'IND' },
+  'Pakistan':     { id: 'int-pak', color: '#01411c', abbr: 'PAK' },
+  'New Zealand':  { id: 'int-nz',  color: '#000000', abbr: 'NZ'  },
+  'South Africa': { id: 'int-sa',  color: '#007a4d', abbr: 'SA'  },
+  'Sri Lanka':    { id: 'int-sl',  color: '#003478', abbr: 'SL'  },
+  'West Indies':  { id: 'int-wi',  color: '#7b0041', abbr: 'WI'  },
+  'Bangladesh':   { id: 'int-ban', color: '#006a4e', abbr: 'BAN' },
+  'Zimbabwe':     { id: 'int-zim', color: '#007a3d', abbr: 'ZIM' },
+  'Ireland':      { id: 'int-ire', color: '#169b62', abbr: 'IRE' },
+  'Afghanistan':  { id: 'int-afg', color: '#000000', abbr: 'AFG' },
+};
+
+// Generic ICC series — catch-all for bilateral tours not listed below.
+const CRICKET_INT_GENERIC_SERIES = [8037];
+
+// Per-team series IDs — mirrors fixtures/route.ts CRICKET_INT_TEAM_SERIES.
+// Update both files together when new bilateral tours are confirmed.
+const CRICKET_INT_TEAM_SERIES: Partial<Record<string, number[]>> = {
+  'int-aus': [
+    24231,    // Bangladesh tour of Australia 2026 (2 Tests, Aug)
+    1530201,  // Australia tour of Zimbabwe 2026 (3 ODIs, Sep)
+    24203,    // Australia tour of South Africa 2026/27 (3 ODIs + 1 Test, Sep-Oct)
+  ],
+  // Add entries here as bilateral tours for other nations are confirmed.
+  // e.g. 'int-eng': [seriesId1, seriesId2],
+};
+
+// Derive the full union of series IDs at module load time so the league browse
+// automatically covers every team's configured tours + the generic feed.
+const CRICKET_INT_LEAGUE_SERIES: number[] = Array.from(
+  new Set([
+    ...CRICKET_INT_GENERIC_SERIES,
+    ...(Object.values(CRICKET_INT_TEAM_SERIES).flat().filter((n): n is number => n !== undefined)),
+  ]),
+);
+
+async function fetchCricketIntLeague(): Promise<UpcomingGame[]> {
+  const settled = await Promise.allSettled(
+    CRICKET_INT_LEAGUE_SERIES.map(async (seriesId) => {
+      const res = await fetchTimeout(
+        `https://site.api.espn.com/apis/site/v2/sports/cricket/${seriesId}/scoreboard`,
+        { next: { revalidate: 3600 } },
+      );
+      if (!res.ok) return [] as any[];
+      const data = await res.json();
+      return (data.events ?? []) as any[];
+    }),
+  );
+
+  const allEvents: any[] = [];
+  for (const r of settled) {
+    if (r.status === 'fulfilled') allEvents.push(...r.value);
+  }
+
+  const seen = new Set<string>();
+  return allEvents
+    .filter((e: any) => {
+      const id = String(e.id ?? '');
+      if (seen.has(id)) return false;
+      seen.add(id);
+      const state = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state ?? '';
+      return state !== 'post';
+    })
+    .map((e: any): UpcomingGame | null => {
+      const comp:  any   = e.competitions?.[0] ?? {};
+      const comps: any[] = comp.competitors ?? [];
+      // Show from home team's perspective; fall back to first competitor
+      const homeComp = comps.find((c: any) => c.homeAway === 'home') ?? comps[0];
+      const awayComp = comps.find((c: any) => c.homeAway === 'away') ?? comps[1];
+      if (!homeComp || !awayComp) return null;
+
+      const homeName = homeComp.team?.displayName ?? '';
+      const awayName = awayComp.team?.displayName ?? '';
+      const home = CRICKET_INT_LEAGUE_TEAMS[homeName];
+      if (!home) return null;
+      const away = CRICKET_INT_LEAGUE_TEAMS[awayName];
+
+      const utcDate  = new Date(e.date);
+      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const fmt = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+      const seriesName = e.name ?? comp.description ?? '';
+
+      return {
+        id:              `cint-${e.id}`,
+        teamId:          home.id,
+        opponent:        awayName,
+        opponentAbbr:    away?.abbr ?? awayName.slice(0, 3).toUpperCase(),
+        opponentColor:   away?.color ?? '#888888',
+        opponentLogoUrl: TEAM_LOGOS[away?.id ?? ''],
+        isHome:          true,
+        date:            utcDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast:       ['Fox Cricket'],
+        streaming:       ['Kayo Sports'],
+        opponentId:      away?.id,
+        cricketFormat:   fmt,
+        matchDays:       fmt === 'test' ? 5 : undefined,
+        competition:     seriesName || undefined,
+      };
+    })
+    .filter((g): g is UpcomingGame => g !== null)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
+const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'bbl', 'cricket_int']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -632,9 +841,11 @@ export async function GET(req: NextRequest) {
     else if (league === 'nrl')         fixtures = await fetchNRLLeague();
     else if (league === 'super_rugby') fixtures = await fetchSRULeague();
     else if (league === 'rugby_int')   fixtures = await fetchRINTLeague();
-    else if (league === 'nba')         fixtures = fetchMockLeague('nba');
-    else if (league === 'nhl')         fixtures = fetchMockLeague('nhl');
+    else if (league === 'nba')         fixtures = []; // no real NBA fixture API yet
+    else if (league === 'nhl')         fixtures = []; // no real NHL fixture API yet
     else if (league === 'f1')          fixtures = await fetchF1League();
+    else if (league === 'bbl')         fixtures = await fetchBBLLeague();
+    else if (league === 'cricket_int') fixtures = await fetchCricketIntLeague();
     return NextResponse.json(fixtures, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
   } catch (err) {
     console.error('[/api/league-fixtures]', err);

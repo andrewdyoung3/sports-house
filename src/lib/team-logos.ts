@@ -14,6 +14,14 @@
 
 const ESPN = 'https://a.espncdn.com/i/teamlogos';
 
+/**
+ * Per-team CSS filter overrides applied to logo images.
+ * Used for logos that are dark/black and would be invisible on the app's dark background.
+ */
+export const TEAM_LOGO_FILTERS: Record<string, string> = {
+  'int-nz': 'invert(1)',
+};
+
 export const TEAM_LOGOS: Record<string, string> = {
 
   // ── AFL ────────────────────────────────────────────────────────────────────
@@ -292,6 +300,33 @@ export const TEAM_LOGOS: Record<string, string> = {
   'f1_bea': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/bearman.png',
   'f1_hul': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/hulkenberg.png',
   'f1_bor': 'https://media.formula1.com/image/upload/f_auto,c_limit,q_75,w_320/content/dam/fom-website/drivers/2025Drivers/bortoleto.png',
+
+  // ── International Cricket ───────────────────────────────────────────────────
+  // Official ICC Cloudinary CDN — actual cricket board crests (CA kangaroo,
+  // BCCI emblem, ECB three lions, PCB logo, etc.), not country flags.
+  // Base: https://images.icc-cricket.com/image/upload/t_q-best/prd/{id}
+  'int-aus': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/h5apsohhlfsn9ydrivoe',
+  'int-eng': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/pnintojotbm9ll60cczx',
+  'int-ind': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/neu91cc4x40lphf6ubgh',
+  'int-pak': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/iexljg3x5le23ts9xmwl',
+  'int-nz':  'https://images.icc-cricket.com/image/upload/t_q-best/prd/ftjoqz45fxlacmrej5oc',
+  'int-sa':  'https://images.icc-cricket.com/image/upload/t_q-best/prd/kaefiv6vudqhj1vbqq0h',
+  'int-sl':  'https://images.icc-cricket.com/image/upload/t_q-best/prd/jb2iqj3djs8g2jbv25nm',
+  'int-wi':  'https://images.icc-cricket.com/image/upload/t_q-best/prd/vvn4mghhobtwnb2cv7yi',
+  'int-ban': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/jxmhkysemy0gkkmjwmct',
+  'int-zim': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/vz1jpphfrjvbuowwrrtt',
+  'int-ire': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/j5p9gymd8zwbdt102sta',
+  'int-afg': 'https://images.icc-cricket.com/image/upload/t_q-best/prd/iwjk0vb7agpa7tyhuzea',
+
+  // ── Big Bash League ─────────────────────────────────────────────────────────
+  'bbl-strikers':   `${ESPN}/cricket/500/509667.png`,
+  'bbl-heat':       `${ESPN}/cricket/500/509668.png`,
+  'bbl-hurricanes': `${ESPN}/cricket/500/509669.png`,
+  'bbl-scorchers':  `${ESPN}/cricket/500/509670.png`,
+  'bbl-renegades':  `${ESPN}/cricket/500/509671.png`,
+  'bbl-stars':      `${ESPN}/cricket/500/509672.png`,
+  'bbl-sixers':     `${ESPN}/cricket/500/509673.png`,
+  'bbl-thunder':    `${ESPN}/cricket/500/509674.png`,
 
   // ── Formula 1 (constructor logos) ──────────────────────────────────────────
   'f1-team-redbull':     'https://a.espncdn.com/i/teamlogos/f1/500/red_bull.png',

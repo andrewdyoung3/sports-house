@@ -48,6 +48,9 @@ const LEAGUE_EMOJI: Record<string, string> = {
   nfl:         '🏈',
   mlb:         '⚾',
   nhl:         '🏒',
+  f1:          '🏎',
+  bbl:         '🏏',
+  cricket_int: '🏏',
 };
 
 interface SportBallProps {

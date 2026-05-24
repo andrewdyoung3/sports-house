@@ -11,7 +11,9 @@ export type SportKey =
   | 'nfl'
   | 'mlb'
   | 'nhl'
-  | 'f1';
+  | 'f1'
+  | 'cricket_int'
+  | 'bbl';
 
 export interface League {
   id: SportKey;
@@ -60,6 +62,10 @@ export interface UpcomingGame {
     spread: string;
     overUnder: string;
   };
+  /** Cricket only — match format */
+  cricketFormat?: 'test' | 'odi' | 't20';
+  /** Test cricket only — match can span this many days (always 5) */
+  matchDays?: number;
 }
 
 // ─── Results ──────────────────────────────────────────────────────────────────
@@ -68,6 +74,7 @@ export interface GameResult {
   opponent: string;
   opponentAbbr: string;
   opponentLogoUrl?: string;  // ESPN CDN / team logo when available
+  opponentId?: string;       // Our internal team slug for the opponent (when resolvable)
   isHome: boolean;
   isWin: boolean;
   isDraw?: boolean;           // Football/soccer draws (score level at FT)
@@ -77,6 +84,16 @@ export interface GameResult {
   competition?: string;       // Non-primary cup/CL competition label
   /** F1 only — finishing position label: "P1", "P3", "DNF", "DSQ", "NC" etc. */
   f1Position?: string;
+  /** Cricket only — our team's batting score, e.g. "287/6 (50 ov)" */
+  cricketScore?: string;
+  /** Cricket only — opponent's batting score */
+  cricketOppScore?: string;
+  /** Cricket only — full result description, e.g. "Won by 45 runs", "Match drawn" */
+  cricketResult?: string;
+  /** Cricket only — match format */
+  cricketFormat?: 'test' | 'odi' | 't20';
+  /** Test cricket only — structured innings array [{team, score, overs}] */
+  cricketInnings?: Array<{ team: string; score: string; overs?: number }>;
 }
 
 // ─── News ─────────────────────────────────────────────────────────────────────
@@ -144,9 +161,27 @@ export interface CompetitionStage {
   opponentStanding?: TeamStanding;
 }
 
+/** Minimal table row used for mathematical standings analysis. */
+export interface LeagueTableRow {
+  name: string;
+  position: number;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  /** Competition points (e.g. EPL: 3/win; AFL: 4/win; NRL: 2/win). */
+  points: number;
+}
+
 export interface PreviewContext {
   teamStanding?: TeamStanding;
   opponentStanding?: TeamStanding;
+  /**
+   * Full league table — used server-side to compute mathematical clinching /
+   * elimination facts before they reach Claude. Populated for EPL, NRL, AFL,
+   * Super Rugby; absent for cup / European fixtures and F1.
+   */
+  leagueTable?: LeagueTableRow[];
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
   tips?: TipSummary;

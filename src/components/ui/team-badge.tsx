@@ -12,6 +12,8 @@ interface TeamBadgeProps {
   /** px dimension — both width and height */
   size?: number;
   className?: string;
+  /** CSS filter applied to the logo image, e.g. 'invert(1)' for dark logos on dark bg */
+  logoFilter?: string;
   /**
    * When provided, renders a small circular constructor/team logo badge
    * overlaid in the bottom-right corner. Also switches the main image to
@@ -36,6 +38,7 @@ export function TeamBadge({
   size = 40,
   className = '',
   overlayLogoUrl,
+  logoFilter,
 }: TeamBadgeProps) {
   const [imgError,     setImgError]     = useState(false);
   const [overlayError, setOverlayError] = useState(false);
@@ -74,6 +77,7 @@ export function TeamBadge({
             width={size}
             height={size}
             className={photoMode ? 'object-cover w-full h-full' : 'object-contain p-[15%]'}
+            style={logoFilter ? { filter: logoFilter } : undefined}
             onError={() => setImgError(true)}
             unoptimized
           />
