@@ -660,10 +660,11 @@ export default function ResultsPage() {
 
   const closeCalendar = useCallback((afterClose?: () => void) => {
     setCalendarVisible(false);
-    setTimeout(() => {
-      setCalendarOpen(false);
-      afterClose?.();
-    }, 420);
+    // Fire the scroll/action callback slightly before the slide finishes so
+    // the scroll start and the sheet disappearance feel simultaneous.
+    if (afterClose) setTimeout(afterClose, 350);
+    // Unmount after the CSS transition fully completes.
+    setTimeout(() => setCalendarOpen(false), 420);
   }, []);
 
   useEffect(() => {
