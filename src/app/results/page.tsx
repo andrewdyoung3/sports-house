@@ -736,7 +736,7 @@ export default function ResultsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
           <Trophy className="h-6 w-6 text-indigo-400" />
-          Your Results ✦
+          Your Results
         </h1>
         {loading && <p className="text-white/40 text-sm">Loading results…</p>}
       </div>
