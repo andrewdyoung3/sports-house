@@ -509,6 +509,123 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
     .slice(0, 10);
 }
 
+// ─── State of Origin — ESPN NRL scoreboard (league ID: 3) ────────────────────
+
+interface SOOMeta {
+  self: string;     // ESPN displayName of followed team
+  opponent: string; // ESPN displayName of the opposition
+  selfAbbr: string;
+  oppAbbr:  string;
+  oppColor: string;
+  oppLogoUrl: string;
+}
+
+const SOO_META: Record<string, SOOMeta> = {
+  'nrl-maroons': {
+    self: 'Queensland',      opponent: 'New South Wales',
+    selfAbbr: 'QLD',         oppAbbr: 'NSW',
+    oppColor: '#003DA5',
+    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289317.png',
+  },
+  'nrl-blues': {
+    self: 'New South Wales', opponent: 'Queensland',
+    selfAbbr: 'NSW',         oppAbbr: 'QLD',
+    oppColor: '#6B0000',
+    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289318.png',
+  },
+};
+
+async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
+  const meta = SOO_META[teamId];
+  if (!meta) return [];
+
+  const year  = new Date().getFullYear();
+  const start = `${year}0415`;
+  const end   = `${year}0901`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${start}-${end}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+
+  // Filter for SOO events: both teams must be the two states
+  const allSOO = ((data.events ?? []) as any[])
+    .filter((e: any) => {
+      const comps: any[] = e.competitions?.[0]?.competitors ?? [];
+      return (
+        comps.some(c => c.team?.displayName === 'Queensland') &&
+        comps.some(c => c.team?.displayName === 'New South Wales')
+      );
+    })
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // Tally series score from completed games
+  let selfWins = 0;
+  let oppWins  = 0;
+  for (const e of allSOO) {
+    if (!e.status?.type?.completed) break;
+    const comps: any[] = e.competitions?.[0]?.competitors ?? [];
+    const selfC  = comps.find(c => c.team?.displayName === meta.self);
+    const oppC   = comps.find(c => c.team?.displayName === meta.opponent);
+    const selfPts = Number(selfC?.score ?? 0);
+    const oppPts  = Number(oppC?.score  ?? 0);
+    if (selfPts > oppPts) selfWins++;
+    else if (oppPts > selfPts) oppWins++;
+  }
+
+  const now         = Date.now();
+  const twoHoursAgo = now - 2 * 3600 * 1000;
+
+  const upcoming = allSOO.filter((e: any) => {
+    const completed = e.status?.type?.completed === true;
+    const gameTime  = new Date(e.date).getTime();
+    return !completed && gameTime > twoHoursAgo;
+  });
+
+  return upcoming.map((e: any): UpcomingGame => {
+    const gameNum  = allSOO.indexOf(e) + 1; // 1, 2, or 3
+    const comp     = e.competitions?.[0] ?? {};
+    const comps: any[] = comp.competitors ?? [];
+    const selfC    = comps.find(c => c.team?.displayName === meta.self);
+    const isHome   = selfC?.homeAway === 'home';
+    const utcDate  = new Date(e.date);
+    const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+
+    // Series context label
+    const seriesDecided = selfWins >= 2 || oppWins >= 2;
+    let seriesCtx = '';
+    if (seriesDecided) {
+      const wAbbr = selfWins >= 2 ? meta.selfAbbr : meta.oppAbbr;
+      const wCount = Math.max(selfWins, oppWins);
+      const lCount = Math.min(selfWins, oppWins);
+      seriesCtx = ` (Series won: ${wAbbr} ${wCount}-${lCount})`;
+    } else if (selfWins + oppWins > 0) {
+      if (selfWins > oppWins)       seriesCtx = ` (${meta.selfAbbr} lead ${selfWins}-${oppWins})`;
+      else if (oppWins > selfWins)  seriesCtx = ` (${meta.oppAbbr} lead ${oppWins}-${selfWins})`;
+      else                          seriesCtx = ` (Series level ${selfWins}-all)`;
+    }
+
+    return {
+      id:              `soo-${teamId}-${e.id}`,
+      teamId,
+      opponent:        meta.opponent,
+      opponentAbbr:    meta.oppAbbr,
+      opponentColor:   meta.oppColor,
+      opponentLogoUrl: meta.oppLogoUrl,
+      isHome,
+      date:            utcDate.toISOString(),
+      time:            aestDisplay(aestDate),
+      venue:           comp.venue?.fullName ?? '',
+      broadcast:       ['Nine Network', 'Fox Sports'],
+      streaming:       ['Kayo Sports', '9Now'],
+      competition:     `State of Origin — Game ${gameNum}${seriesCtx}`,
+    };
+  });
+}
+
 // ─── Super Rugby Pacific — ESPN public API (league ID: 242041) ────────────────
 
 /**
@@ -1186,6 +1303,7 @@ export async function GET(req: NextRequest) {
     let fixtures: UpcomingGame[] = [];
     if      (league === 'afl')         fixtures = await fetchAFL(teamId);
     else if (league === 'epl')         fixtures = await fetchEPL(teamId);
+    else if (league === 'nrl' && (teamId === 'nrl-maroons' || teamId === 'nrl-blues')) fixtures = await fetchSOOFixtures(teamId);
     else if (league === 'nrl')         fixtures = await fetchNRLFixtures(teamId);
     else if (league === 'super_rugby') fixtures = await fetchSuperRugbyFixtures(teamId);
     else if (league === 'rugby_int')   fixtures = await fetchInternationalRugbyFixtures(teamId);

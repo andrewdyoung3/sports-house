@@ -922,21 +922,28 @@ export default function SchedulePage() {
 
   useEffect(() => {
     const followed = getFollowedTeams();
-    setTeams(followed);
 
-    if (followed.length === 0) {
+    // Auto-inject QLD Maroons (State of Origin) whenever any NRL club team is followed
+    const hasNRLClub  = followed.some(t => t.league === 'nrl' && t.id !== 'nrl-maroons' && t.id !== 'nrl-blues');
+    const hasMaroons  = followed.some(t => t.id === 'nrl-maroons');
+    const maroonsTeam = !hasMaroons && hasNRLClub ? TEAMS.find(t => t.id === 'nrl-maroons') : undefined;
+    const teamsToFetch = maroonsTeam ? [...followed, maroonsTeam] : followed;
+
+    setTeams(teamsToFetch);
+
+    if (teamsToFetch.length === 0) {
       setLoading(false);
       return;
     }
 
     let active = true;
-    let remaining = followed.length;
+    let remaining = teamsToFetch.length;
 
     // Cutoff: 2 months ago
     const twoMonthsAgo = new Date();
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
-    followed.forEach(async (team) => {
+    teamsToFetch.forEach(async (team) => {
       // Fixtures
       const games = await loadFixtures(team);
       if (!active) return;
@@ -970,6 +977,12 @@ export default function SchedulePage() {
   }, []);
 
   const handleUnfollow = useCallback((teamId: string) => {
+    // Prevent removing auto-injected SOO team if user still follows NRL clubs
+    if (teamId === 'nrl-maroons') {
+      const remaining = teams.filter(t => t.id !== 'nrl-maroons');
+      const stillHasNRL = remaining.some(t => t.league === 'nrl' && t.id !== 'nrl-maroons' && t.id !== 'nrl-blues');
+      if (stillHasNRL) return; // keep it auto-included
+    }
     const updated = teams.filter(t => t.id !== teamId);
     saveFollowedTeams(updated);
     setTeams(updated);

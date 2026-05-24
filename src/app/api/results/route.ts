@@ -221,6 +221,73 @@ async function fetchNRLResults(teamId: string): Promise<GameResult[]> {
     .slice(0, 5);
 }
 
+// ─── State of Origin results ──────────────────────────────────────────────────
+
+const SOO_RESULT_META: Record<string, { self: string; opponent: string; oppAbbr: string; oppColor: string; oppLogoUrl: string }> = {
+  'nrl-maroons': {
+    self: 'Queensland', opponent: 'New South Wales',
+    oppAbbr: 'NSW', oppColor: '#003DA5',
+    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289317.png',
+  },
+  'nrl-blues': {
+    self: 'New South Wales', opponent: 'Queensland',
+    oppAbbr: 'QLD', oppColor: '#6B0000',
+    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289318.png',
+  },
+};
+
+async function fetchSOOResults(teamId: string): Promise<GameResult[]> {
+  const meta = SOO_RESULT_META[teamId];
+  if (!meta) return [];
+
+  const year  = new Date().getFullYear();
+  const start = `${year}0415`;
+  const end   = `${year}0901`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${start}-${end}&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+
+  const allSOO = ((data.events ?? []) as any[])
+    .filter((e: any) => {
+      const comps: any[] = e.competitions?.[0]?.competitors ?? [];
+      return (
+        comps.some(c => c.team?.displayName === 'Queensland') &&
+        comps.some(c => c.team?.displayName === 'New South Wales')
+      );
+    })
+    .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const completed = allSOO.filter((e: any) => e.status?.type?.completed === true);
+
+  return completed.map((e: any, idx: number): GameResult => {
+    const gameNum  = idx + 1;
+    const comp     = e.competitions?.[0] ?? {};
+    const comps: any[] = comp.competitors ?? [];
+    const selfC    = comps.find(c => c.team?.displayName === meta.self);
+    const oppC     = comps.find(c => c.team?.displayName === meta.opponent);
+    const isHome   = selfC?.homeAway === 'home';
+    const selfPts  = Number(selfC?.score ?? 0);
+    const oppPts   = Number(oppC?.score  ?? 0);
+
+    return {
+      opponent:        meta.opponent,
+      opponentAbbr:    meta.oppAbbr,
+      opponentLogoUrl: meta.oppLogoUrl,
+      isHome,
+      isWin:           selfPts > oppPts,
+      teamScore:       selfPts,
+      opponentScore:   oppPts,
+      date:            new Date(e.date).toISOString(),
+      competition:     `State of Origin — Game ${gameNum}`,
+    };
+  }).reverse(); // most recent first
+}
+
 // ─── EPL — ESPN public API ────────────────────────────────────────────────────
 
 const ESPN_TEAM_NAME: Record<string, string> = {
@@ -1005,6 +1072,7 @@ export async function GET(req: NextRequest) {
   try {
     let results: GameResult[] = [];
     if      (league === 'afl')         results = await fetchAFLResults(teamId);
+    else if (league === 'nrl' && (teamId === 'nrl-maroons' || teamId === 'nrl-blues')) results = await fetchSOOResults(teamId);
     else if (league === 'nrl')         results = await fetchNRLResults(teamId);
     else if (league === 'epl')         results = await fetchEPLResults(teamId);
     else if (league === 'super_rugby') results = await fetchSuperRugbyResults(teamId);

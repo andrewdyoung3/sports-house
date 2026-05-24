@@ -7,6 +7,7 @@ import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-
 import { getFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
+import { TEAMS } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { TeamBadge } from '@/components/ui/team-badge';
@@ -75,6 +76,8 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png', logoOpacity: 0.47, logoBlend: 'screen' },
   'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
+  'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289318.png', logoOpacity: 0.20 },
 };
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
@@ -94,7 +97,8 @@ const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
 };
 
 function ResultBadge({ league, competition }: { league: string; competition?: string }) {
-  const meta = competition ? (COMPETITION_BADGE[competition] ?? null) : (LEAGUE_BADGE[league] ?? null);
+  const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
+  const meta = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[league] ?? null);
   const label  = meta?.label ?? (competition ?? league.toUpperCase());
   const bg     = meta?.bg    ?? 'rgba(255,255,255,0.06)';
   const color  = meta?.color ?? 'rgba(255,255,255,0.40)';
@@ -204,7 +208,8 @@ function ResultRow({
   });
 
   // League / competition watermark metadata
-  const leagueMeta      = (result.competition ? COMPETITION_BADGE[result.competition] : undefined)
+  const baseComp = result.competition?.startsWith('State of Origin') ? 'State of Origin' : result.competition;
+  const leagueMeta      = (baseComp ? COMPETITION_BADGE[baseComp] : undefined)
     ?? LEAGUE_BADGE[team.league];
   const leagueLogoUrl     = leagueMeta?.logoUrl;
   const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
@@ -679,13 +684,22 @@ export default function ResultsPage() {
 
   useEffect(() => {
     const followed = getFollowedTeams();
-    setTeams(followed);
 
-    if (followed.length === 0) { setLoading(false); return; }
+    // Auto-inject QLD Maroons (State of Origin) whenever any NRL club team is followed
+    const hasNRLClub  = followed.some(t => t.league === 'nrl' && t.id !== 'nrl-maroons' && t.id !== 'nrl-blues');
+    const hasMaroons  = followed.some(t => t.id === 'nrl-maroons');
+    const maroonsTeam = !hasMaroons && hasNRLClub
+      ? TEAMS.find(t => t.id === 'nrl-maroons')
+      : undefined;
+    const teamsToFetch = maroonsTeam ? [...followed, maroonsTeam] : followed;
+
+    setTeams(teamsToFetch);
+
+    if (teamsToFetch.length === 0) { setLoading(false); return; }
 
     let active = true;
-    let remaining = followed.length;
-    followed.forEach(async (team) => {
+    let remaining = teamsToFetch.length;
+    teamsToFetch.forEach(async (team) => {
       try {
         const entries = await loadResults(team);
         if (active) {

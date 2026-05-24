@@ -63,6 +63,8 @@ export const TEAM_LOGOS: Record<string, string> = {
   'nrl-dragons':   `${ESPN}/rugby/teams/500/289209.png`,
   'nrl-roosters':  `${ESPN}/rugby/teams/500/289204.png`,
   'nrl-tigers':    `${ESPN}/rugby/teams/500/289200.png`,
+  'nrl-maroons':   `${ESPN}/rugby/teams/500/289318.png`,
+  'nrl-blues':     `${ESPN}/rugby/teams/500/289317.png`,
 
   // ── International Rugby ─────────────────────────────────────────────────────
   // ESPN CDN — numeric IDs verified from ESPN rugby teams endpoints (March 2026)

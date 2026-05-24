@@ -60,6 +60,10 @@ export const TEAMS: Team[] = [
   { id: 'nrl-roosters',  name: 'Sydney Roosters',          shortName: 'Roosters',      abbreviation: 'SYD', league: 'nrl', sport: 'Rugby League', city: 'Sydney',        country: 'Australia', primaryColor: '#012B5C', secondaryColor: '#C9002B', venue: 'Allianz Stadium',          division: 'NSW' },
   { id: 'nrl-tigers',    name: 'Wests Tigers',             shortName: 'Wests Tigers',  abbreviation: 'WST', league: 'nrl', sport: 'Rugby League', city: 'Western Sydney', country: 'Australia', primaryColor: '#F47920', secondaryColor: '#000000', venue: 'CommBank Stadium',         division: 'NSW' },
 
+  // State of Origin representative sides — auto-included for all NRL followers
+  { id: 'nrl-maroons', name: 'Queensland Maroons', shortName: 'Maroons', abbreviation: 'QLD', league: 'nrl', sport: 'Rugby League', city: 'Brisbane', country: 'Australia', primaryColor: '#6B0000', secondaryColor: '#F5A623', venue: 'Suncorp Stadium', division: 'State of Origin' },
+  { id: 'nrl-blues',   name: 'NSW Blues',           shortName: 'Blues',   abbreviation: 'NSW', league: 'nrl', sport: 'Rugby League', city: 'Sydney',   country: 'Australia', primaryColor: '#003DA5', secondaryColor: '#FFFFFF', venue: 'Accor Stadium',   division: 'State of Origin' },
+
   // ── Super Rugby Pacific ───────────────────────────────────────────────────
   { id: 'sru-brumbies',  name: 'ACT Brumbies',             shortName: 'Brumbies',      abbreviation: 'BRU', league: 'super_rugby', sport: 'Rugby Union', city: 'Canberra',      country: 'Australia', primaryColor: '#003399', secondaryColor: '#FFCC00', venue: 'GIO Stadium' },
   { id: 'sru-reds',      name: 'Queensland Reds',           shortName: 'Reds',          abbreviation: 'RED', league: 'super_rugby', sport: 'Rugby Union', city: 'Brisbane',      country: 'Australia', primaryColor: '#8B0000', secondaryColor: '#FFD700', venue: 'Suncorp Stadium' },
