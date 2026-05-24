@@ -2,22 +2,26 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Calendar, Trophy, Settings } from 'lucide-react';
+import { Flag, Trophy, Settings, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
-  { href: '/',         label: 'Home',     icon: Home },
-  { href: '/schedule', label: 'Schedule', icon: Calendar },
+  { href: '/schedule', label: 'Schedule', icon: Flag },
   { href: '/results',  label: 'Results',  icon: Trophy },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
+  const onSchedule = pathname === '/schedule';
+
+  function openCalendar() {
+    window.dispatchEvent(new CustomEvent('sporthouse:open-calendar'));
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 h-14 bg-black/25 backdrop-blur-xl border-b border-white/8">
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
-        {/* Logo — SVG icon mark (transparent bg) + white wordmark */}
+        {/* Logo — links to home (replaces the Home nav item) */}
         <Link href="/" className="flex items-center gap-2 group opacity-90 hover:opacity-100 transition-opacity">
           <img
             src="/icon-mark.svg"
@@ -50,6 +54,18 @@ export function Navbar() {
               </Link>
             );
           })}
+
+          {/* Calendar — only shown on the schedule page on mobile (desktop has sidebar) */}
+          {onSchedule && (
+            <button
+              onClick={openCalendar}
+              className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all"
+              aria-label="Open calendar"
+            >
+              <Calendar className="h-4 w-4" />
+              <span className="hidden sm:block">Calendar</span>
+            </button>
+          )}
         </div>
 
         {/* Right side — Teams settings */}
