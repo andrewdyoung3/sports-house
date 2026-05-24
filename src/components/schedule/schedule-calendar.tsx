@@ -5,9 +5,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { datekeyInZone, formatTimeInZone } from '@/lib/utils';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { TEAM_LOGOS } from '@/lib/team-logos';
-import type { Team, UpcomingGame } from '@/types';
+import type { Team, UpcomingGame, GameResult } from '@/types';
 
-type ScheduleEntry = UpcomingGame & { team: Team };
+type ScheduleEntry  = UpcomingGame & { team: Team };
+type PastResultEntry = GameResult  & { team: Team };
 
 interface ScheduleCalendarProps {
   games: ScheduleEntry[];
@@ -15,6 +16,11 @@ interface ScheduleCalendarProps {
   hoveredDateKey: string | null;
   onHover: (dateKey: string | null) => void;
   onDayClick: (dateKey: string) => void;
+  /** Historical results (up to ~2 months back). Days with results get W/L/D dots
+   *  and navigate to /results#result-date-{dateKey} on click. */
+  pastResults?: PastResultEntry[];
+  /** Called when the user clicks a past-results day (parent handles navigation). */
+  onPastDayClick?: (dateKey: string) => void;
 }
 
 const MONTH_NAMES = [
@@ -22,6 +28,23 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+// Result outcome colours
+const WIN_COLOR  = '#22c55e';
+const DRAW_COLOR = '#f59e0b';
+const LOSS_COLOR = '#ef4444';
+
+function resultDotColor(r: PastResultEntry): string {
+  if (r.isWin)   return WIN_COLOR;
+  if (r.isDraw)  return DRAW_COLOR;
+  return LOSS_COLOR;
+}
+
+function resultLabel(r: PastResultEntry): string {
+  if (r.isWin)  return 'W';
+  if (r.isDraw) return 'D';
+  return 'L';
+}
 
 /** Parse a YYYY-MM-DD key into a short label like "Tue 18 Mar" */
 function labelFromDateKey(dk: string): string {
@@ -39,6 +62,8 @@ export function ScheduleCalendar({
   hoveredDateKey,
   onHover,
   onDayClick,
+  pastResults = [],
+  onPastDayClick,
 }: ScheduleCalendarProps) {
   const now = new Date();
   const [viewYear,  setViewYear]  = useState(now.getFullYear());
@@ -50,7 +75,7 @@ export function ScheduleCalendar({
     [userTz],
   );
 
-  // dateKey → games on that day
+  // dateKey → upcoming fixtures
   const gamesByDate = useMemo(() => {
     const map = new Map<string, ScheduleEntry[]>();
     for (const g of games) {
@@ -60,6 +85,17 @@ export function ScheduleCalendar({
     }
     return map;
   }, [games, userTz]);
+
+  // dateKey → past results
+  const pastByDate = useMemo(() => {
+    const map = new Map<string, PastResultEntry[]>();
+    for (const r of pastResults) {
+      const dk = datekeyInZone(r.date, userTz);
+      if (!map.has(dk)) map.set(dk, []);
+      map.get(dk)!.push(r);
+    }
+    return map;
+  }, [pastResults, userTz]);
 
   // 7-column grid: null = blank leading/trailing cell, number = day-of-month
   const calendarDays = useMemo(() => {
@@ -71,7 +107,6 @@ export function ScheduleCalendar({
     return cells;
   }, [viewYear, viewMonth]);
 
-  // Construct YYYY-MM-DD matching datekeyInZone's en-CA output
   function dateKeyForDay(day: number): string {
     const mm = String(viewMonth + 1).padStart(2, '0');
     const dd = String(day).padStart(2, '0');
@@ -87,13 +122,15 @@ export function ScheduleCalendar({
     else setViewMonth(m => m + 1);
   }
 
-  const viewHasGames = calendarDays.some(day => {
+  const viewHasActivity = calendarDays.some(day => {
     if (day === null) return false;
-    return gamesByDate.has(dateKeyForDay(day));
+    const dk = dateKeyForDay(day);
+    return gamesByDate.has(dk) || pastByDate.has(dk);
   });
 
-  // Games to preview — driven by hoveredDateKey from parent
-  const previewGames = hoveredDateKey ? (gamesByDate.get(hoveredDateKey) ?? []) : [];
+  // Preview panel — driven by hoveredDateKey from parent
+  const previewGames   = hoveredDateKey ? (gamesByDate.get(hoveredDateKey) ?? []) : [];
+  const previewPast    = hoveredDateKey ? (pastByDate.get(hoveredDateKey)  ?? []) : [];
 
   return (
     <div className="glass rounded-2xl p-4 select-none">
@@ -133,40 +170,59 @@ export function ScheduleCalendar({
         {calendarDays.map((day, i) => {
           if (day === null) return <div key={`blank-${i}`} />;
 
-          const dk        = dateKeyForDay(day);
-          const dayGames  = gamesByDate.get(dk);
-          const isToday   = dk === todayKey;
-          const isHovered = dk === hoveredDateKey;
-          const hasGames  = !!dayGames?.length;
-          const glowColor = dayGames?.[0]?.team.primaryColor;
+          const dk          = dateKeyForDay(day);
+          const dayGames    = gamesByDate.get(dk);
+          const dayPast     = pastByDate.get(dk);
+          const isToday     = dk === todayKey;
+          const isHovered   = dk === hoveredDateKey;
+          const hasUpcoming = !!dayGames?.length;
+          const hasPast     = !!dayPast?.length;
+          const hasActivity = hasUpcoming || hasPast;
+
+          // Glow uses team colour for upcoming; win/loss colour for past-only
+          const glowColor = hasUpcoming
+            ? dayGames![0].team.primaryColor
+            : hasPast
+              ? resultDotColor(dayPast![0])
+              : undefined;
 
           return (
             <button
               key={dk}
-              onClick={() => hasGames && onDayClick(dk)}
-              onMouseEnter={() => hasGames && onHover(dk)}
+              onClick={() => {
+                if (hasUpcoming) onDayClick(dk);
+                else if (hasPast) onPastDayClick?.(dk);
+              }}
+              onMouseEnter={() => hasActivity && onHover(dk)}
               onMouseLeave={() => onHover(null)}
-              disabled={!hasGames}
+              disabled={!hasActivity}
               className={[
                 'relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-lg',
                 'text-[11px] font-medium transition-all duration-150',
-                hasGames ? 'cursor-pointer' : 'cursor-default',
+                hasActivity ? 'cursor-pointer' : 'cursor-default',
                 isToday
                   ? 'ring-1 ring-white/35 bg-white/10 text-white font-bold'
-                  : hasGames
+                  : hasUpcoming
                     ? 'text-white/65 hover:text-white'
-                    : 'text-white/20',
-                isHovered && hasGames ? 'scale-110' : '',
+                    : hasPast
+                      ? 'text-white/40 hover:text-white/70'
+                      : 'text-white/20',
+                isHovered && hasActivity ? 'scale-110' : '',
               ].join(' ')}
               style={isHovered && glowColor
                 ? { boxShadow: `0 0 14px ${glowColor}55`, background: `${glowColor}18` }
                 : undefined}
-              aria-label={hasGames
-                ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayGames!.length} fixture${dayGames!.length > 1 ? 's' : ''}`
-                : undefined}
+              aria-label={
+                hasUpcoming
+                  ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayGames!.length} fixture${dayGames!.length > 1 ? 's' : ''}`
+                  : hasPast
+                    ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayPast!.length} result${dayPast!.length > 1 ? 's' : ''}`
+                    : undefined
+              }
             >
               <span>{day}</span>
-              {hasGames && (
+              {/* Upcoming fixture dots — team primary colour */}
+              {hasUpcoming && (
                 <div className="flex gap-0.5 justify-center">
                   {dayGames!.slice(0, 3).map((g, gi) => (
                     <span
@@ -177,75 +233,127 @@ export function ScheduleCalendar({
                   ))}
                 </div>
               )}
+              {/* Past result dots — W/L/D colour, shown only when no upcoming fixture */}
+              {!hasUpcoming && hasPast && (
+                <div className="flex gap-0.5 justify-center">
+                  {dayPast!.slice(0, 3).map((r, ri) => (
+                    <span
+                      key={ri}
+                      className="w-1 h-1 rounded-full opacity-70"
+                      style={{ backgroundColor: resultDotColor(r) }}
+                    />
+                  ))}
+                </div>
+              )}
             </button>
           );
         })}
       </div>
 
-      {/* ── Hover preview panel ──────────────────────────────────────────────── */}
-      {/*
-        Shows when a day-with-games is hovered (from either the calendar or a
-        schedule row). Driven entirely by the hoveredDateKey prop so it reacts
-        to cross-highlights from the list too.
-      */}
+      {/* ── Hover preview panel ── */}
       <div
         className="mt-3 pt-3 border-t border-white/10 overflow-hidden transition-all duration-200"
         style={{ minHeight: '2.5rem' }}
       >
-        {previewGames.length > 0 ? (
+        {(previewGames.length > 0 || previewPast.length > 0) ? (
           <div style={{ animation: 'slideDown 0.18s ease-out' }}>
             <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 mb-2">
               {labelFromDateKey(hoveredDateKey!)}
             </p>
-            <div className="space-y-2">
-              {previewGames.map(game => (
-                <div
-                  key={game.id}
-                  className="flex items-center gap-1.5"
-                  style={{
-                    borderLeft: `2px solid ${game.team.primaryColor}60`,
-                    paddingLeft: '6px',
-                  }}
-                >
-                  {/* Followed-team badge */}
-                  <TeamBadge
-                    logoUrl={TEAM_LOGOS[game.team.id]}
-                    abbreviation={game.team.abbreviation}
-                    primaryColor={game.team.primaryColor}
-                    size={20}
-                    className="rounded-md shrink-0"
-                  />
-                  <span className="text-[11px] font-bold text-white leading-none">
-                    {game.team.shortName}
-                  </span>
-                  <span className="text-[10px] text-white/35 leading-none">
-                    {game.isHome ? 'vs' : 'at'}
-                  </span>
-                  {/* Opponent badge */}
-                  <TeamBadge
-                    logoUrl={game.opponentLogoUrl}
-                    abbreviation={game.opponentAbbr}
-                    primaryColor={game.opponentColor}
-                    size={20}
-                    className="rounded-md shrink-0"
-                  />
-                  <span className="text-[11px] text-white/70 leading-none flex-1 min-w-0 truncate">
-                    {game.opponent}
-                  </span>
-                  {/* Kick-off time */}
-                  <span
-                    className="text-[10px] font-bold shrink-0 leading-none"
-                    style={{ color: game.team.primaryColor }}
+
+            {/* Upcoming fixtures */}
+            {previewGames.length > 0 && (
+              <div className="space-y-2">
+                {previewGames.map(game => (
+                  <div
+                    key={game.id}
+                    className="flex items-center gap-1.5"
+                    style={{ borderLeft: `2px solid ${game.team.primaryColor}60`, paddingLeft: '6px' }}
                   >
-                    {formatTimeInZone(game.date, userTz)}
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <TeamBadge
+                      logoUrl={TEAM_LOGOS[game.team.id]}
+                      abbreviation={game.team.abbreviation}
+                      primaryColor={game.team.primaryColor}
+                      size={20}
+                      className="rounded-md shrink-0"
+                    />
+                    <span className="text-[11px] font-bold text-white leading-none">
+                      {game.team.shortName}
+                    </span>
+                    <span className="text-[10px] text-white/35 leading-none">
+                      {game.isHome ? 'vs' : 'at'}
+                    </span>
+                    <TeamBadge
+                      logoUrl={game.opponentLogoUrl}
+                      abbreviation={game.opponentAbbr}
+                      primaryColor={game.opponentColor}
+                      size={20}
+                      className="rounded-md shrink-0"
+                    />
+                    <span className="text-[11px] text-white/70 leading-none flex-1 min-w-0 truncate">
+                      {game.opponent}
+                    </span>
+                    <span
+                      className="text-[10px] font-bold shrink-0 leading-none"
+                      style={{ color: game.team.primaryColor }}
+                    >
+                      {formatTimeInZone(game.date, userTz)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Past results */}
+            {previewPast.length > 0 && (
+              <div className="space-y-2 mt-1">
+                {previewPast.map((r, ri) => (
+                  <div
+                    key={ri}
+                    className="flex items-center gap-1.5"
+                    style={{ borderLeft: `2px solid ${resultDotColor(r)}50`, paddingLeft: '6px' }}
+                  >
+                    <TeamBadge
+                      logoUrl={TEAM_LOGOS[r.team.id]}
+                      abbreviation={r.team.abbreviation}
+                      primaryColor={r.team.primaryColor}
+                      size={20}
+                      className="rounded-md shrink-0"
+                    />
+                    <span className="text-[11px] font-bold text-white leading-none">
+                      {r.team.shortName}
+                    </span>
+                    <span className="text-[10px] text-white/35 leading-none">
+                      {r.isHome ? 'vs' : 'at'}
+                    </span>
+                    <TeamBadge
+                      logoUrl={r.opponentLogoUrl}
+                      abbreviation={r.opponentAbbr}
+                      primaryColor={r.team.primaryColor}
+                      size={20}
+                      className="rounded-md shrink-0"
+                    />
+                    <span className="text-[11px] text-white/70 leading-none flex-1 min-w-0 truncate">
+                      {r.opponent}
+                    </span>
+                    {/* Score + W/L/D badge */}
+                    <span
+                      className="text-[10px] font-black shrink-0 leading-none px-1.5 py-0.5 rounded"
+                      style={{
+                        color:           resultDotColor(r),
+                        backgroundColor: `${resultDotColor(r)}18`,
+                      }}
+                    >
+                      {resultLabel(r)} {r.teamScore}–{r.opponentScore}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-[9px] text-white/18 text-center leading-tight">
-            {viewHasGames ? 'Hover a date · click to jump' : 'No fixtures this month'}
+            {viewHasActivity ? 'Hover a date · click to jump' : 'No fixtures this month'}
           </p>
         )}
       </div>

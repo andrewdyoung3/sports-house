@@ -85,6 +85,16 @@ async function loadFixtures(team: Team): Promise<UpcomingGame[]> {
   return [];
 }
 
+async function loadResults(team: Team): Promise<import('@/types').GameResult[]> {
+  if (!REAL_DATA_LEAGUES.has(team.league)) return [];
+  try {
+    const res  = await fetch(`/api/results?league=${team.league}&teamId=${team.id}`);
+    const data = res.ok ? await res.json() : [];
+    if (Array.isArray(data) && data.length > 0) return data;
+  } catch { /* network error — return empty */ }
+  return [];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDateHeading(representativeDate: Date, dateKey: string, userTz: string): string {
@@ -782,6 +792,9 @@ export default function SchedulePage() {
   const [expandedId,      setExpandedId]      = useState<string | null>(null);
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
 
+  // Past results for calendar (fetched on load, filtered to last 2 months)
+  const [pastResults, setPastResults] = useState<(import('@/types').GameResult & { team: Team })[]>([]);
+
   // Mobile calendar bottom sheet — opened by the navbar Calendar button via custom event
   const [calendarOpen, setCalendarOpen] = useState(false);
   useEffect(() => {
@@ -892,7 +905,13 @@ export default function SchedulePage() {
 
     let active = true;
     let remaining = followed.length;
+
+    // Cutoff: 2 months ago
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+
     followed.forEach(async (team) => {
+      // Fixtures
       const games = await loadFixtures(team);
       if (!active) return;
       const entries: ScheduleEntry[] = games.map(g => ({ ...g, team }));
@@ -902,6 +921,22 @@ export default function SchedulePage() {
         merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         return merged;
       });
+
+      // Results for calendar — fetch in background, no loading gate
+      loadResults(team).then(results => {
+        if (!active) return;
+        const recent = results.filter(r => new Date(r.date) >= twoMonthsAgo);
+        if (recent.length === 0) return;
+        setPastResults(prev => {
+          // Deduplicate by team+date+opponent
+          const existingKeys = new Set(prev.map(r => `${r.team.id}:${r.date.slice(0,10)}:${r.opponent}`));
+          const fresh = recent
+            .map(r => ({ ...r, team }))
+            .filter(r => !existingKeys.has(`${r.team.id}:${r.date.slice(0,10)}:${r.opponent}`));
+          return [...prev, ...fresh];
+        });
+      });
+
       remaining -= 1;
       if (remaining === 0) setLoading(false);
     });
@@ -1010,6 +1045,9 @@ export default function SchedulePage() {
 
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
+  const handlePastDayClick  = useCallback((dk: string) => {
+    window.location.href = `/results#result-date-${dk}`;
+  }, []);
 
   const handleDayClick = useCallback((dk: string) => {
     const el = document.getElementById(`date-section-${dk}`);
@@ -1224,6 +1262,8 @@ export default function SchedulePage() {
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
               onDayClick={handleDayClick}
+              pastResults={pastResults}
+              onPastDayClick={handlePastDayClick}
             />
           )}
 
@@ -1272,6 +1312,8 @@ export default function SchedulePage() {
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
               onDayClick={(dk) => { handleDayClick(dk); setCalendarOpen(false); }}
+              pastResults={pastResults}
+              onPastDayClick={(dk) => { setCalendarOpen(false); handlePastDayClick(dk); }}
             />
           </div>
         </>
