@@ -370,6 +370,23 @@ function ScheduleRow({
   const nameFontSize    = combinedNameLen > 22 ? '14px' : '17px';
   const compactBadge    = combinedNameLen > 22;
 
+  // Mobile time split: strip the trailing TZ abbreviation from the time string so it
+  // can be shown on a separate line, freeing horizontal space for the team names.
+  // e.g. "7:30 pm AEST" → timeOnly="7:30 pm", tzAbbr="AEST"
+  // Falls back gracefully when the format doesn't match (e.g. "TBC").
+  const lastSpace   = displayTime.lastIndexOf(' ');
+  const possibleTz  = lastSpace > 0 ? displayTime.slice(lastSpace + 1) : '';
+  const hasTzSuffix = /^[A-Z]{2,6}([+-]\d+)?$/.test(possibleTz);
+  const mobileTimeOnly = hasTzSuffix ? displayTime.slice(0, lastSpace) : displayTime;
+  const mobileTzAbbr   = hasTzSuffix ? possibleTz : '';
+
+  // Subtitle shown below the time on desktop (and on mobile when there is no TZ to show)
+  const timeSubtitle = isF1
+    ? (game.competition ?? 'F1')
+    : isCricket && game.cricketFormat
+      ? (game.cricketFormat === 'test' ? 'Test' : game.cricketFormat === 'odi' ? 'ODI' : 'T20')
+      : game.isHome ? 'Home' : 'Away';
+
   return (
     <div
       className={[
@@ -533,15 +550,16 @@ function ScheduleRow({
       {/* ── Time + chevron ── */}
       <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
         <div>
+          {/* Mobile: time without TZ so the column is narrower */}
           <p className="text-[19px] font-bold leading-none tabular-nums text-white/85">
-            {displayTime}
+            <span className="lg:hidden">{mobileTimeOnly}</span>
+            <span className="hidden lg:inline">{displayTime}</span>
           </p>
+          {/* Mobile: TZ abbr on its own line  |  Desktop: Home/Away/session label */}
           <p className="text-[11px] font-medium text-white/30 mt-0.5 uppercase tracking-wide">
-            {isF1
-              ? (game.competition ?? 'F1')
-              : isCricket && game.cricketFormat
-              ? (game.cricketFormat === 'test' ? 'Test' : game.cricketFormat === 'odi' ? 'ODI' : 'T20')
-              : game.isHome ? 'Home' : 'Away'}
+            {mobileTzAbbr
+              ? <><span className="lg:hidden">{mobileTzAbbr}</span><span className="hidden lg:inline">{timeSubtitle}</span></>
+              : timeSubtitle}
           </p>
         </div>
         <ChevronDown
