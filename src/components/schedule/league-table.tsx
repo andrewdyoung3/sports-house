@@ -8,6 +8,8 @@ interface LeagueTableProps {
   league: SportKey;
   rows: StandingRow[];
   followedTeamIds: Set<string>;
+  /** The opponent's internal team ID — highlights their row with a softer accent. */
+  opponentTeamId?: string;
 }
 
 const LEAGUE_LABEL: Record<string, string> = {
@@ -19,7 +21,7 @@ const LEAGUE_LABEL: Record<string, string> = {
   f1:          'Drivers\' Championship',
 };
 
-export function LeagueTable({ league, rows, followedTeamIds }: LeagueTableProps) {
+export function LeagueTable({ league, rows, followedTeamIds, opponentTeamId }: LeagueTableProps) {
   if (rows.length === 0) return null;
 
   const isF1     = league === 'f1';
@@ -46,16 +48,17 @@ export function LeagueTable({ league, rows, followedTeamIds }: LeagueTableProps)
             </thead>
             <tbody>
               {rows.map((row) => {
-                const highlighted = !!row.teamId && followedTeamIds.has(row.teamId);
+                const isOwnTeam  = !!row.teamId && followedTeamIds.has(row.teamId);
+                const isOpponent = !!row.teamId && row.teamId === opponentTeamId && !isOwnTeam;
                 return (
                   <tr
                     key={row.position}
-                    className={highlighted ? 'bg-white/8 rounded' : ''}
+                    className={isOwnTeam ? 'bg-white/8' : isOpponent ? 'bg-white/4' : ''}
                   >
-                    <td className={`py-1 pr-2 rounded-l ${highlighted ? 'text-white font-bold' : 'text-white/35'}`}>
+                    <td className={`py-1 pr-2 rounded-l ${isOwnTeam ? 'text-white font-bold' : isOpponent ? 'text-white/70 font-semibold' : 'text-white/35'}`}>
                       {row.position}
                     </td>
-                    <td className={`py-1 pr-1 min-w-0 ${highlighted ? 'text-white font-bold' : 'text-white/60'}`}>
+                    <td className={`py-1 pr-1 min-w-0 ${isOwnTeam ? 'text-white font-bold' : isOpponent ? 'text-white/70 font-semibold' : 'text-white/60'}`}>
                       <div className="truncate max-w-[80px]" title={row.name}>
                         {row.name}
                       </div>
@@ -65,7 +68,7 @@ export function LeagueTable({ league, rows, followedTeamIds }: LeagueTableProps)
                         </div>
                       )}
                     </td>
-                    <td className={`py-1 text-right tabular-nums font-semibold rounded-r ${highlighted ? 'text-indigo-300' : 'text-white/50'}`}>
+                    <td className={`py-1 text-right tabular-nums font-semibold rounded-r ${isOwnTeam ? 'text-indigo-300' : isOpponent ? 'text-white/65' : 'text-white/50'}`}>
                       {row.points ?? 0}
                     </td>
                   </tr>
@@ -101,40 +104,41 @@ export function LeagueTable({ league, rows, followedTeamIds }: LeagueTableProps)
           </thead>
           <tbody>
             {rows.map((row) => {
-              const highlighted = !!row.teamId && followedTeamIds.has(row.teamId);
+              const isOwnTeam  = !!row.teamId && followedTeamIds.has(row.teamId);
+              const isOpponent = !!row.teamId && row.teamId === opponentTeamId && !isOwnTeam;
               return (
                 <tr
                   key={row.position}
-                  className={highlighted ? 'bg-white/8 rounded' : ''}
+                  className={isOwnTeam ? 'bg-white/8' : isOpponent ? 'bg-white/4' : ''}
                 >
-                  <td className={`py-1 pr-2 rounded-l ${highlighted ? 'text-white font-bold' : 'text-white/35'}`}>
+                  <td className={`py-1 pr-2 rounded-l ${isOwnTeam ? 'text-white font-bold' : isOpponent ? 'text-white/70 font-semibold' : 'text-white/35'}`}>
                     {row.position}
                   </td>
                   <td
-                    className={`py-1 pr-2 max-w-[90px] truncate ${highlighted ? 'text-white font-bold' : 'text-white/60'}`}
+                    className={`py-1 pr-2 max-w-[90px] truncate ${isOwnTeam ? 'text-white font-bold' : isOpponent ? 'text-white/70 font-semibold' : 'text-white/60'}`}
                     title={row.name}
                   >
                     {row.name}
                   </td>
-                  <td className={`py-1 text-right tabular-nums ${highlighted ? 'text-white' : 'text-white/50'}`}>
+                  <td className={`py-1 text-right tabular-nums ${isOwnTeam ? 'text-white' : isOpponent ? 'text-white/60' : 'text-white/50'}`}>
                     {row.wins}
                   </td>
                   {showDraws && (
-                    <td className={`py-1 text-right tabular-nums ${highlighted ? 'text-white' : 'text-white/50'}`}>
+                    <td className={`py-1 text-right tabular-nums ${isOwnTeam ? 'text-white' : isOpponent ? 'text-white/60' : 'text-white/50'}`}>
                       {row.draws}
                     </td>
                   )}
-                  <td className={`py-1 text-right tabular-nums ${highlighted ? 'text-white' : 'text-white/50'}`}>
+                  <td className={`py-1 text-right tabular-nums ${isOwnTeam ? 'text-white' : isOpponent ? 'text-white/60' : 'text-white/50'}`}>
                     {row.losses}
                   </td>
                   {showPct
                     ? (
-                      <td className={`py-1 text-right tabular-nums rounded-r ${highlighted ? 'text-white font-semibold' : 'text-white/50'}`}>
+                      <td className={`py-1 text-right tabular-nums rounded-r ${isOwnTeam ? 'text-white font-semibold' : isOpponent ? 'text-white/65 font-semibold' : 'text-white/50'}`}>
                         {row.percentage?.toFixed(1) ?? '—'}
                       </td>
                     )
                     : (
-                      <td className={`py-1 text-right tabular-nums font-semibold rounded-r ${highlighted ? 'text-indigo-300' : 'text-white/50'}`}>
+                      <td className={`py-1 text-right tabular-nums font-semibold rounded-r ${isOwnTeam ? 'text-indigo-300' : isOpponent ? 'text-white/65' : 'text-white/50'}`}>
                         {row.points ?? 0}
                       </td>
                     )

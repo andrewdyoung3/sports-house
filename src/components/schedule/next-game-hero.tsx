@@ -75,6 +75,7 @@ const COMPETITION_LOGO: Record<string, LogoMeta> = {
   'Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.60, blend: 'screen' },
   'FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.51, blend: 'screen' },
   'EFL Cup':           { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',   opacity: 0.47, blend: 'screen' },
+  'State of Origin':   { url: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', opacity: 0.18, height: '147px' },
 };
 
 interface NextGameHeroProps {
@@ -115,7 +116,9 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
   const displayTime   = formatTimeInZone(game.date, userTz);
   const countdown     = timeUntil(game.date, userTz);
   const teamLogoUrl  = TEAM_LOGOS[team.id];
-  const leagueMeta        = (game.competition ? COMPETITION_LOGO[game.competition] : undefined)
+  // Prefix-match SOO so "State of Origin — Game 2 (QLD lead 1-0)" still resolves
+  const baseComp   = game.competition?.startsWith('State of Origin') ? 'State of Origin' : game.competition;
+  const leagueMeta = (baseComp ? COMPETITION_LOGO[baseComp] : undefined)
     ?? LEAGUE_LOGO[team.league];
   const leagueLogoUrl      = leagueMeta?.url;
   const leagueLogoOpacity  = leagueMeta?.opacity ?? 0.25;
