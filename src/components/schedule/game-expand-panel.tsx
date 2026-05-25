@@ -372,7 +372,7 @@ function AILoadingCard({ color }: { color: string }) {
       setTimeout(() => {
         setIdx(i => (i + 1) % AI_TAGLINES.length);
         setVisible(true);
-      }, 300);
+      }, 380); // 380ms > duration-300 (300ms) so the fade fully completes before text swap
     }, 2400);
     return () => clearInterval(cycle);
   }, []);
@@ -991,6 +991,9 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           gameId:          game.id,
           competition:     game.competition,
           compact,
+          venue:           game.venue,
+          isHome:          game.isHome,
+          opponentId:      game.opponentId,
           context:         liveContext,
           teamResults:     liveResults,
           oppResults:      liveOppResults,
@@ -1071,6 +1074,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
             league={team.league as import('@/types').SportKey}
             rows={standings!}
             followedTeamIds={new Set([team.id])}
+            opponentTeamId={game.opponentId}
           />
         </div>
       )}

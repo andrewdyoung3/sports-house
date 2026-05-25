@@ -18,6 +18,51 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
+import { TEAMS } from '@/lib/teams';
+
+// ─── Team home-venue lookup ───────────────────────────────────────────────────
+// Built once at module load; maps teamId → registered home venue string.
+const TEAM_HOME_VENUE: Record<string, string> = {};
+for (const t of TEAMS) {
+  if (t.venue) TEAM_HOME_VENUE[t.id] = t.venue;
+}
+
+/**
+ * Classifies the actual game venue relative to the two teams' registered home
+ * grounds and emits a plain-English VENUE line for the Claude data block.
+ *
+ * Three possible outcomes:
+ *   HOME         — the fixture is at the followed team's registered home venue.
+ *   OPPONENT_HOME — the fixture is at the opponent's registered home venue.
+ *   NEUTRAL      — the venue belongs to neither team (e.g. a third city,
+ *                   a neutral-site final, or a shared/temporary ground).
+ *
+ * This is computed from real data and is authoritative — Claude must not
+ * override it based on training-knowledge assumptions.
+ */
+function classifyVenue(
+  venue: string | undefined,
+  teamName: string,
+  opponentName: string,
+  teamId: string,
+  opponentId: string | undefined,
+  isHome: boolean | undefined,
+): string {
+  if (!venue) return '';
+
+  const teamHome = TEAM_HOME_VENUE[teamId]     ?? '';
+  const oppHome  = TEAM_HOME_VENUE[opponentId ?? ''] ?? '';
+
+  // isHome=true is the authoritative flag when set by the data source
+  if (isHome === true || (teamHome && venue === teamHome)) {
+    return `VENUE: ${venue} — ${teamName.toUpperCase()} HOME GROUND (${teamName} have home advantage)`;
+  }
+  if (oppHome && venue === oppHome) {
+    return `VENUE: ${venue} — ${opponentName.toUpperCase()} HOME GROUND (${opponentName} have home advantage; ${teamName} are the away side)`;
+  }
+  // Venue matches neither team's registered home — treat as neutral
+  return `VENUE: ${venue} — NEUTRAL GROUND (not ${teamName}'s home, not ${opponentName}'s home; no inherent crowd advantage for either side)`;
+}
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
@@ -287,6 +332,13 @@ LANGUAGE RULES — strictly enforced:
 • British/Australian idioms where natural but not theatrical: "finals series", "the run-in", "relegation scrap", "top-four race", "wooden spoon", "premiership window"
 • Avoid purple prose: no "theatre of sport", "story arcs", "compelling narratives", "backs against the wall drama". State the situation plainly.
 • AFL scoring language: "score" and "scoring" in AFL refer to goals and behinds kicked in a game — never use them to mean ladder points or wins. "Yet to score" means the team hasn't kicked a goal; it does NOT mean winless. Use "yet to record a win", "winless so far", or better still don't recite it at all (the user can see the ladder).
+
+VENUE AWARENESS — read the label, do not infer:
+• The VENUE field in the data block is pre-computed against each team's registered home ground and will carry one of three explicit labels:
+  — "{Team} HOME GROUND" → that team has genuine home advantage; crowd and fortress references are appropriate.
+  — "NEUTRAL GROUND" → neither team's home; do NOT assert crowd advantage for either side.
+• Never override this label using training-knowledge assumptions about where a team "usually" plays or where a series game is "traditionally" held. The label is authoritative.
+• In series competitions (State of Origin, international Tests, cup finals), any game in the series may be designated home, away, or neutral regardless of game number — Game 1 is as likely to be neutral as Game 3. Use only the VENUE label provided.
 
 DATA INTEGRITY — non-negotiable:
 • Use ONLY the data provided. Do NOT invent statistics, player names, scorelines, or results not mentioned.
@@ -593,6 +645,10 @@ function buildDataBlock(
   competition?: string,
   compact?: boolean,
   weather?: WeatherData,
+  venue?: string,
+  isHome?: boolean,
+  teamId?: string,
+  opponentId?: string,
 ): string {
   // ─── F1 — completely different data model ────────────────────────────────
   if (league === 'f1' && context.f1RaceName) {
@@ -615,6 +671,8 @@ function buildDataBlock(
   const lines: string[] = [];
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
+  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome);
+  if (venueLine) lines.push(venueLine);
   lines.push(`COMPETITION: ${competition ?? leagueLabel}`);
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
@@ -957,7 +1015,7 @@ async function callClaude(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callClaude(prompt, compact, maxTokensOverride),
-  ['ai-preview-v34'],
+  ['ai-preview-v36'],
   { revalidate: 21600 }, // 6 hours
 );
 
@@ -986,6 +1044,9 @@ export async function POST(req: NextRequest) {
       oppResults:      GameResult[];
       competition?:    string;
       compact?:        boolean;
+      venue?:          string;
+      isHome?:         boolean;
+      opponentId?:     string;
       previousPreview?: AIPreview;
       newsFingerprint?: string;
       weather?:        WeatherData;
@@ -994,6 +1055,7 @@ export async function POST(req: NextRequest) {
     const {
       league, teamId, teamName, opponentName, gameId,
       context, teamResults, oppResults, competition, compact,
+      venue, isHome, opponentId,
       previousPreview, newsFingerprint, weather,
     } = body;
 
@@ -1033,7 +1095,7 @@ export async function POST(req: NextRequest) {
       cacheKey = `update:${gameId}:${newsFingerprint}${isCompact ? ':c' : ''}`;
     } else {
       // Full generation mode.
-      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition, isCompact, weather);
+      prompt   = buildDataBlock(league, teamName, opponentName, context ?? {}, teamResults ?? [], oppResults ?? [], competition, isCompact, weather, venue, isHome, teamId, opponentId);
       cacheKey = isCompact ? `${gameId}:compact` : gameId;
     }
 
