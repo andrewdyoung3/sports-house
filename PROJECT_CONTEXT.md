@@ -181,12 +181,10 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 - **Build hygiene:** stopped tracking `tsconfig.tsbuildinfo`; added `*.tsbuildinfo` to `.gitignore`.
 - **UI:** date text bumped +2px across the schedule/results lists + the Next Game hero.
 
-### ✅ Shipped separately — accessibility (behavior change)
+### ✅ Accessibility
 - **`prefers-reduced-motion` support** — a `globals.css` `@media (prefers-reduced-motion:
   reduce)` block collapses animations/transitions to ~0ms (entrances resolve to their final
-  visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly. Lives on
-  the `a11y/reduced-motion` branch (PR #3); a deliberate behavior change, kept out of the
-  behavior-neutral pass above.
+  visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly.
 
 ### Outstanding
 - **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
