@@ -66,7 +66,7 @@ src/
       ai-review/route.ts      — AI-generated post-match review text
       weather/route.ts        — Venue weather for fixtures
   components/
-    ui/                       — button, card, badge, input, skeleton, team-badge
+    ui/                       — button, card, badge, input, skeleton, team-badge, empty-state
     layout/navbar.tsx         — Fixed top navbar, active-link detection, mobile calendar trigger
     landing/hero-cta.tsx
     onboarding/team-selector-card.tsx
@@ -75,11 +75,14 @@ src/
                                 league-table, f1-starting-grid, sport-ball
     results/result-expand-panel.tsx
   lib/
-    teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata)
+    teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata) + REAL_DATA_LEAGUES set
     team-logos.ts             — TEAM_LOGOS (logo URLs) + TEAM_LOGO_FILTERS (CSS filters)
+    espn.ts                   — shared ESPN/Squiggle helpers (fetchTimeout, espnDateRange,
+                                aestDisplay, parseCricketFormat, unknownTeam)
+    afl.ts                    — AFL Squiggle-name map + team table derived from teams.ts/team-logos.ts
     mock-data.ts              — Deterministic mock generators (seed = team ID)
     user-prefs.ts             — localStorage CRUD for followed teams ('use client')
-    utils.ts                  — cn(), date/timezone helpers, ordinal(), seededRandom(),
+    utils.ts                  — cn(), date/timezone helpers, ordinal() (shared), seededRandom(),
                                 contrastColor(), smoothScrollTo()
     f1-data.ts                — F1 calendar, country→abbr, grid data
     english-football-divisions.ts — EPL/EFL division metadata
@@ -162,53 +165,35 @@ Onboarding ──saveFollowedTeams()──▶ localStorage ──getFollowedTeam
 
 ## 7. Known tech debt / review findings (2026-05-29)
 
-Baseline health: **type-check passes clean** (`tsc --noEmit` exit 0). The findings below
-are quality/efficiency/UI, not correctness bugs.
+Baseline health: **type-check + production build pass clean** (`tsc --noEmit` and
+`npm run build` both exit 0). The findings below are quality/efficiency/UI, not bugs.
 
-### High impact — duplication across API routes
-There is **no shared `lib/espn.ts` / `lib/afl.ts`**, so route files copy-paste:
-- `fetchTimeout()` — duplicated in **7 route files**
-- `parseCricketFormat()` — 3 files; `espnDateRange()`, `aestDisplay()`, `unknownTeam()` — 2–3 files
-- `SQUIGGLE_NAME` (18-team map) — fixtures, results, preview
-- `AFL_TEAM` color/abbr/logo map — fixtures, results, league-fixtures **and** colors
-  already live in `teams.ts` → AFL colors now have **3+ sources of truth** that can drift.
+### ✅ Completed in the May 2026 cleanup pass (behavior-neutral)
+- **`lib/espn.ts`** — extracted `fetchTimeout`, `parseCricketFormat`, `espnDateRange`,
+  `aestDisplay`, `unknownTeam` (were copy-pasted across 7 routes; all copies byte-identical).
+- **`lib/afl.ts`** — single source of truth for AFL data: `SQUIGGLE_NAME` + an `AFL_TEAM`
+  table *derived* from `teams.ts`/`team-logos.ts`, replacing 3 hardcoded copies. No drift found.
+- **`REAL_DATA_LEAGUES`** hoisted to `lib/teams.ts`; the 4 identical copies now import it
+  (the divergent 5-member set in `result-expand-panel` is a different concept — left alone).
+- **Shared `<EmptyState>`** (`components/ui/empty-state.tsx`) replaces 3 near-identical
+  inline blocks (schedule, dashboard, results) with byte-equivalent output.
+- **`ordinal()`** consolidated to the `lib/utils.ts` version (removed the schedule duplicate).
+- **Build hygiene:** stopped tracking `tsconfig.tsbuildinfo`; added `*.tsbuildinfo` to `.gitignore`.
+- **UI:** date text bumped +2px across the schedule/results lists + the Next Game hero.
 
-**Plan:** extract `lib/espn.ts` (fetch + date/cricket helpers) and `lib/afl.ts` (single
-Squiggle/team table sourced from `teams.ts`). Mechanical, no behavior change, ~300+ lines removed.
-
-### High impact — `ordinal()` defined 2–3 times
-- `lib/utils.ts:89` (exported) vs a divergent local copy in `schedule/page.tsx:575`
-  (which already imports from utils but not `ordinal`). A third variant `ordinalSuffix`
-  lives in `ai-preview/route.ts:533`. Consolidate to the shared one.
-
-### Medium — quality
-- `REAL_DATA_LEAGUES` set duplicated verbatim in `schedule/page.tsx:27` and
-  `team-feed-card.tsx:20` → hoist to `lib/teams.ts`.
-- `EmptyState` near-identical in `schedule/page.tsx:605` and `dashboard/page.tsx:128`
-  → extract shared `<EmptyState>`.
-- ~296 `any` / `as any` casts, almost all parsing ESPN JSON. Acceptable, but a few
-  `EspnEvent`/`EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift
-  (routes currently swallow errors → return `[]`).
-
-### Medium — UI / UX
-- **Palette inconsistency:** dashboard uses legacy `zinc-*`; rest of app uses
-  `white/xx` + glass. Migrate dashboard for a unified look (treat as a separate visual pass).
+### Outstanding
+- **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
+  `EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift (routes
+  swallow errors → return `[]`).
 - **No `prefers-reduced-motion` support** (0 matches) despite heavy animation. Add a
   `@media (prefers-reduced-motion: reduce)` block in globals.css + guard `smoothScrollTo()`.
-- Decorative watermark `<img>` lack intrinsic width/height (minor layout-shift).
-
-### Large files to watch (navigability, not bugs)
-`preview/route.ts` 1588 · `game-expand-panel.tsx` 1448 · `schedule/page.tsx` 1408 ·
-`fixtures/route.ts` 1319 · `ai-preview/route.ts` 1108. The route extractions above shrink
-several of these; `game-expand-panel` could split its stats/preview sub-sections.
-
-### Recommended first refactor pass (low-risk, no behavior change)
-1. Extract `lib/espn.ts` + `lib/afl.ts`; de-dupe `fetchTimeout` and the AFL/Squiggle tables.
-2. Delete duplicate `ordinal()` in schedule; import from utils.
-3. Hoist `REAL_DATA_LEAGUES` and `EmptyState` to shared modules.
-4. Add `prefers-reduced-motion` CSS block.
-
-Dashboard palette migration is a separate, more visual follow-up.
+  *Deliberately left out of the behavior-neutral pass — it changes animation behavior.*
+- **Palette inconsistency:** dashboard uses legacy `zinc-*`; rest of app uses `white/xx` +
+  glass. Migrate the dashboard for a unified look (separate visual pass).
+- **Decorative watermark `<img>`** lack intrinsic width/height (minor layout-shift).
+- **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
+  `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k ·
+  `ai-preview/route.ts` ~1.1k. `game-expand-panel` could split its stats/preview sub-sections.
 
 ---
 
@@ -216,8 +201,11 @@ Dashboard palette migration is a separate, more visual follow-up.
 
 1. **Persistence** — swap localStorage in `user-prefs.ts` for Supabase.
 2. **Auth** — add NextAuth; protect `/dashboard` with a session check.
-3. **AI previews** — `src/lib/ai.ts` (OpenAI `gpt-4o-mini`) already partly realized via
-   `api/ai-preview` and `api/ai-review`.
+3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
+   Anthropic SDK directly (`claude-sonnet-4-6`); there is **no `src/lib/ai.ts`** — the logic
+   lives in the routes. Output is cached server-side (`unstable_cache`) **and** in
+   `localStorage`. Remaining: spend-limit + rate-limit guards; longer-term, the self-hosted
+   option in §10.
 4. **More leagues** — Cricket expansion (BBL/Sheffield Shield + international) next, then
    NBA/NFL/NHL/MLB via official APIs to replace their mock data.
 5. **Self-hosted LLM for AI text** *(exploratory — see §10)* — pre-generate previews/reviews
