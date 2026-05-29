@@ -14,24 +14,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { TeamStanding } from '@/types';
 import { F1_DRIVERS, F1_CONSTRUCTOR_TEAMS, ERGAST_ID_TO_TEAM_ID } from '@/lib/f1-data';
+import { fetchTimeout } from '@/lib/espn';
 
 export type StandingRow = TeamStanding & { teamId?: string };
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
-
-async function fetchTimeout(
-  url: string,
-  options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
-): Promise<Response> {
-  const { timeoutMs = 8000, ...rest } = options;
-  const ac    = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...rest, signal: ac.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // ─── AFL — Squiggle API ───────────────────────────────────────────────────────
 

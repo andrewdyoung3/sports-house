@@ -12,94 +12,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { GameResult } from '@/types';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange } from '@/lib/espn';
+import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
-
-async function fetchTimeout(
-  url: string,
-  options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
-): Promise<Response> {
-  const { timeoutMs = 8000, ...rest } = options;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...rest, signal: ac.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function unknownTeam(name: string): { color: string; abbr: string } {
-  const words = name.trim().split(/\s+/);
-  const abbr  = words.length >= 2
-    ? words.map(w => w[0]).join('').slice(0, 3).toUpperCase()
-    : name.slice(0, 3).toUpperCase();
-  return { color: '#6B7280', abbr };
-}
-
-function parseCricketFormat(eventType: string): 'test' | 'odi' | 't20' {
-  const t = (eventType ?? '').toLowerCase();
-  if (t.includes('twenty') || t === 't20' || t.includes('t20')) return 't20';
-  if (t.includes('one day') || t.includes('odi') || t.includes('list a')) return 'odi';
-  if (t.includes('test') || t.includes('first class') || t.includes('first-class')) return 'test';
-  return 't20';
-}
-
-function espnDateRange(daysBack: number, daysForward: number): string {
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const now = new Date();
-  const start = new Date(now.getTime() - daysBack * 86400000);
-  const end   = new Date(now.getTime() + daysForward * 86400000);
-  return `${fmt(start)}-${fmt(end)}`;
-}
-
 // ─── AFL — Squiggle API ───────────────────────────────────────────────────────
-
-const SQUIGGLE_NAME: Record<string, string> = {
-  'afl-crows':     'Adelaide',
-  'afl-lions':     'Brisbane Lions',
-  'afl-blues':     'Carlton',
-  'afl-pies':      'Collingwood',
-  'afl-bombers':   'Essendon',
-  'afl-dockers':   'Fremantle',
-  'afl-cats':      'Geelong',
-  'afl-suns':      'Gold Coast',
-  'afl-giants':    'GWS Giants',
-  'afl-hawks':     'Hawthorn',
-  'afl-demons':    'Melbourne',
-  'afl-kangaroos': 'North Melbourne',
-  'afl-power':     'Port Adelaide',
-  'afl-tigers':    'Richmond',
-  'afl-saints':    'St Kilda',
-  'afl-swans':     'Sydney',
-  'afl-eagles':    'West Coast',
-  'afl-dogs':      'Western Bulldogs',
-};
-
-const AFL_CDN = 'https://a.espncdn.com/i/teamlogos/afl/500';
-
-const AFL_TEAM: Record<string, { color: string; abbr: string; logo: string }> = {
-  'Adelaide':         { color: '#013A6E', abbr: 'ADL', logo: `${AFL_CDN}/adel.png` },
-  'Brisbane Lions':   { color: '#A30046', abbr: 'BRI', logo: `${AFL_CDN}/bl.png`   },
-  'Carlton':          { color: '#0E1E2E', abbr: 'CAR', logo: `${AFL_CDN}/carl.png` },
-  'Collingwood':      { color: '#000000', abbr: 'COL', logo: `${AFL_CDN}/coll.png` },
-  'Essendon':         { color: '#CC2031', abbr: 'ESS', logo: `${AFL_CDN}/ess.png`  },
-  'Fremantle':        { color: '#2A1A5E', abbr: 'FRE', logo: `${AFL_CDN}/fre.png`  },
-  'Geelong':          { color: '#001F5B', abbr: 'GEE', logo: `${AFL_CDN}/geel.png` },
-  'Gold Coast':       { color: '#E8312D', abbr: 'GCS', logo: `${AFL_CDN}/suns.png` },
-  'GWS Giants':       { color: '#F47B20', abbr: 'GWS', logo: `${AFL_CDN}/gws.png`  },
-  'Hawthorn':         { color: '#4D2004', abbr: 'HAW', logo: `${AFL_CDN}/haw.png`  },
-  'Melbourne':        { color: '#CC2031', abbr: 'MEL', logo: `${AFL_CDN}/melb.png` },
-  'North Melbourne':  { color: '#003088', abbr: 'NME', logo: `${AFL_CDN}/nmfc.png` },
-  'Port Adelaide':    { color: '#000000', abbr: 'PAD', logo: `${AFL_CDN}/port.png` },
-  'Richmond':         { color: '#FFD200', abbr: 'RIC', logo: `${AFL_CDN}/rich.png` },
-  'St Kilda':         { color: '#ED0F05', abbr: 'STK', logo: `${AFL_CDN}/stk.png`  },
-  'Sydney':           { color: '#ED171F', abbr: 'SYD', logo: `${AFL_CDN}/syd.png`  },
-  'West Coast':       { color: '#003087', abbr: 'WCE', logo: `${AFL_CDN}/wce.png`  },
-  'Western Bulldogs': { color: '#014896', abbr: 'WBD', logo: `${AFL_CDN}/wb.png`   },
-};
+// SQUIGGLE_NAME + AFL_TEAM live in @/lib/afl (derived from teams.ts/team-logos.ts).
 
 async function fetchAFLResults(teamId: string): Promise<GameResult[]> {
   const sqName = SQUIGGLE_NAME[teamId];

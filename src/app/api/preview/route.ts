@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage, LeagueTableRow } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
+import { fetchTimeout } from '@/lib/espn';
+import { SQUIGGLE_NAME } from '@/lib/afl';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -102,44 +104,8 @@ function lookupManager(teamId: string): string | undefined {
   return MANAGER[teamId];
 }
 
-// ─── Shared ───────────────────────────────────────────────────────────────────
-
-async function fetchTimeout(
-  url: string,
-  options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
-): Promise<Response> {
-  const { timeoutMs = 8000, ...rest } = options;
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...rest, signal: ac.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
-
-const SQUIGGLE_NAME: Record<string, string> = {
-  'afl-crows':     'Adelaide',
-  'afl-lions':     'Brisbane Lions',
-  'afl-blues':     'Carlton',
-  'afl-pies':      'Collingwood',
-  'afl-bombers':   'Essendon',
-  'afl-dockers':   'Fremantle',
-  'afl-cats':      'Geelong',
-  'afl-suns':      'Gold Coast',
-  'afl-giants':    'GWS Giants',
-  'afl-hawks':     'Hawthorn',
-  'afl-demons':    'Melbourne',
-  'afl-kangaroos': 'North Melbourne',
-  'afl-power':     'Port Adelaide',
-  'afl-tigers':    'Richmond',
-  'afl-saints':    'St Kilda',
-  'afl-swans':     'Sydney',
-  'afl-eagles':    'West Coast',
-  'afl-dogs':      'Western Bulldogs',
-};
+// SQUIGGLE_NAME lives in @/lib/afl (derived from teams.ts/team-logos.ts).
 
 async function fetchAFLPreview(
   teamId: string,

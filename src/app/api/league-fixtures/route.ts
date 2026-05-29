@@ -14,30 +14,10 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
 // mock-data intentionally NOT imported — this route only returns real API fixtures.
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
+import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
-
-async function fetchTimeout(
-  url: string,
-  options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
-): Promise<Response> {
-  const { timeoutMs = 8000, ...rest } = options;
-  const ac    = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...rest, signal: ac.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function aestDisplay(d: Date): string {
-  const h   = d.getUTCHours();
-  const m   = d.getUTCMinutes().toString().padStart(2, '0');
-  const ap  = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ap} AEST`;
-}
 
 function initials(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -49,29 +29,8 @@ function initials(name: string): string {
 interface TeamEntry { id: string; color: string; abbr: string }
 
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
-
-const AFL_CDN = 'https://a.espncdn.com/i/teamlogos/afl/500';
-
-const AFL_TEAMS: Record<string, TeamEntry & { logo: string }> = {
-  'Adelaide':         { id: 'afl-crows',     color: '#013A6E', abbr: 'ADL', logo: `${AFL_CDN}/adel.png` },
-  'Brisbane Lions':   { id: 'afl-lions',     color: '#A30046', abbr: 'BRI', logo: `${AFL_CDN}/bl.png`   },
-  'Carlton':          { id: 'afl-blues',     color: '#0E1E2E', abbr: 'CAR', logo: `${AFL_CDN}/carl.png` },
-  'Collingwood':      { id: 'afl-pies',      color: '#000000', abbr: 'COL', logo: `${AFL_CDN}/coll.png` },
-  'Essendon':         { id: 'afl-bombers',   color: '#CC2031', abbr: 'ESS', logo: `${AFL_CDN}/ess.png`  },
-  'Fremantle':        { id: 'afl-dockers',   color: '#2A1A5E', abbr: 'FRE', logo: `${AFL_CDN}/fre.png`  },
-  'Geelong':          { id: 'afl-cats',      color: '#001F5B', abbr: 'GEE', logo: `${AFL_CDN}/geel.png` },
-  'Gold Coast':       { id: 'afl-suns',      color: '#E8312D', abbr: 'GCS', logo: `${AFL_CDN}/suns.png` },
-  'GWS Giants':       { id: 'afl-giants',    color: '#F47B20', abbr: 'GWS', logo: `${AFL_CDN}/gws.png`  },
-  'Hawthorn':         { id: 'afl-hawks',     color: '#4D2004', abbr: 'HAW', logo: `${AFL_CDN}/haw.png`  },
-  'Melbourne':        { id: 'afl-demons',    color: '#CC2031', abbr: 'MEL', logo: `${AFL_CDN}/melb.png` },
-  'North Melbourne':  { id: 'afl-kangaroos', color: '#003088', abbr: 'NME', logo: `${AFL_CDN}/nmfc.png` },
-  'Port Adelaide':    { id: 'afl-power',     color: '#000000', abbr: 'PAD', logo: `${AFL_CDN}/port.png` },
-  'Richmond':         { id: 'afl-tigers',    color: '#FFD200', abbr: 'RIC', logo: `${AFL_CDN}/rich.png` },
-  'St Kilda':         { id: 'afl-saints',    color: '#ED0F05', abbr: 'STK', logo: `${AFL_CDN}/stk.png`  },
-  'Sydney':           { id: 'afl-swans',     color: '#ED171F', abbr: 'SYD', logo: `${AFL_CDN}/syd.png`  },
-  'West Coast':       { id: 'afl-eagles',    color: '#003087', abbr: 'WCE', logo: `${AFL_CDN}/wce.png`  },
-  'Western Bulldogs': { id: 'afl-dogs',      color: '#014896', abbr: 'WBD', logo: `${AFL_CDN}/wb.png`   },
-};
+// AFL_TEAMS (keyed by Squiggle display name) lives in @/lib/afl,
+// derived from teams.ts/team-logos.ts.
 
 async function fetchAFLLeague(): Promise<UpcomingGame[]> {
   const year = new Date().getFullYear();
@@ -634,14 +593,6 @@ async function fetchF1League(): Promise<UpcomingGame[]> {
 }
 
 // ─── BBL — ESPN public API (league ID: 8044) ──────────────────────────────────
-
-function parseCricketFormat(eventType: string): 'test' | 'odi' | 't20' {
-  const t = (eventType ?? '').toLowerCase();
-  if (t.includes('twenty') || t === 't20' || t.includes('t20')) return 't20';
-  if (t.includes('one day') || t.includes('odi') || t.includes('list a')) return 'odi';
-  if (t.includes('test') || t.includes('first class') || t.includes('first-class')) return 'test';
-  return 't20';
-}
 
 const BBL_LEAGUE_TEAMS: Record<string, TeamEntry> = {
   'Perth Scorchers':     { id: 'bbl-scorchers',  color: '#ef660b', abbr: 'PS'  },
