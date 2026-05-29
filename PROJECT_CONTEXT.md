@@ -220,6 +220,9 @@ Dashboard palette migration is a separate, more visual follow-up.
    `api/ai-preview` and `api/ai-review`.
 4. **More leagues** — Cricket expansion (BBL/Sheffield Shield + international) next, then
    NBA/NFL/NHL/MLB via official APIs to replace their mock data.
+5. **Self-hosted LLM for AI text** *(exploratory — see §10)* — pre-generate previews/reviews
+   on the always-on Mac mini and have Vercel read them from a shared store, instead of (or
+   alongside) the Anthropic API.
 
 ---
 
@@ -229,5 +232,41 @@ Dashboard palette migration is a separate, more visual follow-up.
   to useful content instead.
 - **AI preview cache:** two cache layers (server + localStorage) must **both** be bumped
   when the system prompt changes.
-</content>
-</invoke>
+
+---
+
+## 10. Future exploration — self-hosted LLM on the Mac mini
+
+**Status: exploratory, not near-term** — a "fun build", not a committed milestone. The
+§7 spend-limit + rate-limit mitigations are independent and worth doing regardless.
+
+**What:** run a small open model (Llama 3.1 8B / Qwen 2.5 7B via Ollama or MLX) on the
+existing always-on Mac mini to produce the AI previews/reviews, replacing or supplementing
+the Anthropic API (`claude-sonnet-4-6`). Marginal cost ≈ electricity only — the Mac is
+already running.
+
+**Core idea — pre-generation (the whole point of the design):** a scheduled job *on the
+Mac* generates previews for upcoming fixtures ahead of time and writes them to a shared
+store; Vercel only ever *reads* cached results, never calls the model synchronously. This
+makes model speed invisible to users and removes the public inference endpoint + tunnel
+from the request path — neutralizing latency, per-token cost, and the §7 exposure concern
+in one move. The shared store can be the Supabase from upgrade-path #1, so this dovetails
+with persistence.
+
+**Latency context:** a synchronous home-model call would be ~5–15s on a cache miss
+(Apple-Silicon prompt-eval + generation) vs ~2–6s on the API. Pre-generation means no user
+ever waits on it.
+
+**Optimizations** (for the gen job, or any on-demand fallback):
+- Pre-summarize / trim the prompt — prompt-eval is the hidden cost on Apple Silicon.
+- Cap output tokens; keep the model resident (Ollama keep-alive).
+- Prefer MLX over llama.cpp; right-size the model (7–8B or smaller).
+- Stream if ever generating on-request.
+- Connectivity for any sync path that remains: Cloudflare Tunnel / Tailscale; pin the
+  Vercel function to `syd1`.
+
+**Tradeoff:** a local 7–8B won't match Sonnet 4.6's polish — acceptable for short,
+pre-generated previews, but benchmark before committing.
+
+**Rough sequence when tackled:** prototype model + prompt locally → build the pre-gen job
++ shared store → point Vercel reads at the store → keep the Anthropic API as fallback.
