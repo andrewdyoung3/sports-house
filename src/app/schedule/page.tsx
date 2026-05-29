@@ -8,7 +8,7 @@ import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
-import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo } from '@/lib/utils';
+import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -568,17 +568,6 @@ function ScheduleRow({
 }
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function ordinal(n: number): string {
-  const s = n % 100;
-  if (s >= 11 && s <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1: return `${n}st`;
-    case 2: return `${n}nd`;
-    case 3: return `${n}rd`;
-    default: return `${n}th`;
-  }
-}
 
 function ScheduleSkeleton() {
   return (
