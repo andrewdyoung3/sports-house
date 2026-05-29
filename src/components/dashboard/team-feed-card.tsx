@@ -14,10 +14,8 @@ import { RecentForm } from '@/components/dashboard/recent-form';
 
 // mock-data intentionally NOT imported — this component never shows mock results.
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import type { Team, UpcomingGame, GameResult, NewsItem } from '@/types';
-
-/** Leagues with real API backends for fixtures, results, and news. */
-const REAL_DATA_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 
 interface TeamFeedCardProps {
   team: Team;

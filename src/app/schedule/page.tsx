@@ -7,9 +7,9 @@ import { Calendar, List, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'luc
 import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { TEAMS, LEAGUES } from '@/lib/teams';
+import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
@@ -22,9 +22,6 @@ import type { Team, UpcomingGame, SportKey } from '@/types';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ScheduleEntry = UpcomingGame & { team: Team };
-
-/** Leagues backed by real APIs — all others use deterministic mock data. */
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 
 /** All competitions with browse support (real or mock fixtures + standings). */
 const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'f1', 'bbl', 'cricket_int']);
@@ -600,27 +597,6 @@ function ScheduleSkeleton() {
   );
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
-
-function EmptyState() {
-  return (
-    <div className="max-w-lg mx-auto px-4 py-32 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-indigo-900/40 border border-indigo-700/30 flex items-center justify-center mx-auto mb-6">
-        <Calendar className="h-8 w-8 text-indigo-400" />
-      </div>
-      <h1 className="text-2xl font-black text-white mb-3">No schedule yet</h1>
-      <p className="text-white/55 mb-8 leading-relaxed">
-        Select teams to follow and your upcoming fixtures will appear here.
-      </p>
-      <Link href="/onboarding">
-        <Button size="lg" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Choose Your Teams
-        </Button>
-      </Link>
-    </div>
-  );
-}
 
 // ─── FilterPill ───────────────────────────────────────────────────────────────
 
@@ -1132,7 +1108,13 @@ export default function SchedulePage() {
     setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
-  if (!loading && !isLeagueMode && teams.length === 0) return <EmptyState />;
+  if (!loading && !isLeagueMode && teams.length === 0) return (
+    <EmptyState
+      icon={Calendar}
+      title="No schedule yet"
+      body="Select teams to follow and your upcoming fixtures will appear here."
+    />
+  );
 
   const activeLoading = loading;
 

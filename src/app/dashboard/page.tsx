@@ -10,6 +10,7 @@ import { SportBall } from '@/components/schedule/sport-ball';
 import { TeamFeedCard } from '@/components/dashboard/team-feed-card';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import type { Team } from '@/types';
 
 export default function DashboardPage() {
@@ -31,7 +32,14 @@ export default function DashboardPage() {
   // ── Empty state ────────────────────────────────────────────────────────────
 
   if (!loading && teams.length === 0) {
-    return <EmptyState />;
+    return (
+      <EmptyState
+        icon={LayoutGrid}
+        title="No teams yet"
+        body="Your dashboard is empty. Select the teams you follow and we'll build your personalised sports feed."
+        bodyClassName="text-zinc-400"
+      />
+    );
   }
 
   // ── Group teams by league for the sidebar ──────────────────────────────────
@@ -123,24 +131,3 @@ export default function DashboardPage() {
   );
 }
 
-// ─── Empty state ───────────────────────────────────────────────────────────────
-
-function EmptyState() {
-  return (
-    <div className="max-w-lg mx-auto px-4 py-32 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-indigo-900/40 border border-indigo-700/30 flex items-center justify-center mx-auto mb-6">
-        <LayoutGrid className="h-8 w-8 text-indigo-400" />
-      </div>
-      <h1 className="text-2xl font-black text-white mb-3">No teams yet</h1>
-      <p className="text-zinc-400 mb-8 leading-relaxed">
-        Your dashboard is empty. Select the teams you follow and we&apos;ll build your personalised sports feed.
-      </p>
-      <Link href="/onboarding">
-        <Button size="lg" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Choose Your Teams
-        </Button>
-      </Link>
-    </div>
-  );
-}

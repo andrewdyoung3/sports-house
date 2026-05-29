@@ -18,6 +18,9 @@ export const LEAGUES: League[] = [
   { id: 'bbl',         name: 'Big Bash',       fullName: 'Big Bash League',              sport: 'Cricket',                   icon: '🏏', country: 'Australia' },
 ];
 
+/** Leagues backed by real data APIs (fixtures/results/news). All others use deterministic mock data. */
+export const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
+
 // ─── All Teams ────────────────────────────────────────────────────────────────
 
 export const TEAMS: Team[] = [
