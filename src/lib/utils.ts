@@ -107,6 +107,13 @@ export function seededRandom(seed: string, index = 0): number {
  * default `behavior:'smooth'` for a more deliberate feel.
  */
 export function smoothScrollTo(targetY: number, duration = 750): void {
+  // Respect the reduced-motion preference: jump to the target instantly.
+  if (typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    window.scrollTo(0, targetY);
+    return;
+  }
+
   const startY    = window.scrollY;
   const distance  = targetY - startY;
   const startTime = performance.now();
