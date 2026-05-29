@@ -202,7 +202,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
         <div className="relative z-10 flex items-center justify-between px-6 pt-4 pb-0">
           <div className="flex items-center gap-2">
             <span
-              className="text-[12px] font-black uppercase tracking-[0.18em]"
+              className="text-[14px] font-black uppercase tracking-[0.18em]"
               style={{ color: team.primaryColor }}
             >
               {isF1 ? 'Next Session' : 'Next Game'}
@@ -219,7 +219,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
           {/* Countdown pill — solid team colour so it reads instantly */}
           {countdown && (
             <span
-              className="text-[13px] font-black rounded-full px-4 py-1.5 leading-none"
+              className="text-[15px] font-black rounded-full px-4 py-1.5 leading-none"
               style={{
                 color: '#ffffff',
                 background: team.primaryColor,
@@ -276,7 +276,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
               </div>
             )}
             {/* Date + time */}
-            <p className="text-white/40 text-sm">
+            <p className="text-white/40 text-base">
               {dateLabel}
               <span className="text-white/20 mx-1.5">·</span>
               <span className="font-bold text-[15px] text-white/85">
