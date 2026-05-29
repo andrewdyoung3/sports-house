@@ -181,13 +181,17 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 - **Build hygiene:** stopped tracking `tsconfig.tsbuildinfo`; added `*.tsbuildinfo` to `.gitignore`.
 - **UI:** date text bumped +2px across the schedule/results lists + the Next Game hero.
 
+### ✅ Shipped separately — accessibility (behavior change)
+- **`prefers-reduced-motion` support** — a `globals.css` `@media (prefers-reduced-motion:
+  reduce)` block collapses animations/transitions to ~0ms (entrances resolve to their final
+  visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly. Lives on
+  the `a11y/reduced-motion` branch (PR #3); a deliberate behavior change, kept out of the
+  behavior-neutral pass above.
+
 ### Outstanding
 - **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
   `EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift (routes
   swallow errors → return `[]`).
-- **No `prefers-reduced-motion` support** (0 matches) despite heavy animation. Add a
-  `@media (prefers-reduced-motion: reduce)` block in globals.css + guard `smoothScrollTo()`.
-  *Deliberately left out of the behavior-neutral pass — it changes animation behavior.*
 - **Palette inconsistency:** dashboard uses legacy `zinc-*`; rest of app uses `white/xx` +
   glass. Migrate the dashboard for a unified look (separate visual pass).
 - **Decorative watermark `<img>`** lack intrinsic width/height (minor layout-shift).
