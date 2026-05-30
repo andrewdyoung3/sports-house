@@ -792,7 +792,7 @@ export default function ResultsPage() {
               {groupedByDate.map(({ dateKey, representativeDate, results: dayResults }) => (
                 <section key={dateKey} id={`result-date-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-white/50 shrink-0">
+                    <p className="text-[13px] font-black uppercase tracking-[0.12em] text-white/50 shrink-0">
                       {formatDateHeading(representativeDate, userTz)}
                     </p>
                     <div className="flex-1 h-px bg-white/8" />
