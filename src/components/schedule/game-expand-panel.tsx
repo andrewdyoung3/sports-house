@@ -6,6 +6,7 @@ import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarCha
 import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { cn, ordinal } from '@/lib/utils';
@@ -26,8 +27,6 @@ interface GameExpandPanelProps {
   onStandingsUpdate?: (rows: StandingRow[]) => void;
 }
 
-/** Leagues with a real /api/results + /api/preview backend. */
-const REAL_DATA_LEAGUES    = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
 /** Outdoor sports where weather affects play. */
 const OUTDOOR_SPORTS       = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);

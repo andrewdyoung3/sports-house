@@ -7,9 +7,9 @@ import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-
 import { getFollowedTeams } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { TEAMS } from '@/lib/teams';
+import { TEAMS, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
 import type { Team, GameResult, SportKey } from '@/types';
@@ -18,7 +18,6 @@ import type { Team, GameResult, SportKey } from '@/types';
 
 type ResultEntry = GameResult & { team: Team; id: string };
 
-const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -614,27 +613,6 @@ function ResultsSkeleton() {
   );
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
-
-function EmptyState() {
-  return (
-    <div className="max-w-lg mx-auto px-4 py-32 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-indigo-900/40 border border-indigo-700/30 flex items-center justify-center mx-auto mb-6">
-        <Trophy className="h-8 w-8 text-indigo-400" />
-      </div>
-      <h1 className="text-2xl font-black text-white mb-3">No results yet</h1>
-      <p className="text-white/55 mb-8 leading-relaxed">
-        Select teams to follow and your recent results will appear here.
-      </p>
-      <Link href="/onboarding">
-        <Button size="lg" className="gap-2">
-          <Plus className="h-4 w-4" />
-          Choose Your Teams
-        </Button>
-      </Link>
-    </div>
-  );
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -751,7 +729,13 @@ export default function ResultsPage() {
     setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
-  if (!loading && teams.length === 0) return <EmptyState />;
+  if (!loading && teams.length === 0) return (
+    <EmptyState
+      icon={Trophy}
+      title="No results yet"
+      body="Select teams to follow and your recent results will appear here."
+    />
+  );
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">

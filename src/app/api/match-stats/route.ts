@@ -9,22 +9,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { MatchStats, PlayerStatLine, TeamMatchStats } from '@/types';
+import { fetchTimeout } from '@/lib/espn';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800' };
-
-async function fetchTimeout(
-  url: string,
-  options: Parameters<typeof fetch>[1] & { timeoutMs?: number } = {},
-): Promise<Response> {
-  const { timeoutMs = 8000, ...rest } = options;
-  const ac    = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...rest, signal: ac.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 // ─── ESPN team ID maps ────────────────────────────────────────────────────────
 
