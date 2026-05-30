@@ -15,3 +15,6 @@ node_modules/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Generated eval artifacts (scripts/eval-previews.ts)
+eval-output/
