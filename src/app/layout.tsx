@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/layout/navbar';
+import { PrefsSync } from '@/components/providers/prefs-sync';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -51,6 +52,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div style={{ position:'absolute', top:'22%', right:'12%', width:'220px', height:'220px', borderRadius:'50%', border:'1px solid rgba(138,68,210,0.08)', animation:'drift 28s ease-in-out infinite 6s' }} />
           <div style={{ position:'absolute', bottom:'18%', left:'12%', width:'160px', height:'160px', borderRadius:'50%', border:'1px solid rgba(155,50,90,0.07)',  animation:'drift-slow 22s ease-in-out infinite 2s reverse' }} />
         </div>
+
+        {/* Anonymous Supabase session + one-time localStorage→Supabase sync (no UI) */}
+        <PrefsSync />
 
         <Navbar />
         {/* Top padding offsets the fixed navbar */}
