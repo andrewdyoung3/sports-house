@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
 import type { AIReview } from '@/types';
+import { AI_MODEL } from '@/lib/ai-model';
 
 const anthropic = new Anthropic();
 
@@ -118,7 +119,7 @@ const generateReview = unstable_cache(
   async (cacheKey: string, dataBlock: string): Promise<AIReview | null> => {
     try {
       const msg = await anthropic.messages.create({
-        model:      'claude-sonnet-4-6',
+        model:      AI_MODEL,
         max_tokens: 400,
         system:     SYSTEM_PROMPT,
         messages:   [{ role: 'user', content: dataBlock }],

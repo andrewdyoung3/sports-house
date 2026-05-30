@@ -19,13 +19,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
 import type { PreviewContext, GameResult, AIPreview, WeatherData } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, buildUpdatePrompt } from '@/lib/preview-prompt';
+import { AI_MODEL } from '@/lib/ai-model';
 
 // ─── Claude call ──────────────────────────────────────────────────────────────
 
 async function callClaude(prompt: string, compact = false, maxTokensOverride?: number): Promise<AIPreview> {
   const client   = new Anthropic();
   const response = await client.messages.create({
-    model:      'claude-sonnet-4-6',
+    model:      AI_MODEL,
     max_tokens: maxTokensOverride ?? (compact ? 380 : 800),
     system:     SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: prompt }],
