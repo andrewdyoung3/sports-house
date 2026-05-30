@@ -78,6 +78,8 @@ src/
     schedule/                 — next-game-hero, schedule-calendar, game-expand-panel,
                                 league-table, f1-starting-grid, sport-ball
     results/result-expand-panel.tsx
+    providers/prefs-sync.tsx  — invisible app-load bootstrap (anon Supabase session +
+                                one-time localStorage→Supabase sync)
   lib/
     teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata) + REAL_DATA_LEAGUES set
     team-logos.ts             — TEAM_LOGOS (logo URLs) + TEAM_LOGO_FILTERS (CSS filters)
@@ -89,7 +91,11 @@ src/
     preview-prompt.ts         — shared AI-preview prompt assembly (SYSTEM_PROMPT + buildDataBlock +
                                 buildUpdatePrompt + buildPreviewPrompt); used by the route AND the eval
     mock-data.ts              — Deterministic mock generators (seed = team ID)
-    user-prefs.ts             — localStorage CRUD for followed teams ('use client')
+    user-prefs.ts             — followed-teams store ('use client'): synchronous localStorage
+                                read-through cache + Supabase write-through (durable source of truth)
+    supabase/client.ts        — SSR browser client (@supabase/ssr, dynamically imported so it
+                                stays out of First Load JS); null when unconfigured
+    supabase/server.ts        — SSR server client (Phase-2 scaffold)
     utils.ts                  — cn(), date/timezone helpers, ordinal() (shared), seededRandom(),
                                 contrastColor(), smoothScrollTo()
     f1-data.ts                — F1 calendar, country→abbr, grid data
@@ -101,6 +107,8 @@ scripts/
   eval-previews.ts            — DEV-ONLY model-comparison harness (not built/bundled, not
                                 imported by any route); writes blind A/B artifacts to
                                 eval-output/ (gitignored). Run: npx tsx scripts/eval-previews.ts
+supabase/
+  migrations/0001_user_prefs.sql — user_prefs table + RLS (each user sees only their own row)
 ```
 
 ---
@@ -211,6 +219,15 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   (`ANTHROPIC_AI_MODEL`, default Haiku), shared by both AI routes — ~3× cheaper / ~2× faster;
   a blind eval showed only a slight Sonnet edge in polish, not worth the cost.
 
+### ✅ Persistence (Phase 1)
+- **Followed teams now persist to Supabase** (anonymous identity + RLS) behind the unchanged
+  `user-prefs.ts` interface, at UX parity (no login). Design (a): synchronous localStorage
+  read-through cache + Supabase write-through as the durable source of truth — so all five
+  callers are unchanged; the only wiring is `<PrefsSync/>` in the root layout. First-run
+  localStorage→Supabase migration is idempotent; `@supabase/ssr` is dynamically imported
+  (out of First Load JS); degrades to localStorage-only when env vars are unset. RLS verified
+  (each user reads only their own row). **Phase 2 (real login) is the next step — see §8.**
+
 ### Outstanding
 - **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
   `EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift (routes
@@ -243,8 +260,12 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 
 ## 8. Upgrade path (priority order)
 
-1. **Persistence** — swap localStorage in `user-prefs.ts` for Supabase.
-2. **Auth** — add NextAuth; protect `/dashboard` with a session check.
+1. **Persistence** — ✅ *Phase 1 done* (see §7): followed teams persist to Supabase via an
+   anonymous identity + RLS, behind the unchanged `user-prefs.ts` interface. Requires the
+   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` env vars (see `.env.local.example`).
+2. **Auth — Phase 2 (next).** Add a real login/signup UI and **link the anonymous identity**
+   to the new account on sign-up so existing followed teams carry over; protect future
+   account-only surfaces. The Supabase server client (`lib/supabase/server.ts`) is the scaffold.
 3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
    Anthropic SDK on **Claude Haiku 4.5** (from `lib/ai-model.ts`; `ANTHROPIC_AI_MODEL`,
    default Haiku — switched from Sonnet 4.6). There is **no `src/lib/ai.ts`** — the logic
