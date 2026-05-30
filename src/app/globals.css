@@ -127,3 +127,36 @@
     @apply glass rounded-2xl;
   }
 }
+
+/* ── Reduced motion ───────────────────────────────────────────────────────────
+ * Honour the OS "reduce motion" preference with a calm, static UI.
+ *
+ * We deliberately do NOT use `animation: none` — that freezes entrance animations
+ * (slideDown, fade-in) at their opacity:0 / translated start frame, leaving
+ * elements invisible or misplaced. Instead we collapse every animation and
+ * transition to ~0ms with a single iteration: animations jump straight to their
+ * FINAL (visible) frame, ambient loops (drift / pulse) settle on their resting
+ * frame, and the neon box-shadow / hover transitions apply instantly.
+ *
+ * `!important` + the universal selector are required because the motion we need
+ * to neutralize is applied via inline `style` (the drifting background orbs in
+ * layout.tsx and the slideDown expand-panel entrances), which a class-scoped rule
+ * cannot reach.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* float-hover: keep the static surface, drop the lift entirely */
+  .float-hover:hover {
+    transform: none !important;
+  }
+}
