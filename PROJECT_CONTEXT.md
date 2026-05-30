@@ -4,7 +4,7 @@
 > agent-facing build/run instructions). This doc is the "why and how it fits together"
 > overview plus a running log of tech-debt and decisions discussed during review.
 >
-> Last updated: 2026-05-29
+> Last updated: 2026-05-30
 
 ---
 
@@ -29,6 +29,9 @@ real backend layer: a suite of Next.js API routes that proxy free public sports 
 - **No database, no auth** — all user state lives in `localStorage`
 - **API routes** act as a thin server layer: fetch upstream sports APIs, normalize to
   internal types, cache, and serve to the client
+- **AI text** — Anthropic Claude (**Haiku 4.5** by default) via `@anthropic-ai/sdk` in the
+  `ai-preview` / `ai-review` routes; model is configurable through `ANTHROPIC_AI_MODEL`
+  (`src/lib/ai-model.ts`)
 - Dev server runs on **http://localhost:3001**
 
 ### Commands
@@ -62,7 +65,8 @@ src/
       news/route.ts           — Team news headlines
       match-stats/route.ts    — Per-match statistics
       preview/route.ts        — Match preview data assembly
-      ai-preview/route.ts     — AI-generated match preview text
+      ai-preview/route.ts     — AI-generated match preview text (slim — prompt assembly
+                                lives in lib/preview-prompt.ts)
       ai-review/route.ts      — AI-generated post-match review text
       weather/route.ts        — Venue weather for fixtures
   components/
@@ -80,6 +84,10 @@ src/
     espn.ts                   — shared ESPN/Squiggle helpers (fetchTimeout, espnDateRange,
                                 aestDisplay, parseCricketFormat, unknownTeam)
     afl.ts                    — AFL Squiggle-name map + team table derived from teams.ts/team-logos.ts
+    ai-model.ts               — AI_MODEL constant (ANTHROPIC_AI_MODEL env, default Haiku 4.5),
+                                shared by both AI routes
+    preview-prompt.ts         — shared AI-preview prompt assembly (SYSTEM_PROMPT + buildDataBlock +
+                                buildUpdatePrompt + buildPreviewPrompt); used by the route AND the eval
     mock-data.ts              — Deterministic mock generators (seed = team ID)
     user-prefs.ts             — localStorage CRUD for followed teams ('use client')
     utils.ts                  — cn(), date/timezone helpers, ordinal() (shared), seededRandom(),
@@ -89,6 +97,10 @@ src/
   types/index.ts              — All shared TS interfaces (Team, UpcomingGame, GameResult,
                                 NewsItem, StandingRow, etc.)
   instrumentation.ts          — Next.js instrumentation hook
+scripts/
+  eval-previews.ts            — DEV-ONLY model-comparison harness (not built/bundled, not
+                                imported by any route); writes blind A/B artifacts to
+                                eval-output/ (gitignored). Run: npx tsx scripts/eval-previews.ts
 ```
 
 ---
@@ -142,6 +154,8 @@ Onboarding ──saveFollowedTeams()──▶ localStorage ──getFollowedTeam
   + European comps).
 - Caching: routes set `Cache-Control: public, max-age=300, stale-while-revalidate=3600`
   and use `next: { revalidate }` on upstream fetches.
+- **AI previews/reviews are *generated*, not fetched** — produced by Anthropic Claude
+  Haiku 4.5 (see §3 `lib/ai-model.ts` / `lib/preview-prompt.ts` and §8), then cached.
 
 ---
 
@@ -186,6 +200,17 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   reduce)` block collapses animations/transitions to ~0ms (entrances resolve to their final
   visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly.
 
+### ✅ AI previews — tooling & model
+- **Prompt assembly extracted** to `lib/preview-prompt.ts` (`SYSTEM_PROMPT` + `buildDataBlock`
+  + `buildUpdatePrompt` + a `buildPreviewPrompt` wrapper), moved verbatim out of the route;
+  `ai-preview/route.ts` is now slim and imports it.
+- **Model-comparison eval harness** (`scripts/eval-previews.ts`, dev-only) — runs curated
+  fixtures across a model registry on the production prompt and writes a blind, order-randomized
+  A/B artifact + cost/latency summary. `eval-output/` is gitignored.
+- **Production model switched to Claude Haiku 4.5** (from Sonnet 4.6) via `lib/ai-model.ts`
+  (`ANTHROPIC_AI_MODEL`, default Haiku), shared by both AI routes — ~3× cheaper / ~2× faster;
+  a blind eval showed only a slight Sonnet edge in polish, not worth the cost.
+
 ### Outstanding
 - **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
   `EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift (routes
@@ -194,8 +219,25 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   glass. Migrate the dashboard for a unified look (separate visual pass).
 - **Decorative watermark `<img>`** lack intrinsic width/height (minor layout-shift).
 - **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
-  `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k ·
-  `ai-preview/route.ts` ~1.1k. `game-expand-panel` could split its stats/preview sub-sections.
+  `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k.
+  `game-expand-panel` could split its stats/preview sub-sections. (`ai-preview/route.ts` is
+  now ~140 lines post-extraction; `lib/preview-prompt.ts` ~1k is almost entirely the system-
+  prompt string — large by design, not a concern.)
+
+### Decisions logged
+- **Cost control — chose Haiku over an app-side token counter.** Switched to Haiku 4.5
+  (~3× cheaper) and decided AGAINST building a daily token-budget counter in the app:
+  serverless functions have no shared state to track a budget reliably, and Haiku + the
+  planned §10 pre-generation both shrink the spend problem. Relying instead on the monthly
+  Anthropic **Console spend cap** + Haiku + eventual pre-gen. *(The Console cap can't be
+  verified from code — recommended/assumed set; confirm in the Anthropic Console.)*
+- **Prompt caching — deferred to §10.** Marking the ~9k-token preview system prompt with
+  `cache_control` works (a cache hit was verified), but under current traffic — on-demand
+  generation with results cached 6h server-side + 14 days in `localStorage` — model calls
+  are sparse, so the ~5-min prompt cache is usually cold and the cache-write premium makes
+  it net slightly negative. It becomes a real ~90% input-cost win under **batch
+  pre-generation**, so it's folded into the §10 build. (`ai-review`'s ~441-token system
+  prompt is below the 2048-token cache minimum regardless.) Not on `main`.
 
 ---
 
@@ -204,10 +246,11 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 1. **Persistence** — swap localStorage in `user-prefs.ts` for Supabase.
 2. **Auth** — add NextAuth; protect `/dashboard` with a session check.
 3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
-   Anthropic SDK directly (`claude-sonnet-4-6`); there is **no `src/lib/ai.ts`** — the logic
+   Anthropic SDK on **Claude Haiku 4.5** (from `lib/ai-model.ts`; `ANTHROPIC_AI_MODEL`,
+   default Haiku — switched from Sonnet 4.6). There is **no `src/lib/ai.ts`** — the logic
    lives in the routes. Output is cached server-side (`unstable_cache`) **and** in
-   `localStorage`. Remaining: spend-limit + rate-limit guards; longer-term, the self-hosted
-   option in §10.
+   `localStorage`. Remaining: spend guardrails (see §7 *Decisions logged*); longer-term,
+   the self-hosted option in §10.
 4. **More leagues** — Cricket expansion (BBL/Sheffield Shield + international) next, then
    NBA/NFL/NHL/MLB via official APIs to replace their mock data.
 5. **Self-hosted LLM for AI text** *(exploratory — see §10)* — pre-generate previews/reviews
@@ -232,8 +275,9 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 
 **What:** run a small open model (Llama 3.1 8B / Qwen 2.5 7B via Ollama or MLX) on the
 existing always-on Mac mini to produce the AI previews/reviews, replacing or supplementing
-the Anthropic API (`claude-sonnet-4-6`). Marginal cost ≈ electricity only — the Mac is
-already running.
+the Anthropic API (now **Claude Haiku 4.5**). Marginal cost ≈ electricity only — the Mac is
+already running. The model-agnostic eval harness (`scripts/eval-previews.ts`) is reusable
+here to benchmark the local model against Haiku before switching.
 
 **Core idea — pre-generation (the whole point of the design):** a scheduled job *on the
 Mac* generates previews for upcoming fixtures ahead of time and writes them to a shared
@@ -242,6 +286,11 @@ makes model speed invisible to users and removes the public inference endpoint +
 from the request path — neutralizing latency, per-token cost, and the §7 exposure concern
 in one move. The shared store can be the Supabase from upgrade-path #1, so this dovetails
 with persistence.
+
+**Cadence:** generate previews ~7 days out, refresh at ~3 days (form/news/lineups firm up),
+and a final pass ~1 day before kickoff. **Add prompt caching here** — batch generation shares
+the constant ~9k-token system prefix, so `cache_control` becomes a real ~90% input-cost win
+(it's net-negative under today's sparse on-demand traffic — see §7 *Decisions logged*).
 
 **Latency context:** a synchronous home-model call would be ~5–15s on a cache miss
 (Apple-Silicon prompt-eval + generation) vs ~2–6s on the API. Pre-generation means no user
@@ -255,8 +304,10 @@ ever waits on it.
 - Connectivity for any sync path that remains: Cloudflare Tunnel / Tailscale; pin the
   Vercel function to `syd1`.
 
-**Tradeoff:** a local 7–8B won't match Sonnet 4.6's polish — acceptable for short,
-pre-generated previews, but benchmark before committing.
+**Tradeoff:** a local 7–8B won't match Claude Haiku 4.5's polish — but the bar to clear
+dropped from Sonnet 4.6 to Haiku when the model switched, which makes a local model more
+viable. Acceptable for short, pre-generated previews; benchmark (via the eval harness)
+before committing.
 
 **Rough sequence when tackled:** prototype model + prompt locally → build the pre-gen job
 + shared store → point Vercel reads at the store → keep the Anthropic API as fallback.
