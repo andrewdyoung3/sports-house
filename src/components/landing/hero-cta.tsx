@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 
 /**
  * Smart hero CTA that adapts based on whether the user already has teams saved.
@@ -12,10 +12,11 @@ import { getFollowedTeams } from '@/lib/user-prefs';
  */
 export function HeroCTA() {
   const [hasTeams, setHasTeams] = useState(false);
+  const prefsVersion = usePrefsVersion();
 
   useEffect(() => {
     setHasTeams(getFollowedTeams().length > 0);
-  }, []);
+  }, [prefsVersion]);
 
   if (hasTeams) {
     return (

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { List, Trophy, Settings, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AccountMenu } from '@/components/auth/account-menu';
 
 const NAV_LINKS = [
   { href: '/schedule', label: 'Schedule', icon: List },
@@ -77,7 +78,7 @@ export function Navbar() {
           )}
         </div>
 
-        {/* Right side — Teams settings */}
+        {/* Right side — Teams settings + account */}
         <div className="flex items-center gap-2">
           <Link
             href="/onboarding"
@@ -86,6 +87,7 @@ export function Navbar() {
             <Settings className="h-4 w-4" />
             <span className="hidden sm:block">My Teams</span>
           </Link>
+          <AccountMenu />
         </div>
       </div>
     </nav>

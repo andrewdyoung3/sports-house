@@ -13,7 +13,7 @@ const BUILT_LEAGUE_IDS = new Set([
 ]);
 const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';
-import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -25,12 +25,17 @@ export default function OnboardingPage() {
   const [activeSport, setActiveSport] = useState<SportKey | 'all'>('all');
   const [query, setQuery]             = useState('');
   const [selected, setSelected]       = useState<Team[]>([]);
+  const prefsVersion = usePrefsVersion();
 
-  // Pre-populate with any teams already saved so additions don't wipe existing selections
+  // Pre-populate with any teams already saved so additions don't wipe existing
+  // selections. Re-seeds when the cache changes (prefsVersion) so an anon→permanent
+  // merge that lands after mount (e.g. signing in from here) shows the union without
+  // a reload. A background bump only fires from sync/merge/sign-out — never from the
+  // user's own in-progress edits — so this won't clobber a selection mid-edit.
   useEffect(() => {
     const existing = getFollowedTeams();
     if (existing.length > 0) setSelected(existing);
-  }, []);
+  }, [prefsVersion]);
 
   const filteredTeams = useMemo(
     () => filterTeams(activeSport === 'all' ? 'all' : activeSport, query)
