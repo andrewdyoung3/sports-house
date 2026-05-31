@@ -1,23 +1,24 @@
 # SportHouse — Project Context
 
-> A living architecture reference for SportHouse. Complements `CLAUDE.md` (which holds
-> agent-facing build/run instructions). This doc is the "why and how it fits together"
-> overview plus a running log of tech-debt and decisions discussed during review.
+> A living architecture reference for SportHouse. Complements `CLAUDE.md` (agent-facing
+> build/run instructions). This doc is the "why and how it fits together" overview plus a
+> running log of decisions, the next build, and known limitations.
 >
-> Last updated: 2026-05-31
+> Last updated: 2026-06-01
 
 ---
 
 ## 1. What it is
 
-SportHouse is a personalized sports dashboard. A user picks the teams they follow
-(across AFL, NRL, EPL, Super Rugby, Test Rugby, F1, BBL, international cricket, plus
-mock-only NBA/NHL/MLB), and the app builds a tailored feed of fixtures, results,
-standings, news, and AI match previews.
+SportHouse is a personalized sports dashboard. A user picks the teams they follow (across
+AFL, NRL, EPL, Super Rugby, Test Rugby, F1, BBL, international cricket, plus mock-only
+NBA/NHL/MLB), and the app builds a tailored feed of fixtures, results, standings, news, and
+AI match previews.
 
-It began as a localStorage-only MVP with deterministic mock data and has since grown a
-real backend layer: a suite of Next.js API routes that proxy free public sports APIs
-(ESPN, Squiggle) and generate AI previews.
+It began as a localStorage-only MVP with deterministic mock data and has since grown a real
+backend layer: Next.js API routes proxying free public sports APIs (ESPN, Squiggle), AI
+previews via Anthropic Claude, and a Supabase identity/persistence layer with **real login
+(shipped, live in prod)**.
 
 ---
 
@@ -26,13 +27,17 @@ real backend layer: a suite of Next.js API routes that proxy free public sports 
 - **Next.js 14** (App Router) + **TypeScript**
 - **TailwindCSS v3** — custom "glass / obsidian" dark design system
 - **lucide-react** — icon set
-- **No database, no auth** — all user state lives in `localStorage`
-- **API routes** act as a thin server layer: fetch upstream sports APIs, normalize to
-  internal types, cache, and serve to the client
+- **Supabase** — Postgres + Auth. Holds the per-identity followed-teams row (`user_prefs`,
+  RLS-protected). Auth: **anonymous identities** (zero-friction default) + **real login via
+  Google OAuth and email magic-link** (`@supabase/ssr`, cookie sessions).
+- **localStorage** — synchronous read-through cache for the active identity's followed teams
+  (Supabase is the durable source of truth).
+- **API routes** — thin server layer: fetch upstream sports APIs, normalize to internal
+  types, cache, serve.
 - **AI text** — Anthropic Claude (**Haiku 4.5** by default) via `@anthropic-ai/sdk` in the
-  `ai-preview` / `ai-review` routes; model is configurable through `ANTHROPIC_AI_MODEL`
-  (`src/lib/ai-model.ts`)
-- Dev server runs on **http://localhost:3001**
+  `ai-preview` / `ai-review` routes; model configurable via `ANTHROPIC_AI_MODEL`
+  (`src/lib/ai-model.ts`).
+- Dev server runs on **http://localhost:3001**.
 
 ### Commands
 ```bash
@@ -42,21 +47,26 @@ npm start         # serve production build
 npx tsc --noEmit  # type-check only
 ```
 
+**Baseline health:** `tsc --noEmit` and `npm run build` both exit 0 on `main`.
+
 ---
 
 ## 3. Directory structure
 
 ```
 src/
+  middleware.ts               — Phase-2 session REFRESH (@supabase/ssr); refresh-only, never
+                                mints anon server-side; matcher excludes static assets
   app/
     page.tsx                  — Landing page (server component)
     onboarding/page.tsx       — Team selection wizard (client, 2-step)
     dashboard/page.tsx        — Personalized per-team feed (client)
     schedule/page.tsx         — Fixtures timeline + calendar + league browse (client)
     results/page.tsx          — Past results feed (client)
-    layout.tsx                — Root layout (Inter font + Navbar)
+    layout.tsx                — Root layout (Inter font + Navbar + <PrefsSync/>)
     error.tsx                 — Error boundary
     globals.css               — Tailwind base + glass utilities + keyframes
+    auth/callback/route.ts    — OAuth/magic-link PKCE exchangeCodeForSession → redirect /schedule
     api/
       fixtures/route.ts       — Upcoming fixtures for a followed team
       results/route.ts        — Past results for a followed team
@@ -65,49 +75,45 @@ src/
       news/route.ts           — Team news headlines
       match-stats/route.ts    — Per-match statistics (typed against the lib/espn ESPN interfaces)
       preview/route.ts        — Match preview data assembly
-      ai-preview/route.ts     — AI-generated match preview text (slim — prompt assembly
-                                lives in lib/preview-prompt.ts)
-      ai-review/route.ts      — AI-generated post-match review text
+      ai-preview/route.ts     — AI match-preview text (PUBLIC/UNAUTH — gating is the next build)
+      ai-review/route.ts      — AI post-match review text (PUBLIC/UNAUTH — gating is the next build)
       weather/route.ts        — Venue weather for fixtures
   components/
     ui/                       — button, card, badge, input, skeleton, team-badge, empty-state
-    layout/navbar.tsx         — Fixed top navbar, active-link detection, mobile calendar trigger
+    layout/navbar.tsx         — Fixed top navbar; active-link detection; mounts <AccountMenu/>
+    auth/auth-modal.tsx       — Glass sign-in modal (Google + email magic-link), portaled to <body>
+    auth/account-menu.tsx     — Navbar account entry: "Sign in" pill ↔ email + Sign out
     landing/hero-cta.tsx
     onboarding/team-selector-card.tsx
     dashboard/                — team-feed-card, game-card, news-item, recent-form
     schedule/                 — next-game-hero, schedule-calendar, game-expand-panel,
                                 league-table, f1-starting-grid, sport-ball
     results/result-expand-panel.tsx
-    providers/prefs-sync.tsx  — invisible app-load bootstrap (anon Supabase session +
-                                one-time localStorage→Supabase sync)
+    providers/prefs-sync.tsx  — invisible auth-state wiring: serialized per-identity reload on
+                                INITIAL_SESSION/SIGNED_IN; guest restore + re-anon on SIGNED_OUT
   lib/
-    teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata) + REAL_DATA_LEAGUES set
+    teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata) + REAL_DATA_LEAGUES
     team-logos.ts             — TEAM_LOGOS (logo URLs) + TEAM_LOGO_FILTERS (CSS filters)
-    espn.ts                   — shared ESPN/Squiggle helpers (fetchTimeout, espnDateRange,
-                                aestDisplay, parseCricketFormat, unknownTeam) + ESPN response
-                                interfaces (scoreboard/summary; typing pilot, see §7)
+    espn.ts                   — shared ESPN/Squiggle helpers + ESPN response interfaces (typing pilot)
     afl.ts                    — AFL Squiggle-name map + team table derived from teams.ts/team-logos.ts
-    ai-model.ts               — AI_MODEL constant (ANTHROPIC_AI_MODEL env, default Haiku 4.5),
-                                shared by both AI routes
-    preview-prompt.ts         — shared AI-preview prompt assembly (SYSTEM_PROMPT + buildDataBlock +
-                                buildUpdatePrompt + buildPreviewPrompt); used by the route AND the eval
+    ai-model.ts               — AI_MODEL constant (ANTHROPIC_AI_MODEL env, default Haiku 4.5)
+    preview-prompt.ts         — shared AI-preview prompt assembly (used by route AND the eval)
     mock-data.ts              — Deterministic mock generators (seed = team ID)
-    user-prefs.ts             — followed-teams store ('use client'): synchronous localStorage
-                                read-through cache + Supabase write-through (durable source of truth)
-    supabase/client.ts        — SSR browser client (@supabase/ssr, dynamically imported so it
-                                stays out of First Load JS); null when unconfigured
-    supabase/server.ts        — SSR server client (Phase-2 scaffold)
-    utils.ts                  — cn(), date/timezone helpers, ordinal() (shared), seededRandom(),
-                                contrastColor(), smoothScrollTo()
+    auth.ts                   — client auth: continueWithGoogle/continueWithEmail (sign-in only,
+                                no linkIdentity), getAuthState, signOutToAnon, callbackUrl
+    user-prefs.ts             — followed-teams store ('use client'): synchronous localStorage cache
+                                + per-identity Supabase row; reconcileActiveIdentity (reload-on-
+                                identity-change), restoreGuestSession (sign-out), usePrefsVersion,
+                                GUEST_BACKUP + active-identity markers
+    supabase/client.ts        — SSR browser client (@supabase/ssr, dynamically imported)
+    supabase/server.ts        — read-only SSR server client (Server Components)
+    supabase/middleware.ts    — writable SSR client for middleware/route-handler cookie writes
+    utils.ts                  — cn(), date/timezone helpers, seededRandom(), contrastColor(), …
     f1-data.ts                — F1 calendar, country→abbr, grid data
     english-football-divisions.ts — EPL/EFL division metadata
-  types/index.ts              — All shared TS interfaces (Team, UpcomingGame, GameResult,
-                                NewsItem, StandingRow, etc.)
-  instrumentation.ts          — Next.js instrumentation hook
+  types/index.ts              — All shared TS interfaces
 scripts/
-  eval-previews.ts            — DEV-ONLY model-comparison harness (not built/bundled, not
-                                imported by any route); writes blind A/B artifacts to
-                                eval-output/ (gitignored). Run: npx tsx scripts/eval-previews.ts
+  eval-previews.ts            — DEV-ONLY model-comparison harness (not built/bundled)
 supabase/
   migrations/0001_user_prefs.sql — user_prefs table + RLS (each user sees only their own row)
 ```
@@ -117,29 +123,23 @@ supabase/
 ## 4. Core data flow
 
 ```
-Onboarding ──saveFollowedTeams()──▶ localStorage ──getFollowedTeams()──▶ Dashboard / Schedule / Results
-                                                                              │
-                                                          per-team fetch ─────┘
-                                                                              ▼
-                                              /api/* routes ──▶ ESPN / Squiggle / AI ──▶ normalized types
+Auth identity (anon or signed-in) ─owns─▶ user_prefs row (Supabase, RLS) ◀─sync─ localStorage cache
+                                                                                      │
+Onboarding ─saveFollowedTeams()─▶ writes localStorage + CURRENT identity's row        │ getFollowedTeams()
+                                                                                      ▼
+                                       Dashboard / Schedule / Results ─per-team fetch─▶ /api/* ─▶ ESPN/Squiggle/AI
 ```
 
-- **Onboarding → localStorage → pages** is the entire user-state pipeline. No server
-  persistence, no auth.
-- Client pages read followed teams on mount (after hydration, to avoid SSR mismatch),
-  then fan out one fetch per team to the relevant API routes.
-- API routes normalize every upstream response into the **internal types in
-  `types/index.ts`** so the display layer never sees raw ESPN/Squiggle shapes.
-- **Mock fallback:** leagues without a real backend use deterministic mock data keyed by
-  `seededRandom(teamId)` — same team always renders the same mock data.
-
-### Key client-state patterns (schedule/page.tsx)
-- **Ref-backed caches** (`leagueCacheRef`, `standingsCacheRef`) read synchronously in the
-  same render as the trigger state changes — deliberately avoids a one-render flash when
-  switching league pills. A `cacheVersion` counter state forces re-render on cache writes.
-- **Adaptive background:** the page sets a CSS custom property `--bg-left-color` from the
-  active team's primary color (`teamColorToBgStop`), giving each team an ambient wash.
-- **Auto-inject QLD Maroons** for State of Origin whenever any NRL club is followed.
+- **localStorage is a synchronous read-through cache** for the *active identity*; Supabase is
+  the durable source of truth. Reads stay synchronous (no loading flash); writes go to
+  localStorage immediately then push to the current identity's row.
+- `<PrefsSync/>` (root layout) drives the cache off `onAuthStateChange` — see §7.
+- API routes normalize every upstream response into `types/index.ts` so the display layer
+  never sees raw ESPN/Squiggle shapes. Leagues without a real backend use deterministic mock
+  data keyed by `seededRandom(teamId)`.
+- Pages re-read followed teams without a reload via `usePrefsVersion()` (a counter bumped on
+  the `PREFS_UPDATED_EVENT` cache-change event); schedule/results reset their fetch
+  accumulators when it changes.
 
 ---
 
@@ -153,262 +153,174 @@ Onboarding ──saveFollowedTeams()──▶ localStorage ──getFollowedTeam
 | Super Rugby   | ESPN                          | ESPN                               | ESPN                         |
 | Test Rugby    | ESPN                          | —                                  | —                            |
 | F1            | ESPN / f1-data                | ESPN / f1-data                     | grid data                    |
-| BBL / Cricket Int | ESPN cricket                | —                                  | —                            |
+| BBL / Cricket Int | ESPN cricket              | —                                  | —                            |
 | **NBA/NHL/MLB** | **mock-data.ts**            | mock                               | mock                         |
 
-- **Squiggle** (AFL) — free, no key. The `?team=` filter is unreliable for the current
-  season, so routes fetch the full year and filter server-side. Next.js dedupes the URL
-  across all AFL team requests within the revalidation window.
-- **ESPN public API** — no key. Routes fan out across competitions for EPL (league + cups
-  + European comps).
-- Caching: routes set `Cache-Control: public, max-age=300, stale-while-revalidate=3600`
-  and use `next: { revalidate }` on upstream fetches.
-- **AI previews/reviews are *generated*, not fetched** — produced by Anthropic Claude
-  Haiku 4.5 (see §3 `lib/ai-model.ts` / `lib/preview-prompt.ts` and §8), then cached.
+- **AFL/Squiggle matches by exact team name.** All 18 names verified against
+  `https://api.squiggle.com.au/?q=teams`; `afl-giants` = **"Greater Western Sydney"** (was
+  wrongly "GWS Giants" → returned nothing; fixed this cycle).
+- **ESPN public API** — no key; routes fan out across competitions for EPL.
+- Caching: routes set `Cache-Control: public, max-age=300, stale-while-revalidate=3600` and
+  `next: { revalidate }` on upstream fetches.
+- **AI previews/reviews are *generated*, not fetched** (Claude Haiku 4.5), then cached.
 
 ---
 
 ## 6. Design system / UI conventions
 
-- **Obsidian base** (`#080809`) with layered radial-gradient washes in `body`
-  (globals.css). Left wash is team-adaptive via `--bg-left-color`.
-- **Glass surfaces:** `.glass`, `.glass-strong`, `.glass-hero` utilities — translucent
-  white + backdrop blur + cool-amethyst borders.
-- **Team theming:** each team's `primaryColor` / `secondaryColor` drives borders, glows,
-  ambient tints, and badge drop-shadows **inline via `style`** (no CSS-in-JS).
-- **Color convention:** newer pages (schedule, results) use `white/xx` opacity tokens.
-  The dashboard still uses the older `zinc-*` palette — see tech debt below.
-- **Fixture badges:** `LEAGUE_BADGE` / `COMPETITION_BADGE` maps in `schedule/page.tsx`
-  encode brand colors + Unicode glyphs (with `︎` to force text rendering) + optional
-  watermark logos — so league badges need no image assets.
-- **Animations:** `drift`, `drift-slow`, `pulse-ring`, `slideDown` keyframes;
-  `float-hover`; custom `smoothScrollTo()` (ease-in-out cubic).
+- **Obsidian base** (`#080809`) with layered radial-gradient washes in `body` (globals.css).
+  Left wash is team-adaptive via `--bg-left-color`.
+- **Glass surfaces:** `.glass`, `.glass-strong`, `.glass-hero` — translucent white + backdrop
+  blur + cool-amethyst borders. (Note: a `backdrop-filter` ancestor becomes the containing
+  block for `position:fixed` descendants — the auth modal is `createPortal`ed to `<body>` to
+  escape the navbar's blur for correct full-screen centering.)
+- **Team theming:** each team's `primaryColor`/`secondaryColor` drives borders/glows/tints
+  **inline via `style`** (no CSS-in-JS).
+- **Color convention:** newer pages (schedule, results) use `white/xx` opacity tokens; the
+  dashboard still uses the older `zinc-*` palette (see §10).
+- **Animations:** `drift`, `drift-slow`, `pulse-ring`, `slideDown`; `float-hover`;
+  `smoothScrollTo()`. `prefers-reduced-motion` collapses these to ~0ms at their final frame.
 
 ---
 
-## 7. Known tech debt / review findings (2026-05-29)
+## 7. Auth & persistence
 
-Baseline health: **type-check + production build pass clean** (`tsc --noEmit` and
-`npm run build` both exit 0). The findings below are quality/efficiency/UI, not bugs.
+### Phase 1 — foundation (live)
+Anonymous Supabase identity + RLS. Every visitor gets a real `auth.uid()` (minted client-side
+on first load); their followed teams persist to a per-identity `user_prefs` row behind the
+unchanged synchronous `user-prefs.ts` interface. Degrades to localStorage-only when Supabase
+env vars are unset.
 
-### ✅ Completed in the May 2026 cleanup pass (behavior-neutral)
-- **`lib/espn.ts`** — extracted `fetchTimeout`, `parseCricketFormat`, `espnDateRange`,
-  `aestDisplay`, `unknownTeam` (were copy-pasted across 7 routes; all copies byte-identical).
-- **`lib/afl.ts`** — single source of truth for AFL data: `SQUIGGLE_NAME` + an `AFL_TEAM`
-  table *derived* from `teams.ts`/`team-logos.ts`, replacing 3 hardcoded copies. No drift found.
-- **`REAL_DATA_LEAGUES`** hoisted to `lib/teams.ts`; the 4 identical copies now import it
-  (the divergent 5-member set in `result-expand-panel` is a different concept — left alone).
-- **Shared `<EmptyState>`** (`components/ui/empty-state.tsx`) replaces 3 near-identical
-  inline blocks (schedule, dashboard, results) with byte-equivalent output.
-- **`ordinal()`** consolidated to the `lib/utils.ts` version (removed the schedule duplicate).
-- **Build hygiene:** stopped tracking `tsconfig.tsbuildinfo`; added `*.tsbuildinfo` to `.gitignore`.
-- **UI:** date text bumped +2px across the schedule/results lists + the Next Game hero.
+### Phase 2 — real login (SHIPPED, live in prod)
+Real login via **Google OAuth** and **email magic-link** — `signInWithOAuth` /
+`signInWithOtp`, **not `linkIdentity`**. Server session plumbing: `middleware.ts` refreshes
+the cookie session (refresh-only — never mints anon server-side), `auth/callback/route.ts`
+does the PKCE `exchangeCodeForSession`.
 
-### ✅ Accessibility & UI
-- **`prefers-reduced-motion` support** — a `globals.css` `@media (prefers-reduced-motion:
-  reduce)` block collapses animations/transitions to ~0ms (entrances resolve to their final
-  visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly.
-- **Watermark `<img>` intrinsic dimensions** — added `width`/`height` to the decorative
-  watermark/logo imgs in `schedule/page.tsx`, `results/page.tsx`, `next-game-hero.tsx` so the
-  browser reserves space. Visually neutral: CSS height + `w-auto` still govern displayed size,
-  and the UA-mapped `aspect-ratio: auto` defers to each logo's natural ratio (no distortion).
+**TWO INDEPENDENT TEAM SPACES** (the defining model):
+- **Guest (anonymous):** device-local picks, zero-friction, no forced login, no gated content.
+- **Account (signed-in):** the user's team list in Supabase, **synced across devices**.
 
-### ✅ AI previews — tooling & model
-- **Prompt assembly extracted** to `lib/preview-prompt.ts` (`SYSTEM_PROMPT` + `buildDataBlock`
-  + `buildUpdatePrompt` + a `buildPreviewPrompt` wrapper), moved verbatim out of the route;
-  `ai-preview/route.ts` is now slim and imports it.
-- **Model-comparison eval harness** (`scripts/eval-previews.ts`, dev-only) — runs curated
-  fixtures across a model registry on the production prompt and writes a blind, order-randomized
-  A/B artifact + cost/latency summary. `eval-output/` is gitignored.
-- **Production model switched to Claude Haiku 4.5** (from Sonnet 4.6) via `lib/ai-model.ts`
-  (`ANTHROPIC_AI_MODEL`, default Haiku), shared by both AI routes — ~3× cheaper / ~2× faster;
-  a blind eval showed only a slight Sonnet edge in polish, not worth the cost.
+The active followed-teams cache is **owned by the current identity** and **RELOADED (replace,
+never merge)** on any auth change (`reconcileActiveIdentity` in `user-prefs.ts`, serialized in
+`<PrefsSync/>` via `reconcileInFlight` to absorb the `INITIAL_SESSION`+`SIGNED_IN` double-fire):
+- **Sign in →** LOAD the account's row into the cache (empty account → empty list).
+- **Sign out →** RESTORE the device-local guest picks (`restoreGuestSession`) + re-mint a fresh
+  anon session.
+- Each identity writes **only its own** `user_prefs` row — **no cross-identity push**, so one
+  identity's set can never clobber another's.
 
-### ✅ Persistence (Phase 1)
-- **Followed teams now persist to Supabase** (anonymous identity + RLS) behind the unchanged
-  `user-prefs.ts` interface, at UX parity (no login). Design (a): synchronous localStorage
-  read-through cache + Supabase write-through as the durable source of truth — so all five
-  callers are unchanged; the only wiring is `<PrefsSync/>` in the root layout. First-run
-  localStorage→Supabase migration is idempotent; `@supabase/ssr` is dynamically imported
-  (out of First Load JS); degrades to localStorage-only when env vars are unset. RLS verified
-  (each user reads only their own row). **Live in prod — verified 2026-05-31** (writes land in
-  the `user_prefs` table from the Vercel build). **Phase 2 (real login) is the next step — see §8.**
+**No anon→account merge.** An earlier iteration merged guest picks into the account on sign-in;
+it required a `linkIdentity` conversion that hit `identity_already_exists` and a race-prone
+cross-identity reconcile that could clobber/blank rows. We **removed the merge**: cross-device
+sync is preserved (the real feature); one-time guest→account carryover is dropped as a
+deliberate simplification. Trade-off: signing in doesn't preserve the anon UUID (the anon row
+is orphaned — see §10).
 
-### ✅ Type safety — ESPN interface pilot
-- **Typed the ESPN JSON boundary in `match-stats`** — added minimal, all-optional ESPN
-  response interfaces to `lib/espn.ts` (scoreboard: `EspnScoreboardResponse`/`Event`/
-  `Competition`/`Competitor`; summary: `EspnSummaryResponse`/`Boxscore`/…) and converted
-  `match-stats/route.ts` to cast once per boundary + typed access, removing all **19**
-  `as any`/`: any`. Behaviour-neutral (same `?.`/`??` guards; still returns `[]`/4xx on miss).
-  Chosen as the pilot because it's the only ESPN route with no AFL/Squiggle mixing.
-- **Two latent silent-failure risks the typing surfaced** (left as-is — graceful degradation,
-  but recorded so they're not lost):
-  (a) `event.id` is optional yet consumed unguarded via `String(event.id)` → a missing id
-  becomes the literal `"undefined"`, the summary query becomes `?event=undefined`, and the
-  route 404s — a silent miss, never logged.
-  (b) Event matching hinges on optional `competitor.score` / `team.id` → a partial/absent
-  score or shape change makes the score-equality match silently fail → "event not found".
-- **Rollout guidance:** the remaining casts live in the larger, **less-defensive** routes
-  (`fixtures`/`results`/`standings`/`league-fixtures`/`preview`). Target those next — there,
-  typing is more likely to surface a real bug than just document graceful degradation
-  (match-stats was already fully `?.`-guarded, so typing only documented its behaviour).
+**UI:** navbar shows a "Sign in to sync across devices" pill when anonymous, or the account
+email + Sign out when signed in (reacts to auth changes with no reload). Sign-in is a glass
+modal, opt-in only.
 
-### Outstanding
-- **Broader `as any` rollout** — the ESPN typing pilot (above) proved the pattern;
-  ~270 casts remain across the larger ESPN routes (`fixtures`/`results`/`standings`/
-  `league-fixtures`/`preview`). Roll out to the less-defensive ones first (see the pilot's
-  rollout guidance).
-- **Palette inconsistency:** dashboard uses legacy `zinc-*`; rest of app uses `white/xx` +
-  glass. A deliberate visual pass — migrate the dashboard for a unified look.
-- **AI routes 500 on non-JSON model output** — `callClaude`/`generateReview` do
-  `JSON.parse` on the model's text; a conversational/malformed reply throws → 500 → the
-  client shows "Preview unavailable". More likely now that a smaller model is in play. Fix
-  properly via tool-use / a response schema or assistant-prefill (`{`) — **not** a retry hack.
+---
+
+## 8. Key decisions & gotchas
+
+- **OAuth/magic-link `redirectTo` MUST stay query-less** (`${origin}/auth/callback`, no
+  `?next=`). Supabase matches `redirectTo` against its allow-list by **exact URL**; a query
+  string fails to match and silently **falls back to the Site URL** (prod domain), bouncing
+  localhost/preview sign-ins away unauthenticated. The post-sign-in landing (`/schedule`) is
+  chosen server-side in the callback, not carried in the URL.
+- **Supabase URL config:** Site URL = prod domain. Redirect allow-list = `/auth/callback` for
+  **localhost:3001 + prod + the preview wildcard** (`https://*-<scope>.vercel.app/auth/callback`).
+- **Sign-in, never link:** using `signInWithOAuth`/`signInWithOtp` (not `linkIdentity`) means
+  the `identity_already_exists` class cannot occur and new/existing accounts share one path.
+  ("Allow manual linking" in Supabase is now irrelevant.)
+- **AI cost control — Haiku over a token counter.** Switched to Haiku 4.5 (~3× cheaper) and
+  decided AGAINST an app-side daily token-budget counter (serverless has no shared state).
+  Rely on the Anthropic **Console spend cap** + Haiku + eventual pre-generation. *(Cap can't be
+  verified from code — confirm in the Console.)*
+- **Prompt caching deferred** — marking the ~9k-token preview system prompt with `cache_control`
+  works, but under sparse on-demand traffic the ~5-min cache is usually cold and net-negative;
+  it becomes a ~90% input-cost win under batch pre-generation (folded into §11).
+- **One Supabase project for prod + local** (for now) — local/test writes share the prod DB.
+  Consider a separate prod project later.
+
+---
+
+## 9. Next build — AI-route gating (PR 2)
+
+**The documented next step.** `api/ai-preview` and `api/ai-review` are currently **public and
+unauthenticated** → cost exposure on paid Claude calls.
+
+- **Plan:** gate both behind **ANY valid session** (anonymous sessions included — every real
+  browser already holds one, so zero-friction UX is preserved), enforced **server-side** using
+  the Phase-2 middleware/SSR session infra. Reject session-less callers (no Supabase auth
+  cookie — e.g. raw scripted requests) with `401` **before** any paid generation. Use
+  `getUser()` (revalidates the JWT), not `getSession()`.
+- **`is_anonymous` claim** = the lever for future tiering (e.g. permanent users get higher
+  quotas / review regeneration). Phase 2 only checks "is there a user."
+- **Interim manual protection (confirm in place):** Anthropic **spend cap** + a **Vercel WAF
+  rate-limit** on the two AI routes.
+
+---
+
+## 10. Known limitations / outstanding setup
+
+- **Prod magic-link email needs custom SMTP** in Supabase (Resend/Postmark/SES) — **NOT
+  configured**, so email sign-in is effectively disabled in prod (built-in SMTP is rate-limited
+  and not for production). **Google OAuth works without it.**
+- **Orphan anonymous `user_prefs` rows accumulate** — signing in starts a separate account
+  identity (no conversion), so each anon row is abandoned; cross-device sign-ins also leave
+  throwaway anon rows. Cleanup deferred — run Supabase's orphaned-anonymous-user SQL via
+  pg_cron on a schedule. Revisit at scale.
+- **NRL fetch-cache overflow** — the rugby-league scoreboard payload (~3.5–6.2 MB) exceeds
+  Next's 2 MB fetch-cache limit (`Failed to set Next.js data cache`), so NRL fixtures/results
+  aren't cached and ESPN is refetched each load. Fix: narrow the date window/limit, trim the
+  payload before caching, or use a custom cache for NRL.
+- **International cricket coverage** — `cricket_int` fixtures are series-ID-driven
+  (`CRICKET_INT_TEAM_SERIES`); only `int-aus` has configured tours, so other national teams
+  show little until ESPN series IDs are added as bilateral tours are announced. Data-coverage
+  limitation, **not** a mapping bug (the team→ESPN-name maps are correct).
+- **AI routes 500 on non-JSON model output** — `callClaude`/`generateReview` `JSON.parse` the
+  model's text; a conversational/malformed reply throws → 500 → "Preview unavailable". Fix via
+  tool-use / response schema / assistant-prefill (`{`), not a retry hack.
+- **ESPN `as any` rollout** — the `match-stats` typing pilot proved the pattern; ~270 casts
+  remain across the larger routes (`fixtures`/`results`/`standings`/`league-fixtures`/`preview`).
+  Roll out to the less-defensive ones first.
+- **Dashboard palette** — still legacy `zinc-*` vs the app's `white/glass` system; unification
+  pass wanted.
+- **Navbar account avatar `<img>` → `next/image`** (`navbar.tsx`) — cosmetic lint.
 - **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
   `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k.
-  `game-expand-panel` could split its stats/preview sub-sections. (`ai-preview/route.ts` is
-  now ~140 lines post-extraction; `lib/preview-prompt.ts` ~1k is almost entirely the system-
-  prompt string — large by design, not a concern.) Deferred.
-- **NRL fetch-cache overflow** — the rugby-league scoreboard payload (~3.5–6.2 MB) exceeds
-  Next's 2 MB fetch-cache limit → `Failed to set Next.js data cache`, so NRL fixtures/results
-  aren't cached and ESPN is refetched every load (slower, more upstream load). Fix later:
-  narrow the date window/limit, trim the payload before caching, or use a custom cache for NRL.
-  Not blocking.
-- **Orphan anonymous rows** — under the two-team-spaces model the anon identity is never
-  converted: signing in starts a separate account identity, so each anon `auth.users` +
-  `user_prefs` row is abandoned (its picks live device-locally as the guest backup, and the
-  account has its own row). Cross-device sign-ins also leave throwaway anon rows. Cleanup
-  deferred — Supabase publishes an orphaned-anonymous-user cleanup query; run it via pg_cron
-  on a schedule. Revisit at scale.
-- **International cricket coverage** — `cricket_int` fixtures are series-ID-driven
-  (`CRICKET_INT_TEAM_SERIES` in `api/fixtures`/`results`); only `int-aus` has configured tours,
-  so other national teams show little until ESPN series IDs are added as bilateral tours are
-  announced. A data-coverage limitation, **not** a mapping bug (the team→ESPN-name maps are
-  correct). Update the series tables when new tours are confirmed.
-- **Navbar `<img>` → `next/image`** (`navbar.tsx:36`, logo/account indicator) — cosmetic lint
-  (`@next/next/no-img-element`).
-
-> Resolved in `fix/team-mappings`: AFL GWS mapping (`afl-giants` → "Greater Western Sydney")
-> and the `My Teams` pill row stretching the page (`min-w-0` on the schedule/results grid column
-> so the row scrolls within its track).
-
-### Decisions logged
-- **Cost control — chose Haiku over an app-side token counter.** Switched to Haiku 4.5
-  (~3× cheaper) and decided AGAINST building a daily token-budget counter in the app:
-  serverless functions have no shared state to track a budget reliably, and Haiku + the
-  planned §10 pre-generation both shrink the spend problem. Relying instead on the monthly
-  Anthropic **Console spend cap** + Haiku + eventual pre-gen. *(The Console cap can't be
-  verified from code — recommended/assumed set; confirm in the Anthropic Console.)*
-- **Prompt caching — deferred to §10.** Marking the ~9k-token preview system prompt with
-  `cache_control` works (a cache hit was verified), but under current traffic — on-demand
-  generation with results cached 6h server-side + 14 days in `localStorage` — model calls
-  are sparse, so the ~5-min prompt cache is usually cold and the cache-write premium makes
-  it net slightly negative. It becomes a real ~90% input-cost win under **batch
-  pre-generation**, so it's folded into the §10 build. (`ai-review`'s ~441-token system
-  prompt is below the 2048-token cache minimum regardless.) Not on `main`.
-- **One Supabase project for prod + local (for now).** Fine at this stage, but local/test
-  writes and real prod data share a database — consider a separate prod Supabase project
-  later so they don't mix.
 
 ---
 
-## 8. Upgrade path (priority order)
+## 11. Roadmap (after AI-route gating)
 
-1. **Persistence** — ✅ *Phase 1 done, merged, and LIVE in prod* (see §7): followed teams
-   persist to Supabase via an anonymous identity + RLS, behind the unchanged `user-prefs.ts`
-   interface. **Verified 2026-05-31** — production writes land in the `user_prefs` table from
-   the Vercel deployment (`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
-   in Vercel Production; the code still degrades to localStorage-only if unset — see
-   `.env.local.example`).
-2. **Auth — Phase 2 (in progress).** Real login/signup (email magic-link + Google OAuth)
-   that **links the existing anonymous identity to the permanent account**, so followed
-   teams carry over (no migration — the `user_prefs` PK is the UUID, preserved on
-   convert-in-place) and sync **across devices** (Phase 1 was per-browser).
-   - **PR 1 — auth foundation (built, on `feat/auth-phase-2`):** `src/middleware.ts`
-     (session *refresh* only — never mints anon server-side), writable SSR client
-     `lib/supabase/middleware.ts`, `app/auth/callback/route.ts` (PKCE `exchangeCodeForSession`),
-     `lib/auth.ts` (convert-in-place → conflict→sign-in fallback → **merge invariant**),
-     auth modal + navbar account menu, `PrefsSync` auth wiring, sign-out → fresh-anon.
-   - **Merge invariant:** before any uid-switching auth, the followed teams are captured
-     from the **local cache** (never a DB read — RLS hides the old anon row post-switch and
-     no service-role key exists) into a TTL'd `localStorage` `pending-merge`; after the
-     session settles, if the surviving uid differs from the captured anon uid the captured
-     teams are **set-unioned** into the permanent account's row. Same path covers plain
-     sign-in and the conflict→sign-in fallback.
-   - **Orphaned anon `user_prefs` rows — DEFERRED (known harmless residue).** When a returning
-     user signs in on a fresh browser, the throwaway anon identity's row is left behind. It is
-     tiny, RLS-isolated (unreadable/unwritable by anyone else), and never served. We deliberately
-     ship **no cleanup cron** in PR 1: a time-based "delete anon users older than N days" heuristic
-     would also nuke legitimate long-lived anonymous users (the zero-friction default identity),
-     and deleting `auth.users` needs a service-role key we intentionally don't introduce. Revisit
-     only at scale, with an identifier that can't catch active anons (e.g. last-seen tracking),
-     not a blind age cutoff.
-   - **PR 2 — AI-route gating (NOT in PR 1):** add a `getUser()` gate to `api/ai-preview` /
-     `api/ai-review` (anonymous sessions allowed; session-less requests get 401). The
-     middleware refresh + cookie sessions are the scaffold this builds on.
-3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
-   Anthropic SDK on **Claude Haiku 4.5** (from `lib/ai-model.ts`; `ANTHROPIC_AI_MODEL`,
-   default Haiku — switched from Sonnet 4.6). There is **no `src/lib/ai.ts`** — the logic
-   lives in the routes. Output is cached server-side (`unstable_cache`) **and** in
-   `localStorage`. Remaining: spend guardrails (see §7 *Decisions logged*); longer-term,
-   the self-hosted option in §10.
-4. **More leagues** — Cricket expansion (BBL/Sheffield Shield + international) next, then
-   NBA/NFL/NHL/MLB via official APIs to replace their mock data.
-5. **Self-hosted LLM for AI text** *(exploratory — see §10)* — pre-generate previews/reviews
-   on the always-on Mac mini and have Vercel read them from a shared store, instead of (or
-   alongside) the Anthropic API.
+1. **AI-route gating (PR 2)** — §9. The immediate next build.
+2. **Design / QoL pass** — fold in the cosmetic debt (dashboard palette unification, navbar
+   `<img>`→`next/image`, etc.).
+3. **Local LLM pre-generation on the Mac mini** *(exploratory "fun build")* — pre-generate
+   previews/reviews on the always-on Mac mini and have Vercel read them from a shared store,
+   instead of (or alongside) the Anthropic API. Pairs with prompt-caching economics (§8).
+4. **More real leagues** — NBA/NHL/MLB via official APIs to replace their mock data.
 
 ---
 
-## 9. Agent notes / preferences (from memory)
+## 12. Resolved this cycle (done — not carried as debt)
 
-- **AI previews:** don't acknowledge small sample size / early-season hedging — redirect
-  to useful content instead.
-- **AI preview cache:** two cache layers (server + localStorage) must **both** be bumped
-  when the system prompt changes.
+- **Auth Phase 2 shipped** — Google OAuth + email magic-link; two-team-spaces model (no merge);
+  query-less redirect; navbar account state + sign-out; modal portaled to body. Live in prod.
+- **AFL GWS mapping fixed** — `afl-giants` → "Greater Western Sydney" (fixtures + results now
+  return data).
+- **My Teams pill-row stretch fixed** — `min-w-0` on the schedule/results left grid column so
+  the row scrolls within its track instead of stretching the page at high team counts.
 
 ---
 
-## 10. Future exploration — self-hosted LLM on the Mac mini
+## 13. Agent notes / preferences (from memory)
 
-**Status: exploratory, not near-term** — a "fun build", not a committed milestone. The
-§7 spend-limit + rate-limit mitigations are independent and worth doing regardless.
-
-**What:** run a small open model (Llama 3.1 8B / Qwen 2.5 7B via Ollama or MLX) on the
-existing always-on Mac mini to produce the AI previews/reviews, replacing or supplementing
-the Anthropic API (now **Claude Haiku 4.5**). Marginal cost ≈ electricity only — the Mac is
-already running. The model-agnostic eval harness (`scripts/eval-previews.ts`) is reusable
-here to benchmark the local model against Haiku before switching.
-
-**Core idea — pre-generation (the whole point of the design):** a scheduled job *on the
-Mac* generates previews for upcoming fixtures ahead of time and writes them to a shared
-store; Vercel only ever *reads* cached results, never calls the model synchronously. This
-makes model speed invisible to users and removes the public inference endpoint + tunnel
-from the request path — neutralizing latency, per-token cost, and the §7 exposure concern
-in one move. The shared store can be the Supabase from upgrade-path #1, so this dovetails
-with persistence.
-
-**Cadence:** generate previews ~7 days out, refresh at ~3 days (form/news/lineups firm up),
-and a final pass ~1 day before kickoff. **Add prompt caching here** — batch generation shares
-the constant ~9k-token system prefix, so `cache_control` becomes a real ~90% input-cost win
-(it's net-negative under today's sparse on-demand traffic — see §7 *Decisions logged*).
-
-**Latency context:** a synchronous home-model call would be ~5–15s on a cache miss
-(Apple-Silicon prompt-eval + generation) vs ~2–6s on the API. Pre-generation means no user
-ever waits on it.
-
-**Optimizations** (for the gen job, or any on-demand fallback):
-- Pre-summarize / trim the prompt — prompt-eval is the hidden cost on Apple Silicon.
-- Cap output tokens; keep the model resident (Ollama keep-alive).
-- Prefer MLX over llama.cpp; right-size the model (7–8B or smaller).
-- Stream if ever generating on-request.
-- Connectivity for any sync path that remains: Cloudflare Tunnel / Tailscale; pin the
-  Vercel function to `syd1`.
-
-**Tradeoff:** a local 7–8B won't match Claude Haiku 4.5's polish — but the bar to clear
-dropped from Sonnet 4.6 to Haiku when the model switched, which makes a local model more
-viable. Acceptable for short, pre-generated previews; benchmark (via the eval harness)
-before committing.
-
-**Rough sequence when tackled:** prototype model + prompt locally → build the pre-gen job
-+ shared store → point Vercel reads at the store → keep the Anthropic API as fallback.
+- **AI previews:** don't acknowledge small sample size / early-season hedging — redirect to
+  useful content instead.
+- **AI preview cache:** two cache layers (server `unstable_cache` + `localStorage`) must
+  **both** be bumped when the system prompt changes.
