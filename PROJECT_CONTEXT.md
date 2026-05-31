@@ -280,11 +280,17 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   account has its own row). Cross-device sign-ins also leave throwaway anon rows. Cleanup
   deferred — Supabase publishes an orphaned-anonymous-user cleanup query; run it via pg_cron
   on a schedule. Revisit at scale.
-- **`My Teams` pill row stretches the page** when many teams are followed; should wrap or
-  horizontally scroll within a bounded container. Minor/pre-existing; batch with the GWS
-  mapping fix.
+- **International cricket coverage** — `cricket_int` fixtures are series-ID-driven
+  (`CRICKET_INT_TEAM_SERIES` in `api/fixtures`/`results`); only `int-aus` has configured tours,
+  so other national teams show little until ESPN series IDs are added as bilateral tours are
+  announced. A data-coverage limitation, **not** a mapping bug (the team→ESPN-name maps are
+  correct). Update the series tables when new tours are confirmed.
 - **Navbar `<img>` → `next/image`** (`navbar.tsx:36`, logo/account indicator) — cosmetic lint
   (`@next/next/no-img-element`).
+
+> Resolved in `fix/team-mappings`: AFL GWS mapping (`afl-giants` → "Greater Western Sydney")
+> and the `My Teams` pill row stretching the page (`min-w-0` on the schedule/results grid column
+> so the row scrolls within its track).
 
 ### Decisions logged
 - **Cost control — chose Haiku over an app-side token counter.** Switched to Haiku 4.5
