@@ -4,7 +4,7 @@
 > agent-facing build/run instructions). This doc is the "why and how it fits together"
 > overview plus a running log of tech-debt and decisions discussed during review.
 >
-> Last updated: 2026-05-30
+> Last updated: 2026-05-31
 
 ---
 
@@ -63,7 +63,7 @@ src/
       league-fixtures/route.ts— All fixtures for a whole competition (league browse)
       standings/route.ts      — League tables
       news/route.ts           — Team news headlines
-      match-stats/route.ts    — Per-match statistics
+      match-stats/route.ts    — Per-match statistics (typed against the lib/espn ESPN interfaces)
       preview/route.ts        — Match preview data assembly
       ai-preview/route.ts     — AI-generated match preview text (slim — prompt assembly
                                 lives in lib/preview-prompt.ts)
@@ -84,7 +84,8 @@ src/
     teams.ts                  — LEAGUES + TEAMS (160+ teams, colors, metadata) + REAL_DATA_LEAGUES set
     team-logos.ts             — TEAM_LOGOS (logo URLs) + TEAM_LOGO_FILTERS (CSS filters)
     espn.ts                   — shared ESPN/Squiggle helpers (fetchTimeout, espnDateRange,
-                                aestDisplay, parseCricketFormat, unknownTeam)
+                                aestDisplay, parseCricketFormat, unknownTeam) + ESPN response
+                                interfaces (scoreboard/summary; typing pilot, see §7)
     afl.ts                    — AFL Squiggle-name map + team table derived from teams.ts/team-logos.ts
     ai-model.ts               — AI_MODEL constant (ANTHROPIC_AI_MODEL env, default Haiku 4.5),
                                 shared by both AI routes
@@ -203,10 +204,14 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 - **Build hygiene:** stopped tracking `tsconfig.tsbuildinfo`; added `*.tsbuildinfo` to `.gitignore`.
 - **UI:** date text bumped +2px across the schedule/results lists + the Next Game hero.
 
-### ✅ Accessibility
+### ✅ Accessibility & UI
 - **`prefers-reduced-motion` support** — a `globals.css` `@media (prefers-reduced-motion:
   reduce)` block collapses animations/transitions to ~0ms (entrances resolve to their final
   visible frame — *not* `animation: none`), and `smoothScrollTo()` jumps instantly.
+- **Watermark `<img>` intrinsic dimensions** — added `width`/`height` to the decorative
+  watermark/logo imgs in `schedule/page.tsx`, `results/page.tsx`, `next-game-hero.tsx` so the
+  browser reserves space. Visually neutral: CSS height + `w-auto` still govern displayed size,
+  and the UA-mapped `aspect-ratio: auto` defers to each logo's natural ratio (no distortion).
 
 ### ✅ AI previews — tooling & model
 - **Prompt assembly extracted** to `lib/preview-prompt.ts` (`SYSTEM_PROMPT` + `buildDataBlock`
@@ -228,18 +233,41 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   (out of First Load JS); degrades to localStorage-only when env vars are unset. RLS verified
   (each user reads only their own row). **Phase 2 (real login) is the next step — see §8.**
 
+### ✅ Type safety — ESPN interface pilot
+- **Typed the ESPN JSON boundary in `match-stats`** — added minimal, all-optional ESPN
+  response interfaces to `lib/espn.ts` (scoreboard: `EspnScoreboardResponse`/`Event`/
+  `Competition`/`Competitor`; summary: `EspnSummaryResponse`/`Boxscore`/…) and converted
+  `match-stats/route.ts` to cast once per boundary + typed access, removing all **19**
+  `as any`/`: any`. Behaviour-neutral (same `?.`/`??` guards; still returns `[]`/4xx on miss).
+  Chosen as the pilot because it's the only ESPN route with no AFL/Squiggle mixing.
+- **Two latent silent-failure risks the typing surfaced** (left as-is — graceful degradation,
+  but recorded so they're not lost):
+  (a) `event.id` is optional yet consumed unguarded via `String(event.id)` → a missing id
+  becomes the literal `"undefined"`, the summary query becomes `?event=undefined`, and the
+  route 404s — a silent miss, never logged.
+  (b) Event matching hinges on optional `competitor.score` / `team.id` → a partial/absent
+  score or shape change makes the score-equality match silently fail → "event not found".
+- **Rollout guidance:** the remaining casts live in the larger, **less-defensive** routes
+  (`fixtures`/`results`/`standings`/`league-fixtures`/`preview`). Target those next — there,
+  typing is more likely to surface a real bug than just document graceful degradation
+  (match-stats was already fully `?.`-guarded, so typing only documented its behaviour).
+
 ### Outstanding
-- **~296 `any` / `as any` casts**, almost all parsing ESPN JSON. A few `EspnEvent` /
-  `EspnCompetition` interfaces in `lib/espn.ts` would catch silent shape drift (routes
-  swallow errors → return `[]`).
+- **Broader `as any` rollout** — the ESPN typing pilot (above) proved the pattern;
+  ~270 casts remain across the larger ESPN routes (`fixtures`/`results`/`standings`/
+  `league-fixtures`/`preview`). Roll out to the less-defensive ones first (see the pilot's
+  rollout guidance).
 - **Palette inconsistency:** dashboard uses legacy `zinc-*`; rest of app uses `white/xx` +
-  glass. Migrate the dashboard for a unified look (separate visual pass).
-- **Decorative watermark `<img>`** lack intrinsic width/height (minor layout-shift).
+  glass. A deliberate visual pass — migrate the dashboard for a unified look.
+- **AI routes 500 on non-JSON model output** — `callClaude`/`generateReview` do
+  `JSON.parse` on the model's text; a conversational/malformed reply throws → 500 → the
+  client shows "Preview unavailable". More likely now that a smaller model is in play. Fix
+  properly via tool-use / a response schema or assistant-prefill (`{`) — **not** a retry hack.
 - **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
   `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k.
   `game-expand-panel` could split its stats/preview sub-sections. (`ai-preview/route.ts` is
   now ~140 lines post-extraction; `lib/preview-prompt.ts` ~1k is almost entirely the system-
-  prompt string — large by design, not a concern.)
+  prompt string — large by design, not a concern.) Deferred.
 
 ### Decisions logged
 - **Cost control — chose Haiku over an app-side token counter.** Switched to Haiku 4.5
@@ -255,17 +283,25 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   it net slightly negative. It becomes a real ~90% input-cost win under **batch
   pre-generation**, so it's folded into the §10 build. (`ai-review`'s ~441-token system
   prompt is below the 2048-token cache minimum regardless.) Not on `main`.
+- **One Supabase project for prod + local (for now).** Fine at this stage, but local/test
+  writes and real prod data share a database — consider a separate prod Supabase project
+  later so they don't mix.
 
 ---
 
 ## 8. Upgrade path (priority order)
 
-1. **Persistence** — ✅ *Phase 1 done* (see §7): followed teams persist to Supabase via an
-   anonymous identity + RLS, behind the unchanged `user-prefs.ts` interface. Requires the
-   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` env vars (see `.env.local.example`).
-2. **Auth — Phase 2 (next).** Add a real login/signup UI and **link the anonymous identity**
-   to the new account on sign-up so existing followed teams carry over; protect future
-   account-only surfaces. The Supabase server client (`lib/supabase/server.ts`) is the scaffold.
+1. **Persistence** — ✅ *Phase 1 done & merged to main* (see §7): followed teams persist to
+   Supabase via an anonymous identity + RLS, behind the unchanged `user-prefs.ts` interface.
+   Goes live in prod once `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
+   in Vercel (Production); degrades to localStorage-only until then (see `.env.local.example`).
+   *(Whether the prod env vars are set isn't verifiable from code — confirm in Vercel.)*
+2. **Auth — Phase 2 (the clear next build, on the Supabase foundation just shipped).** Add a
+   real login/signup (email + OAuth) and **link the existing anonymous identity to the
+   permanent account** on sign-up, so a user's followed teams carry over and sync **across
+   devices** (Phase 1 is per-browser). This is also the durable **gate for the public, paid
+   AI routes** (`api/ai-preview` / `api/ai-review` are currently unauthenticated). The
+   `lib/supabase/server.ts` SSR client + cookie sessions are the scaffold already in place.
 3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
    Anthropic SDK on **Claude Haiku 4.5** (from `lib/ai-model.ts`; `ANTHROPIC_AI_MODEL`,
    default Haiku — switched from Sonnet 4.6). There is **no `src/lib/ai.ts`** — the logic
