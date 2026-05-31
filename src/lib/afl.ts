@@ -23,7 +23,7 @@ export const SQUIGGLE_NAME: Record<string, string> = {
   'afl-dockers':   'Fremantle',
   'afl-cats':      'Geelong',
   'afl-suns':      'Gold Coast',
-  'afl-giants':    'GWS Giants',
+  'afl-giants':    'Greater Western Sydney',
   'afl-hawks':     'Hawthorn',
   'afl-demons':    'Melbourne',
   'afl-kangaroos': 'North Melbourne',

@@ -1148,7 +1148,10 @@ export default function SchedulePage() {
       <div className="lg:grid lg:grid-cols-[1fr_270px] lg:gap-6 lg:items-start">
 
         {/* ── Left column: filters + schedule ── */}
-        <div>
+        {/* min-w-0: let the 1fr grid track shrink below its content's intrinsic width so the
+            My-Teams / competition pill rows below scroll within overflow-x-auto instead of
+            stretching the whole page when many teams are followed. */}
+        <div className="min-w-0">
           {/* Filters */}
           {!activeLoading && (
             <div className="mb-8 space-y-3">
