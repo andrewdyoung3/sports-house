@@ -170,6 +170,8 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             src={leagueLogoUrl}
             alt=""
             aria-hidden="true"
+            width={100}
+            height={100}
             className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none"
             style={{ right: '-4px', height: leagueLogoHeight, ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -184,6 +186,8 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             src={teamLogoUrl}
             alt=""
             aria-hidden="true"
+            width={100}
+            height={100}
             className={`absolute w-auto object-contain pointer-events-none select-none ${isF1 ? 'top-0' : 'top-1/2 -translate-y-1/2'}`}
             style={isF1
               ? { right: '185px', height: '104%', opacity: 0.13, mixBlendMode: 'screen' as const }

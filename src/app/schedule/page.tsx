@@ -415,12 +415,17 @@ function ScheduleRow({
         style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }}
       />
 
-      {/* ── Background watermarks ── */}
+      {/* ── Background watermarks ──
+           width/height give intrinsic dimensions so the browser reserves space; the
+           CSS height + w-auto still govern the displayed size, and the UA-mapped
+           aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
       {teamLogoUrl && (
         <img
           src={teamLogoUrl}
           alt=""
           aria-hidden="true"
+          width={100}
+          height={100}
           className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
           style={{ right: '88px', opacity: 0.10 }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -431,6 +436,8 @@ function ScheduleRow({
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
+          width={100}
+          height={100}
           className={[
             'absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center',
             // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
@@ -638,6 +645,8 @@ function TeamFilterPill({
         <img
           src={logoUrl}
           alt=""
+          width={13}
+          height={13}
           className="w-[13px] h-[13px] object-contain shrink-0"
           style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
