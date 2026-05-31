@@ -231,7 +231,8 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   callers are unchanged; the only wiring is `<PrefsSync/>` in the root layout. First-run
   localStorage→Supabase migration is idempotent; `@supabase/ssr` is dynamically imported
   (out of First Load JS); degrades to localStorage-only when env vars are unset. RLS verified
-  (each user reads only their own row). **Phase 2 (real login) is the next step — see §8.**
+  (each user reads only their own row). **Live in prod — verified 2026-05-31** (writes land in
+  the `user_prefs` table from the Vercel build). **Phase 2 (real login) is the next step — see §8.**
 
 ### ✅ Type safety — ESPN interface pilot
 - **Typed the ESPN JSON boundary in `match-stats`** — added minimal, all-optional ESPN
@@ -291,11 +292,12 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
 
 ## 8. Upgrade path (priority order)
 
-1. **Persistence** — ✅ *Phase 1 done & merged to main* (see §7): followed teams persist to
-   Supabase via an anonymous identity + RLS, behind the unchanged `user-prefs.ts` interface.
-   Goes live in prod once `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
-   in Vercel (Production); degrades to localStorage-only until then (see `.env.local.example`).
-   *(Whether the prod env vars are set isn't verifiable from code — confirm in Vercel.)*
+1. **Persistence** — ✅ *Phase 1 done, merged, and LIVE in prod* (see §7): followed teams
+   persist to Supabase via an anonymous identity + RLS, behind the unchanged `user-prefs.ts`
+   interface. **Verified 2026-05-31** — production writes land in the `user_prefs` table from
+   the Vercel deployment (`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
+   in Vercel Production; the code still degrades to localStorage-only if unset — see
+   `.env.local.example`).
 2. **Auth — Phase 2 (the clear next build, on the Supabase foundation just shipped).** Add a
    real login/signup (email + OAuth) and **link the existing anonymous identity to the
    permanent account** on sign-up, so a user's followed teams carry over and sync **across
