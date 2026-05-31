@@ -57,3 +57,71 @@ export function unknownTeam(name: string): { color: string; abbr: string } {
     : name.slice(0, 3).toUpperCase();
   return { color: '#6B7280', abbr };
 }
+
+// ─── ESPN response shapes (typing pilot — see /api/match-stats) ──────────────────
+// Minimal, DEFENSIVE models of ONLY the fields our code reads from ESPN's untyped
+// JSON. Every field is optional: ESPN is an external upstream and any field may be
+// absent, so consumers keep using `?.` / `?? `. These type the parse boundary for
+// compile-time checking — they are NOT runtime validation. Pilot scope is the
+// match-stats route; the scoreboard/summary shapes are reusable for a later rollout
+// to the other ESPN routes.
+
+/** Team reference as it appears in scoreboard competitors and boxscore entries. */
+export interface EspnTeamRef {
+  id?: string | number;
+  displayName?: string;
+}
+
+// ── Scoreboard search (…/scoreboard) ──
+export interface EspnCompetitor {
+  team?: EspnTeamRef;
+  score?: string | number;
+}
+export interface EspnCompetition {
+  competitors?: EspnCompetitor[];
+}
+export interface EspnEvent {
+  id?: string | number;
+  competitions?: EspnCompetition[];
+}
+export interface EspnScoreboardResponse {
+  events?: EspnEvent[];
+}
+
+// ── Event summary (…/summary) ──
+/** Team-level aggregate statistic. */
+export interface EspnTeamStatistic {
+  name?: string;
+  abbreviation?: string;
+  displayValue?: string;
+}
+export interface EspnBoxscoreTeam {
+  team?: EspnTeamRef;
+  statistics?: EspnTeamStatistic[];
+}
+export interface EspnAthlete {
+  displayName?: string;
+  shortName?: string;
+  position?: { abbreviation?: string };
+}
+export interface EspnAthleteStatLine {
+  athlete?: EspnAthlete;
+  stats?: string[];
+}
+/** A group of athlete stat lines; `keys`/`names` index the columns in `stats`. */
+export interface EspnPlayerStatGroup {
+  keys?: string[];
+  names?: string[];
+  athletes?: EspnAthleteStatLine[];
+}
+export interface EspnBoxscorePlayers {
+  team?: EspnTeamRef;
+  statistics?: EspnPlayerStatGroup[];
+}
+export interface EspnBoxscore {
+  teams?: EspnBoxscoreTeam[];
+  players?: EspnBoxscorePlayers[];
+}
+export interface EspnSummaryResponse {
+  boxscore?: EspnBoxscore;
+}

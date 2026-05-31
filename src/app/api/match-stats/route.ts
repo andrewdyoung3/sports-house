@@ -9,7 +9,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { MatchStats, PlayerStatLine, TeamMatchStats } from '@/types';
-import { fetchTimeout } from '@/lib/espn';
+import {
+  fetchTimeout,
+  type EspnScoreboardResponse,
+  type EspnSummaryResponse,
+  type EspnBoxscoreTeam,
+  type EspnBoxscorePlayers,
+} from '@/lib/espn';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800' };
 
@@ -149,18 +155,18 @@ async function findEvent(
       );
       if (!res.ok) continue;
 
-      const data    = await res.json();
-      const events  = (data.events ?? []) as any[];
+      const data    = await res.json() as EspnScoreboardResponse;
+      const events  = data.events ?? [];
 
       for (const event of events) {
-        const comp: any   = event.competitions?.[0];
+        const comp = event.competitions?.[0];
         if (!comp?.competitors) continue;
 
-        const competitors: any[] = comp.competitors;
-        const ourComp = competitors.find((c: any) => String(c.team?.id) === espnTeamId);
+        const competitors = comp.competitors;
+        const ourComp = competitors.find(c => String(c.team?.id) === espnTeamId);
         if (!ourComp) continue;
 
-        const oppComp = competitors.find((c: any) => String(c.team?.id) !== espnTeamId);
+        const oppComp = competitors.find(c => String(c.team?.id) !== espnTeamId);
         if (!oppComp) continue;
 
         const evTeam = Number(ourComp.score ?? -1);
@@ -243,18 +249,18 @@ const TEAM_STAT_KEYS: Record<string, Array<{ key: string; label: string }>> = {
 
 /** Extract team aggregate stats from boxscore.teams. */
 function extractTeamAggStats(
-  teams: any[],
+  teams: EspnBoxscoreTeam[],
   espnTeamId: string,
   keys: Array<{ key: string; label: string }>,
 ): Array<{ label: string; value: string }> {
-  const teamEntry = teams.find((t: any) => String(t.team?.id) === espnTeamId);
+  const teamEntry = teams.find(t => String(t.team?.id) === espnTeamId);
   if (!teamEntry) return [];
 
-  const statistics: any[] = teamEntry.statistics ?? [];
+  const statistics = teamEntry.statistics ?? [];
   const result: Array<{ label: string; value: string }> = [];
 
   for (const { key, label } of keys) {
-    const stat = statistics.find((s: any) => s.name === key || s.abbreviation === key);
+    const stat = statistics.find(s => s.name === key || s.abbreviation === key);
     if (stat?.displayValue && stat.displayValue !== '0' && stat.displayValue !== '0.0') {
       result.push({ label, value: stat.displayValue });
     }
@@ -265,32 +271,32 @@ function extractTeamAggStats(
 
 /** Extract player stats from boxscore.players (one entry per team). */
 function extractPlayerStats(
-  playersData: any[],
+  playersData: EspnBoxscorePlayers[],
   espnTeamId: string,
   keys: Array<{ key: string; label: string }>,
   maxPlayers = 8,
 ): PlayerStatLine[] {
-  const teamEntry = playersData.find((p: any) => String(p.team?.id) === espnTeamId);
+  const teamEntry = playersData.find(p => String(p.team?.id) === espnTeamId);
   if (!teamEntry) return [];
 
-  const statsGroups: any[] = teamEntry.statistics ?? [];
+  const statsGroups = teamEntry.statistics ?? [];
   if (statsGroups.length === 0) return [];
 
   // Use the stat group with the most athletes (usually the combined starters+bench group)
   const mainGroup = statsGroups.reduce(
-    (best: any, g: any) => ((g.athletes?.length ?? 0) > (best.athletes?.length ?? 0) ? g : best),
+    (best, g) => ((g.athletes?.length ?? 0) > (best.athletes?.length ?? 0) ? g : best),
     statsGroups[0],
   );
 
   const groupKeys: string[]   = mainGroup.keys  ?? mainGroup.names ?? [];
-  const athletes:  any[]      = mainGroup.athletes ?? [];
+  const athletes              = mainGroup.athletes ?? [];
 
   // Build key → column index map
   const keyIdx: Record<string, number> = {};
   groupKeys.forEach((k: string, i: number) => { keyIdx[k] = i; });
 
   const players: PlayerStatLine[] = athletes
-    .map((a: any): PlayerStatLine => {
+    .map((a): PlayerStatLine => {
       const rawStats: string[] = a.stats ?? [];
       const extractedStats = keys
         .filter(({ key }) => keyIdx[key] !== undefined)
@@ -319,26 +325,26 @@ function extractPlayerStats(
 
 /** Parse the event summary into MatchStats. */
 function parseSummary(
-  summary: any,
+  summary: EspnSummaryResponse,
   league: string,
   espnTeamId: string,
 ): MatchStats | null {
   const boxscore = summary.boxscore;
   if (!boxscore) return null;
 
-  const bsTeams:   any[] = boxscore.teams   ?? [];
-  const bsPlayers: any[] = boxscore.players ?? [];
+  const bsTeams   = boxscore.teams   ?? [];
+  const bsPlayers = boxscore.players ?? [];
 
   const playerKeys = PLAYER_STAT_KEYS[league] ?? PLAYER_STAT_KEYS.super_rugby;
   const teamKeys   = TEAM_STAT_KEYS[league]   ?? TEAM_STAT_KEYS.super_rugby;
 
   // Identify opponent team ID
   const oppTeamId = bsTeams
-    .map((t: any) => String(t.team?.id))
+    .map(t => String(t.team?.id))
     .find(id => id !== espnTeamId) ?? '';
 
   const getTeamName = (id: string) =>
-    bsTeams.find((t: any) => String(t.team?.id) === id)?.team?.displayName ?? '';
+    bsTeams.find(t => String(t.team?.id) === id)?.team?.displayName ?? '';
 
   const team: TeamMatchStats = {
     teamName: getTeamName(espnTeamId),
@@ -401,7 +407,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Summary unavailable' }, { status: 502 });
     }
 
-    const summary  = await summaryRes.json();
+    const summary  = await summaryRes.json() as EspnSummaryResponse;
     const stats    = parseSummary(summary, league, espnTeamId);
     if (!stats) {
       return NextResponse.json({ error: 'No stats in summary' }, { status: 404 });
