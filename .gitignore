@@ -10,6 +10,11 @@ node_modules/
 .env.local
 .env.*.local
 
+# Secrets — never commit downloaded OAuth client secrets (Google Cloud Console).
+# These belong ONLY in the Supabase dashboard (Auth → Providers → Google), not the repo.
+client_secret_*.json
+*.apps.googleusercontent.com.json
+
 # Editor
 .claude/
 

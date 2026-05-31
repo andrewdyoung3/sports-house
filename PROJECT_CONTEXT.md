@@ -269,6 +269,22 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   `game-expand-panel` could split its stats/preview sub-sections. (`ai-preview/route.ts` is
   now ~140 lines post-extraction; `lib/preview-prompt.ts` ~1k is almost entirely the system-
   prompt string — large by design, not a concern.) Deferred.
+- **NRL fetch-cache overflow** — the rugby-league scoreboard payload (~3.5–6.2 MB) exceeds
+  Next's 2 MB fetch-cache limit → `Failed to set Next.js data cache`, so NRL fixtures/results
+  aren't cached and ESPN is refetched every load (slower, more upstream load). Fix later:
+  narrow the date window/limit, trim the payload before caching, or use a custom cache for NRL.
+  Not blocking.
+- **Orphan anonymous rows (Option Y)** — under the Phase-2 sign-in model every conversion
+  abandons the anon `auth.users` + `user_prefs` row (teams carry via the merge, not UUID
+  preservation); cross-device sign-ins also leave throwaway anon rows. Cleanup deferred —
+  Supabase publishes an orphaned-anonymous-user cleanup query; run it via pg_cron on a
+  schedule. Grows faster under Y; revisit at scale.
+- **Auth merge-race regression test (optional, not built)** — a deterministic mock-Supabase
+  test forcing the `INITIAL_SESSION` + `SIGNED_IN` double-fire ordering would guard the merge
+  race fix (`reconcileInFlight`/`mergeInFlight` + suppress-overwrite-during-merge) from
+  regressing. Insurance only.
+- **Navbar `<img>` → `next/image`** (`navbar.tsx:36`, logo/account indicator) — cosmetic lint
+  (`@next/next/no-img-element`).
 
 ### Decisions logged
 - **Cost control — chose Haiku over an app-side token counter.** Switched to Haiku 4.5
@@ -298,12 +314,32 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
    the Vercel deployment (`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` are set
    in Vercel Production; the code still degrades to localStorage-only if unset — see
    `.env.local.example`).
-2. **Auth — Phase 2 (the clear next build, on the Supabase foundation just shipped).** Add a
-   real login/signup (email + OAuth) and **link the existing anonymous identity to the
-   permanent account** on sign-up, so a user's followed teams carry over and sync **across
-   devices** (Phase 1 is per-browser). This is also the durable **gate for the public, paid
-   AI routes** (`api/ai-preview` / `api/ai-review` are currently unauthenticated). The
-   `lib/supabase/server.ts` SSR client + cookie sessions are the scaffold already in place.
+2. **Auth — Phase 2 (in progress).** Real login/signup (email magic-link + Google OAuth)
+   that **links the existing anonymous identity to the permanent account**, so followed
+   teams carry over (no migration — the `user_prefs` PK is the UUID, preserved on
+   convert-in-place) and sync **across devices** (Phase 1 was per-browser).
+   - **PR 1 — auth foundation (built, on `feat/auth-phase-2`):** `src/middleware.ts`
+     (session *refresh* only — never mints anon server-side), writable SSR client
+     `lib/supabase/middleware.ts`, `app/auth/callback/route.ts` (PKCE `exchangeCodeForSession`),
+     `lib/auth.ts` (convert-in-place → conflict→sign-in fallback → **merge invariant**),
+     auth modal + navbar account menu, `PrefsSync` auth wiring, sign-out → fresh-anon.
+   - **Merge invariant:** before any uid-switching auth, the followed teams are captured
+     from the **local cache** (never a DB read — RLS hides the old anon row post-switch and
+     no service-role key exists) into a TTL'd `localStorage` `pending-merge`; after the
+     session settles, if the surviving uid differs from the captured anon uid the captured
+     teams are **set-unioned** into the permanent account's row. Same path covers plain
+     sign-in and the conflict→sign-in fallback.
+   - **Orphaned anon `user_prefs` rows — DEFERRED (known harmless residue).** When a returning
+     user signs in on a fresh browser, the throwaway anon identity's row is left behind. It is
+     tiny, RLS-isolated (unreadable/unwritable by anyone else), and never served. We deliberately
+     ship **no cleanup cron** in PR 1: a time-based "delete anon users older than N days" heuristic
+     would also nuke legitimate long-lived anonymous users (the zero-friction default identity),
+     and deleting `auth.users` needs a service-role key we intentionally don't introduce. Revisit
+     only at scale, with an identifier that can't catch active anons (e.g. last-seen tracking),
+     not a blind age cutoff.
+   - **PR 2 — AI-route gating (NOT in PR 1):** add a `getUser()` gate to `api/ai-preview` /
+     `api/ai-review` (anonymous sessions allowed; session-less requests get 401). The
+     middleware refresh + cookie sessions are the scaffold this builds on.
 3. **AI previews/reviews** — *already live.* `api/ai-preview` + `api/ai-review` call the
    Anthropic SDK on **Claude Haiku 4.5** (from `lib/ai-model.ts`; `ANTHROPIC_AI_MODEL`,
    default Haiku — switched from Sonnet 4.6). There is **no `src/lib/ai.ts`** — the logic

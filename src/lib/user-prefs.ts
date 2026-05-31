@@ -17,13 +17,34 @@
  * localStorage-only — identical to the previous behaviour.
  */
 
+import { useEffect, useState } from 'react';
 import type { Team } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
+import { hasForeignPendingMerge } from '@/lib/auth';
 
 const STORAGE_KEY = 'sports-house:teams';
 /** Fired when a background Supabase sync changes the local cache (Phase-2 hook). */
 export const PREFS_UPDATED_EVENT = 'sporthouse:prefs-updated';
+
+/**
+ * React hook: a counter that increments whenever the followed-teams cache changes
+ * (PREFS_UPDATED_EVENT) — fired by `syncWithSupabase`, `mergeFollowedTeams`, and
+ * `resetLocalForSignOut`. Add it to a page's data-loading effect deps (and reset
+ * that effect's accumulators) so the page reflects the merged union WITHOUT a manual
+ * reload, even when the merge lands AFTER the page mounted — e.g. signing in from
+ * this page via the navbar, where the post-callback landing is the sign-in page and
+ * the anon→permanent union resolves a moment later.
+ */
+export function usePrefsVersion(): number {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setVersion(v => v + 1);
+    window.addEventListener(PREFS_UPDATED_EVENT, bump);
+    return () => window.removeEventListener(PREFS_UPDATED_EVENT, bump);
+  }, []);
+  return version;
+}
 
 function isTeam(v: unknown): v is Team {
   return (
@@ -86,6 +107,18 @@ export function clearFollowedTeams(): void {
 
 // ─── Supabase (anonymous identity + RLS) ────────────────────────────────────────
 
+/**
+ * The CURRENT session's user id WITHOUT minting one. Returns null if there is no
+ * session (or Supabase is unconfigured). Used by the auth layer to snapshot the
+ * pre-auth (anonymous) uid before a sign-in that may switch identities.
+ */
+export async function getCurrentUserId(): Promise<string | null> {
+  const sb = await getSupabaseBrowser();
+  if (!sb) return null;
+  const { data: { session } } = await sb.auth.getSession();
+  return session?.user?.id ?? null;
+}
+
 /** Ensure an auth session exists; sign in anonymously if not. Returns the user id. */
 async function ensureUserId(): Promise<string | null> {
   const sb = await getSupabaseBrowser();
@@ -107,6 +140,11 @@ async function pushToSupabase(teamIds: string[]): Promise<void> {
   try {
     const userId = await ensureUserId();
     if (!userId) return;
+    // Identity-switch guard: while an anon→permanent merge for a DIFFERENT identity is
+    // mid-flight, the local set may still be the pre-switch anon set. Refuse to push it
+    // over the just-switched account row — applyPendingMerge writes the union instead.
+    // Steady-state writes within one identity (no pending merge) are unaffected.
+    if (hasForeignPendingMerge(userId)) return;
     await sb.from('user_prefs').upsert(
       { user_id: userId, team_ids: teamIds, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' },
@@ -163,9 +201,79 @@ export async function syncWithSupabase(): Promise<void> {
       return;
     }
     if (!sameIds(localTeams, remoteTeams)) {
-      await pushToSupabase(localTeams.map(t => t.id)); // active browser wins
+      // Belt-and-suspenders with the merge-cycle suppression in <PrefsSync/>: never let
+      // the divergence push overwrite a freshly-switched account row with the local
+      // (possibly still anon) set while an identity switch is mid-flight. (pushToSupabase
+      // re-checks this too; the early-return here keeps the intent local and obvious.)
+      if (hasForeignPendingMerge(userId)) return;
+      await pushToSupabase(localTeams.map(t => t.id)); // active browser wins (same identity)
     }
   } catch (err) {
     console.error('[user-prefs] sync failed', err);
   }
+}
+
+// ─── Phase-2 auth hooks (merge on sign-in, reset on sign-out) ───────────────────
+
+/**
+ * SET-UNION `extraIds` into the CURRENT session's row + local cache.
+ *
+ * This is the data-preserving half of the anon→permanent flow: after a sign-in
+ * that switched identities, the surviving session is the permanent account, its
+ * row holds the account's existing teams, and `extraIds` are the teams that were
+ * followed under the now-orphaned anonymous identity (captured from localStorage
+ * BEFORE the switch — never from a DB read, which RLS would now forbid). The union
+ * is written to both the remote row and the local cache so neither side loses a
+ * selection. Idempotent: re-running with the same ids is a no-op.
+ *
+ * Must be called only while the (permanent) session is valid, so RLS resolves the
+ * write to the correct row.
+ */
+export async function mergeFollowedTeams(extraIds: string[]): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const sb = await getSupabaseBrowser();
+
+  // Unconfigured → there's only the local cache to union into.
+  if (!sb) {
+    const merged = Array.from(new Set([...getFollowedTeams().map(t => t.id), ...extraIds]));
+    writeLocal(rehydrate(merged));
+    window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
+    return;
+  }
+
+  try {
+    const userId = await ensureUserId();
+    if (!userId) return;
+    const { data, error } = await sb
+      .from('user_prefs')
+      .select('team_ids')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) { console.error('[user-prefs] merge load failed', error.message); return; }
+
+    const remoteIds = (data?.team_ids as string[] | undefined) ?? [];
+    const mergedIds = Array.from(new Set([...remoteIds, ...extraIds]));
+
+    await sb.from('user_prefs').upsert(
+      { user_id: userId, team_ids: mergedIds, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    );
+    writeLocal(rehydrate(mergedIds));
+    window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
+  } catch (err) {
+    console.error('[user-prefs] merge failed', err);
+  }
+}
+
+/**
+ * Clear the LOCAL followed-teams cache only — used on sign-out so the signed-out
+ * user's teams do not bleed into the fresh anonymous session that replaces them
+ * (privacy on shared machines). Deliberately does NOT push to Supabase: the
+ * permanent account's row must survive untouched so the teams return on next
+ * sign-in.
+ */
+export function resetLocalForSignOut(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(STORAGE_KEY);
+  window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
 }

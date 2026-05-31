@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Settings, LayoutGrid } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, PREFS_UPDATED_EVENT } from '@/lib/user-prefs';
 import { LEAGUES } from '@/lib/teams';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { TeamFeedCard } from '@/components/dashboard/team-feed-card';
@@ -17,10 +17,16 @@ export default function DashboardPage() {
   const [teams, setTeams]       = useState<Team[]>([]);
   const [loading, setLoading]   = useState(true);
 
-  // Load from localStorage after hydration (avoids SSR mismatch)
+  // Load from localStorage after hydration (avoids SSR mismatch), then stay live:
+  // a background sync/merge (e.g. the anon→permanent UNION after sign-in) updates the
+  // cache and fires PREFS_UPDATED_EVENT, so the dashboard reflects the merged union
+  // with NO manual reload.
   useEffect(() => {
-    setTeams(getFollowedTeams());
+    const refresh = () => setTeams(getFollowedTeams());
+    refresh();
     setLoading(false);
+    window.addEventListener(PREFS_UPDATED_EVENT, refresh);
+    return () => window.removeEventListener(PREFS_UPDATED_EVENT, refresh);
   }, []);
 
   const handleUnfollow = (teamId: string) => {

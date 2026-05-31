@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Calendar, List, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -775,6 +775,7 @@ export default function SchedulePage() {
   const [allGames, setAllGames] = useState<ScheduleEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [userTz,   setUserTz]   = useState('Australia/Brisbane');
+  const prefsVersion = usePrefsVersion(); // bumps when followed teams change (e.g. post-sign-in merge)
 
   const [activeTeamId,    setActiveTeamId]    = useState<string>('all');
   const [activeLeagueId,  setActiveLeagueId]  = useState<string | null>(null);
@@ -920,6 +921,12 @@ export default function SchedulePage() {
   }, [activeLeagueId]);
 
   useEffect(() => {
+    // Reset accumulators so a followed-teams change (prefsVersion, e.g. the post-sign-in
+    // anon→permanent union) refetches the EXACT new set instead of layering onto the old one.
+    setAllGames([]);
+    setPastResults([]);
+    setLoading(true);
+
     const followed = getFollowedTeams();
 
     // Auto-inject QLD Maroons (State of Origin) whenever any NRL club team is followed
@@ -973,7 +980,7 @@ export default function SchedulePage() {
       if (remaining === 0) setLoading(false);
     });
     return () => { active = false; };
-  }, []);
+  }, [prefsVersion]);
 
   const handleUnfollow = useCallback((teamId: string) => {
     // Prevent removing auto-injected SOO team if user still follows NRL clubs

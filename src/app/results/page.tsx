@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
-import { getFollowedTeams } from '@/lib/user-prefs';
+import { getFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -628,6 +628,7 @@ export default function ResultsPage() {
   const [allResults, setAllResults] = useState<ResultEntry[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [userTz,     setUserTz]     = useState('Australia/Brisbane');
+  const prefsVersion = usePrefsVersion(); // bumps when followed teams change (e.g. post-sign-in merge)
 
   const [activeTeamId,   setActiveTeamId]   = useState<string>('all');
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
@@ -664,6 +665,11 @@ export default function ResultsPage() {
   }, []);
 
   useEffect(() => {
+    // Reset accumulator so a followed-teams change (prefsVersion, e.g. the post-sign-in
+    // anon→permanent union) refetches the EXACT new set instead of layering onto the old one.
+    setAllResults([]);
+    setLoading(true);
+
     const followed = getFollowedTeams();
 
     // Auto-inject QLD Maroons (State of Origin) whenever any NRL club team is followed
@@ -696,7 +702,7 @@ export default function ResultsPage() {
       }
     });
     return () => { active = false; };
-  }, []);
+  }, [prefsVersion]);
 
   const filteredResults = useMemo<ResultEntry[]>(() => {
     if (activeTeamId === 'all') return allResults;
