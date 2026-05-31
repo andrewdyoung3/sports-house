@@ -7,15 +7,21 @@
  *
  * @supabase/ssr uses PKCE by default, so the provider returns a `?code=…` that we
  * exchange for a session here (a Route Handler CAN write cookies, unlike a Server
- * Component). On success we redirect to the sanitised `next` path; on a real failure
- * (e.g. the user cancels Google consent) we redirect home with an `auth_error` flag.
+ * Component). On success we redirect to a FIXED internal default (`/schedule`); on a
+ * real failure (e.g. the user cancels Google consent) we redirect home with an
+ * `auth_error` flag.
+ *
+ * The redirectTo sent to Supabase is deliberately QUERY-LESS (no `?next=`): Supabase
+ * matches redirectTo against its allow-list by exact URL, and a query string fails to
+ * match → it falls back to the Site URL, bouncing the user to the wrong origin
+ * unauthenticated. So the landing page is decided here, not carried in the URL.
  *
  * No link-conflict handling: sign-in never links an identity to the anon user, so the
  * identity_already_exists class cannot occur here anymore.
  *
- * The actual anon→signed-in MERGE does NOT happen here — it runs client-side in
- * <PrefsSync/> on the resulting auth-state change (see lib/auth.ts applyPendingMerge),
- * because the team set to merge lives in the client's localStorage, not the DB.
+ * No team merge happens here — on the resulting auth-state change, <PrefsSync/> runs
+ * reconcileActiveIdentity (user-prefs.ts), which loads the account's teams (replace,
+ * no merge). Guest picks remain a separate device-local space.
  */
 
 import { createServerClient } from '@supabase/ssr';
@@ -26,9 +32,8 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code');
   const oauthError = searchParams.get('error_description') ?? searchParams.get('error');
 
-  // Only ever redirect to a same-origin relative path (defend against open redirect).
-  const rawNext = searchParams.get('next') ?? '/';
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/';
+  // Fixed, safe internal landing after sign-in (no `next` query — see header note).
+  const next = '/schedule';
 
   // Honour Vercel's forwarded host in prod/preview; use the literal origin locally.
   const forwardedHost = request.headers.get('x-forwarded-host');

@@ -274,15 +274,15 @@ Baseline health: **type-check + production build pass clean** (`tsc --noEmit` an
   aren't cached and ESPN is refetched every load (slower, more upstream load). Fix later:
   narrow the date window/limit, trim the payload before caching, or use a custom cache for NRL.
   Not blocking.
-- **Orphan anonymous rows (Option Y)** — under the Phase-2 sign-in model every conversion
-  abandons the anon `auth.users` + `user_prefs` row (teams carry via the merge, not UUID
-  preservation); cross-device sign-ins also leave throwaway anon rows. Cleanup deferred —
-  Supabase publishes an orphaned-anonymous-user cleanup query; run it via pg_cron on a
-  schedule. Grows faster under Y; revisit at scale.
-- **Auth merge-race regression test (optional, not built)** — a deterministic mock-Supabase
-  test forcing the `INITIAL_SESSION` + `SIGNED_IN` double-fire ordering would guard the merge
-  race fix (`reconcileInFlight`/`mergeInFlight` + suppress-overwrite-during-merge) from
-  regressing. Insurance only.
+- **Orphan anonymous rows** — under the two-team-spaces model the anon identity is never
+  converted: signing in starts a separate account identity, so each anon `auth.users` +
+  `user_prefs` row is abandoned (its picks live device-locally as the guest backup, and the
+  account has its own row). Cross-device sign-ins also leave throwaway anon rows. Cleanup
+  deferred — Supabase publishes an orphaned-anonymous-user cleanup query; run it via pg_cron
+  on a schedule. Revisit at scale.
+- **`My Teams` pill row stretches the page** when many teams are followed; should wrap or
+  horizontally scroll within a bounded container. Minor/pre-existing; batch with the GWS
+  mapping fix.
 - **Navbar `<img>` → `next/image`** (`navbar.tsx:36`, logo/account indicator) — cosmetic lint
   (`@next/next/no-img-element`).
 

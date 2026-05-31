@@ -88,10 +88,11 @@ export function AccountMenu() {
     <>
       <button
         onClick={() => setModalOpen(true)}
+        title="Sign in to sync across devices"
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white/50 hover:text-white hover:bg-white/8 transition-all"
       >
         <LogIn className="h-4 w-4" />
-        <span className="hidden sm:block">Sign in</span>
+        <span className="hidden sm:block">Sign in to sync across devices</span>
       </button>
       <AuthModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </>

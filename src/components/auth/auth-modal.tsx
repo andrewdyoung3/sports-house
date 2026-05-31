@@ -80,7 +80,8 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
 
         <h2 className="text-xl font-semibold text-white tracking-tight">Sign in to SportHouse</h2>
         <p className="text-sm text-white/50 mt-1 mb-5">
-          Keep your teams in sync across every device. Your current selections come with you.
+          Sync your followed teams across all your devices. Your account keeps its own team
+          list — your guest picks stay on this device and return when you sign out.
         </p>
 
         {phase === 'sent' ? (

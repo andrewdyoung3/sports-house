@@ -1,31 +1,23 @@
 'use client';
 
 import { useEffect } from 'react';
-import { syncWithSupabase, resetLocalForSignOut } from '@/lib/user-prefs';
-import { applyPendingMerge } from '@/lib/auth';
+import { reconcileActiveIdentity, restoreGuestSession } from '@/lib/user-prefs';
 import { getSupabaseBrowser } from '@/lib/supabase/client';
 
 /**
  * Invisible app-load bootstrap + auth-state wiring. No-ops when Supabase isn't
  * configured (the app runs at parity on localStorage alone).
  *
- * Everything is driven off `onAuthStateChange` so a single code path covers first
- * load, the post-callback return from a redirect flow, and live sign-out:
+ * Two independent team spaces, driven off `onAuthStateChange`:
  *
- *  • INITIAL_SESSION / SIGNED_IN → ONE serialized reconcile per auth transition:
- *      applyPendingMerge() first; run syncWithSupabase() ONLY when nothing was merged.
- *      - `onAuthStateChange` double-fires (INITIAL_SESSION + SIGNED_IN). A single
- *        in-flight guard (`reconcileInFlight`) makes the second firing JOIN the first
- *        run instead of launching a competing closure — no parallel reconcile.
- *      - When applyPendingMerge performs a cross-identity union it returns true and we
- *        SKIP syncWithSupabase entirely for this cycle: the merge already wrote the
- *        union to both remote and local, so the "active-browser-wins" push can't run
- *        and clobber the just-switched account row.
- *      - On a normal visit there's no pending merge → applyPendingMerge returns false
- *        → syncWithSupabase runs (mints anon on first load, then reconciles local↔remote)
- *        — exactly the Phase-1 behaviour.
- *  • SIGNED_OUT → clear the local cache and re-mint a fresh anonymous session
- *      (the single place re-anon happens — see signOutToAnon in lib/auth.ts).
+ *  • INITIAL_SESSION / SIGNED_IN → ONE serialized reconcile (reconcileInFlight makes
+ *      the INITIAL_SESSION + SIGNED_IN double-fire JOIN a single run, not race). It
+ *      RELOADS the active cache from the current identity's store (replace, never
+ *      merge): a permanent session loads the account's teams; an anon session runs the
+ *      Phase-1 local↔row reconcile. This is the first authoritative action on the
+ *      transition, so no stale cache can be pushed onto a freshly-switched account row.
+ *  • SIGNED_OUT → restoreGuestSession(): switch the active cache back to the device-
+ *      local guest picks and re-mint a fresh anonymous session.
  */
 export function PrefsSync() {
   useEffect(() => {
@@ -37,12 +29,8 @@ export function PrefsSync() {
     const reconcile = (): Promise<void> => {
       if (reconcileInFlight) return reconcileInFlight;
       reconcileInFlight = (async () => {
-        try {
-          const merged = await applyPendingMerge(); // atomic claim/clear; true iff it unioned
-          if (!merged) await syncWithSupabase();     // suppress the overwrite during the merge cycle
-        } finally {
-          reconcileInFlight = null;
-        }
+        try { await reconcileActiveIdentity(); }
+        finally { reconcileInFlight = null; }
       })();
       return reconcileInFlight;
     };
@@ -51,7 +39,7 @@ export function PrefsSync() {
       const sb = await getSupabaseBrowser();
       if (!sb || cancelled) {
         // Unconfigured: localStorage-only, nothing to bootstrap.
-        if (!sb) void syncWithSupabase(); // safe no-op; keeps parity if env added later
+        if (!sb) void reconcileActiveIdentity(); // safe no-op; keeps parity if env added later
         return;
       }
 
@@ -60,10 +48,7 @@ export function PrefsSync() {
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
           void reconcile();
         } else if (event === 'SIGNED_OUT') {
-          void (async () => {
-            resetLocalForSignOut();          // clean slate — no team bleed on shared machines
-            await sb.auth.signInAnonymously(); // fresh empty anon (fires INITIAL/SIGNED_IN → resync)
-          })();
+          void restoreGuestSession(); // restore guest picks + re-mint a fresh anon session
         }
       });
       unsubscribe = () => data.subscription.unsubscribe();
