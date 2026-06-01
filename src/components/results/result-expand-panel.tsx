@@ -6,6 +6,7 @@ import {
   Users, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ensureSession } from '@/lib/user-prefs';
 import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey } from '@/types';
 import { LeagueTable } from '@/components/schedule/league-table';
 import type { StandingRow } from '@/components/schedule/league-table';
@@ -264,7 +265,7 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
     fetch(`/api/standings?league=${team.league}`)
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
-      .then((rows: StandingRow[] | null) => {
+      .then(async (rows: StandingRow[] | null) => {
         if (Array.isArray(rows) && rows.length > 0) setStandings(rows);
 
         if (hasCachedReviewRef.current) { setAiLoading(false); return; }
@@ -272,6 +273,8 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
         const teamRow = rows?.find(r => r.teamId === team.id);
         const oppRow  = rows?.find(r => r.name?.toLowerCase().includes(result.opponent.toLowerCase().slice(0, 6)));
 
+        // Guarantee an auth session (mint anon if needed) before the gated AI fetch.
+        await ensureSession();
         fetch('/api/ai-review', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },

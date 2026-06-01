@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { unstable_cache } from 'next/cache';
 import type { AIReview } from '@/types';
 import { AI_MODEL } from '@/lib/ai-model';
+import { getSupabaseServer } from '@/lib/supabase/server';
 
 const anthropic = new Anthropic();
 
@@ -150,6 +151,16 @@ const SAFE_STR = /^[\w\s'.&\-,()]+$/;
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  // Auth gate (FIRST — before body read, cache lookup, or any Claude call): require ANY
+  // valid Supabase session (anonymous included). getUser() revalidates the JWT against
+  // Supabase Auth. Fail closed — null client / no user / error → 401, so a session-less
+  // caller can never trigger paid work.
+  const sb = getSupabaseServer();
+  const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
+  if (!user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
 

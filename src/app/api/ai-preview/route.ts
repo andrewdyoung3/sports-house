@@ -20,6 +20,7 @@ import { unstable_cache } from 'next/cache';
 import type { PreviewContext, GameResult, AIPreview, WeatherData } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, buildUpdatePrompt } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
+import { getSupabaseServer } from '@/lib/supabase/server';
 
 // ─── Claude call ──────────────────────────────────────────────────────────────
 
@@ -56,6 +57,16 @@ const FINGERPRINT_RE   = /^[a-zA-Z0-9_\-:]{1,128}$/;
 const NO_NEWLINES_RE   = /[\n\r\0]/;
 
 export async function POST(req: NextRequest) {
+  // Auth gate (FIRST — before body read, env check, cache lookup, or any Claude call):
+  // require ANY valid Supabase session (anonymous included). getUser() revalidates the JWT
+  // against Supabase Auth (not a cookie-only decode). Fail closed — null client / no user /
+  // error → 401, so a session-less caller can never trigger paid work.
+  const sb = getSupabaseServer();
+  const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
+  if (!user) {
+    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: 'AI preview not configured' }, { status: 503 });
   }
