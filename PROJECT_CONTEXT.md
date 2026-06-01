@@ -221,6 +221,18 @@ is orphaned — see §10).
 email + Sign out when signed in (reacts to auth changes with no reload). Sign-in is a glass
 modal, opt-in only.
 
+### Phase 2.1 — AI-route gating (SHIPPED)
+Both **`/api/ai-preview`** and **`/api/ai-review`** are gated behind **ANY valid Supabase
+session (anonymous included)**. A server-side `getUser()` (via `getSupabaseServer()`,
+revalidates the JWT — not a cookie-only decode) is the **first statement** in each `POST`
+handler, **fail-closed**: a session-less caller (or null client / auth error) gets **`401`
+before any body read, cache lookup, or Claude call** — so unauthenticated requests trigger no
+paid work. Anonymous sessions pass (no branch on `is_anonymous`; reserved as the future tiering
+lever). On the client, `ensureSession()` (a thin wrapper over the existing `ensureUserId`
+anon-mint path) is `await`ed before each AI fetch — at all three call sites (F1 + main preview
+panels, review panel) — so a brand-new visitor's first AI call can't fire before the anon
+session cookie exists (closes the cold-start race).
+
 ---
 
 ## 8. Key decisions & gotchas
@@ -239,6 +251,10 @@ modal, opt-in only.
   decided AGAINST an app-side daily token-budget counter (serverless has no shared state).
   Rely on the Anthropic **Console spend cap** + Haiku + eventual pre-generation. *(Cap can't be
   verified from code — confirm in the Console.)*
+- **Cost protection is now three-layer and complete:** (1) Anthropic **Console spend cap**,
+  (2) **Vercel WAF rate-limit** (Fixed Window, per-IP, 100 req / 60s, `429`, matching
+  `^/api/ai-(preview|review)$`), and (3) the **auth gate** (§7.1 — session-less callers get
+  `401` before any paid work). All three are in place.
 - **Prompt caching deferred** — marking the ~9k-token preview system prompt with `cache_control`
   works, but under sparse on-demand traffic the ~5-min cache is usually cold and net-negative;
   it becomes a ~90% input-cost win under batch pre-generation (folded into §11).
@@ -247,20 +263,16 @@ modal, opt-in only.
 
 ---
 
-## 9. Next build — AI-route gating (PR 2)
+## 9. Next build — design / QoL pass
 
-**The documented next step.** `api/ai-preview` and `api/ai-review` are currently **public and
-unauthenticated** → cost exposure on paid Claude calls.
+The original auth roadmap (Phase 1 → Phase 2 → AI-route gating) is **complete**. The next
+build is a **design / QoL pass** that folds in the logged cosmetic debt:
+- **Dashboard palette unification** — migrate the dashboard's legacy `zinc-*` palette to the
+  app's `white/glass` system (§10).
+- **Navbar account avatar `<img>` → `next/image`** (§10).
+- Other small polish surfaced along the way.
 
-- **Plan:** gate both behind **ANY valid session** (anonymous sessions included — every real
-  browser already holds one, so zero-friction UX is preserved), enforced **server-side** using
-  the Phase-2 middleware/SSR session infra. Reject session-less callers (no Supabase auth
-  cookie — e.g. raw scripted requests) with `401` **before** any paid generation. Use
-  `getUser()` (revalidates the JWT), not `getSession()`.
-- **`is_anonymous` claim** = the lever for future tiering (e.g. permanent users get higher
-  quotas / review regeneration). Phase 2 only checks "is there a user."
-- **Interim manual protection (confirm in place):** Anthropic **spend cap** + a **Vercel WAF
-  rate-limit** on the two AI routes.
+After that, the exploratory **local LLM pre-generation on the Mac mini** (§11).
 
 ---
 
@@ -290,20 +302,25 @@ unauthenticated** → cost exposure on paid Claude calls.
 - **Dashboard palette** — still legacy `zinc-*` vs the app's `white/glass` system; unification
   pass wanted.
 - **Navbar account avatar `<img>` → `next/image`** (`navbar.tsx`) — cosmetic lint.
+- **Double `getUser()` per AI request** (low priority) — the gated AI routes call `getUser()`
+  at the route level *in addition to* the middleware's `getUser()` on `/api/*` (two Supabase
+  Auth round-trips per AI request). Fine at this scale; if latency matters later, a local-verify
+  `getClaims()` optimization is possible.
 - **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
   `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k.
 
 ---
 
-## 11. Roadmap (after AI-route gating)
+## 11. Roadmap
 
-1. **AI-route gating (PR 2)** — §9. The immediate next build.
-2. **Design / QoL pass** — fold in the cosmetic debt (dashboard palette unification, navbar
-   `<img>`→`next/image`, etc.).
-3. **Local LLM pre-generation on the Mac mini** *(exploratory "fun build")* — pre-generate
+The auth roadmap (Phase 1 → Phase 2 → AI-route gating) is **complete** (see §12). What's next:
+
+1. **Design / QoL pass** *(next build — §9)* — fold in the cosmetic debt (dashboard palette
+   unification, navbar `<img>`→`next/image`, etc.).
+2. **Local LLM pre-generation on the Mac mini** *(exploratory "fun build")* — pre-generate
    previews/reviews on the always-on Mac mini and have Vercel read them from a shared store,
    instead of (or alongside) the Anthropic API. Pairs with prompt-caching economics (§8).
-4. **More real leagues** — NBA/NHL/MLB via official APIs to replace their mock data.
+3. **More real leagues** — NBA/NHL/MLB via official APIs to replace their mock data.
 
 - **[LOW PRIORITY] Configure custom SMTP in Supabase to enable email magic-link sign-in in
   production.** Currently unset, so the email login option doesn't work on the live site (§10).
@@ -318,6 +335,10 @@ unauthenticated** → cost exposure on paid Claude calls.
 
 - **Auth Phase 2 shipped** — Google OAuth + email magic-link; two-team-spaces model (no merge);
   query-less redirect; navbar account state + sign-out; modal portaled to body. Live in prod.
+- **AI-route gating shipped** — `/api/ai-preview` + `/api/ai-review` gated behind any valid
+  Supabase session (anon included), fail-closed `getUser()` as the first statement (401 before
+  any paid work); client `ensureSession()` closes the cold-start race (§7.1). This completes the
+  three-layer cost protection: spend cap + Vercel WAF rate-limit + auth gate (§8).
 - **AFL GWS mapping fixed** — `afl-giants` → "Greater Western Sydney" (fixtures + results now
   return data).
 - **My Teams pill-row stretch fixed** — `min-w-0` on the schedule/results left grid column so

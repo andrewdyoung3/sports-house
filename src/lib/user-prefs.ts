@@ -166,6 +166,18 @@ async function ensureUserId(): Promise<string | null> {
 }
 
 /**
+ * Resolve once a Supabase auth session (and its cookie) is established on this device,
+ * minting an anonymous one if none exists. Thin wrapper over the existing anon-mint path
+ * (`ensureUserId`, no prefs write). The AI-route callers `await` this BEFORE their gated
+ * fetch so the auth cookie is guaranteed present — closing the brand-new-visitor cold-start
+ * race where the first AI call could otherwise fire before the anon session is minted.
+ * Resolves cleanly (no-op) when Supabase isn't configured.
+ */
+export async function ensureSession(): Promise<void> {
+  await ensureUserId();
+}
+
+/**
  * Upsert the followed-team ids to the CURRENT identity's own RLS-protected row.
  *
  * `ensureUserId()` always resolves to the active session's uid, so this can only ever

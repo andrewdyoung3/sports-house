@@ -10,6 +10,7 @@ import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { cn, ordinal } from '@/lib/utils';
+import { ensureSession } from '@/lib/user-prefs';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -507,6 +508,8 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
         if (cachedEntry && qFingerprint) setAiUpdating(true);
 
         try {
+          // Guarantee an auth session (mint anon if needed) before the gated AI fetch.
+          await ensureSession();
           const aiRes = await fetch('/api/ai-preview', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -930,7 +933,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       fetch(previewUrl).then(r => r.ok ? r.json() : null).catch(() => null),
       oppUrl ? fetch(oppUrl).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
       fetch(standingsUrl).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([resultsData, ctxData, oppData, standingsData]: [GameResult[] | null, PreviewContext | null, GameResult[] | null, StandingRow[] | null]) => {
+    ]).then(async ([resultsData, ctxData, oppData, standingsData]: [GameResult[] | null, PreviewContext | null, GameResult[] | null, StandingRow[] | null]) => {
       // Capture live values before state updates (for the chained AI call)
       const liveResults    = Array.isArray(resultsData) && resultsData.length > 0 ? resultsData : results;
       const liveOppResults = Array.isArray(oppData)     && oppData.length > 0     ? oppData     : oppResults;
@@ -979,6 +982,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       }
       // If no cache: aiLoading is already true → show skeleton.
 
+      // Guarantee an auth session (mint anon if needed) before the gated AI fetch.
+      await ensureSession();
       fetch('/api/ai-preview', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
