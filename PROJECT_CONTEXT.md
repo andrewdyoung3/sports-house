@@ -266,9 +266,9 @@ unauthenticated** → cost exposure on paid Claude calls.
 
 ## 10. Known limitations / outstanding setup
 
-- **Prod magic-link email needs custom SMTP** in Supabase (Resend/Postmark/SES) — **NOT
-  configured**, so email sign-in is effectively disabled in prod (built-in SMTP is rate-limited
-  and not for production). **Google OAuth works without it.**
+- **Prod email magic-link sign-in is disabled** — custom SMTP is not configured in Supabase,
+  so the email login option doesn't work on the live site (Google OAuth covers prod sign-in).
+  Tracked as a low-priority build task — see §11.
 - **Orphan anonymous `user_prefs` rows accumulate** — signing in starts a separate account
   identity (no conversion), so each anon row is abandoned; cross-device sign-ins also leave
   throwaway anon rows. Cleanup deferred — run Supabase's orphaned-anonymous-user SQL via
@@ -304,6 +304,13 @@ unauthenticated** → cost exposure on paid Claude calls.
    previews/reviews on the always-on Mac mini and have Vercel read them from a shared store,
    instead of (or alongside) the Anthropic API. Pairs with prompt-caching economics (§8).
 4. **More real leagues** — NBA/NHL/MLB via official APIs to replace their mock data.
+
+- **[LOW PRIORITY] Configure custom SMTP in Supabase to enable email magic-link sign-in in
+  production.** Currently unset, so the email login option doesn't work on the live site (§10).
+  Google OAuth covers prod sign-in, so this is only needed for users without a Google account
+  or as a fallback method. Work involved: pick an email provider (Resend / SendGrid / Postmark /
+  Amazon SES), add its SMTP credentials under Supabase Auth → SMTP settings, and verify a
+  sending domain. **No app code changes — it's a config task.**
 
 ---
 
