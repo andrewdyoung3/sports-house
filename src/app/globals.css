@@ -468,6 +468,27 @@
 .sh-fix-kick { font-family: var(--font-head); font-weight: 800; font-size: 21px; color: var(--text); letter-spacing: -0.3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sh-fix-sub { position: relative; z-index: 1; display: flex; gap: 20px; margin-top: 10px; }
 
+/* ── Fixture card — TEAM-coloured (Phase B · Step 2) ──
+   Ported from the design's `.theme-blend .sh-fix*` rules with --comp → --accent, so the
+   card's structural colour is its own feature team (set per-card inline `--accent`), not
+   the competition. Scoped under `.sh-theme`; only applies to `.sh-fix`, introduced this
+   step. --comp stays only on the `.sh-comptag` pill (`--c`). Tweak defaults preserved. */
+.sh-theme .sh-fix {
+  border-left: var(--fix-border-w, 4px) solid var(--accent);
+  padding-left: var(--fix-border-pad, 18px);
+}
+.sh-theme .sh-fix-wm {
+  font-size: 128px;
+  letter-spacing: -5px;
+  color: var(--fix-wm-color, color-mix(in oklab, var(--accent) 24%, transparent));
+}
+.sh-theme .sh-fix:hover {
+  box-shadow:
+    -3px 0 14px color-mix(in oklab, var(--accent) var(--fix-border-glow, 28%), transparent),
+    0 1px 3px rgba(0, 0, 0, .22);
+}
+.sh-theme .sh-fix-kick { font-size: 22px; font-weight: 800; }
+
 .sh-fix-detail {
   position: relative; z-index: 1; margin-top: 16px; padding-top: 16px;
   border-top: 1px solid var(--border);

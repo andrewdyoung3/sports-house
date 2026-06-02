@@ -166,14 +166,14 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   epl: {
     // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
     symbol: '♛\uFE0E', symbolColor: '#e8a200',
-    label: 'Premier League',
+    label: 'Premier League', abbr: 'EPL',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
     logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)',
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
-    label: 'Super Rugby',
+    label: 'Super Rugby', abbr: 'SUPER',
     bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
     logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png',
     logoOpacity: 0.18, logoHeight: '110%',
@@ -181,7 +181,7 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   rugby_int: {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
     symbol: '✦\uFE0E', symbolColor: '#8899bb',
-    label: 'Test Rugby',
+    label: 'Test Rugby', abbr: 'TEST',
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
   },
   nba: {
@@ -260,6 +260,16 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     logoOpacity: 0.18, logoHeight: '98%',
   },
 };
+
+/** A competition's recognizable brand hue for active-chip tinting (Phase B · Step 2 refine).
+ *  Prefers the badge's foreground `color`, falling back to `bg` when that's white/near-white
+ *  — so EPL (color #fff) resolves to its purple `bg`, F1 to red, AFL to gold, etc. */
+function leagueBrandAccent(leagueId: string): string {
+  const meta = LEAGUE_BADGE[leagueId];
+  const c = (meta?.color ?? '').toLowerCase();
+  const whiteish = c === '#fff' || c === '#ffffff';
+  return (whiteish ? meta?.bg : meta?.color) ?? meta?.bg ?? '#9b6bff';
+}
 
 function FixtureBadge({ league, competition, compact }: { league: string; competition?: string; compact?: boolean }) {
   const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
@@ -384,6 +394,84 @@ function ScheduleRow({
     : isCricket && game.cricketFormat
       ? (game.cricketFormat === 'test' ? 'Test' : game.cricketFormat === 'odi' ? 'ODI' : 'T20')
       : game.isHome ? 'Home' : 'Away';
+
+  // ── Phase B · Step 2 — TWO-TEAM fixtures use the new `.sh-fix` card (team-coloured
+  //    via per-card --accent). F1 (non-versus) falls through to the existing render
+  //    below, unchanged. Every handler + a11y attr is preserved; all informational
+  //    elements the old row showed are folded in (positions, cricket-format pill,
+  //    ★ Following, mobile time-split, name-length clamp). The existing expand panel
+  //    + its wiring are untouched. ──
+  if (!isF1) {
+    const compMeta   = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[team.league] ?? null);
+    const compShort  = compMeta?.abbr ?? compMeta?.label ?? (game.competition ?? team.league.toUpperCase()); // prefer the short code so the pill never wraps
+    const compColor  = compMeta?.color ?? 'rgba(255,255,255,0.7)';
+    const cricketColor = game.cricketFormat === 'test' ? '#e2a84b' : game.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
+    const cricketLabel = game.cricketFormat === 'test' ? 'Test' : game.cricketFormat?.toUpperCase();
+    const nameSize   = combinedNameLen > 22 ? { fontSize: '14px' } : undefined; // keep the responsive clamp on top of the design size
+    const posStyle   = { fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: 'var(--text-3)' } as React.CSSProperties;
+
+    return (
+      <article
+        className={'sh-fix' + (isExpanded ? ' is-open' : '')}
+        style={{ '--accent': team.primaryColor } as React.CSSProperties}
+        onClick={onToggle}
+        onMouseEnter={() => onHover(dateKey)}
+        onMouseLeave={() => onHover(null)}
+        role="button"
+        aria-expanded={isExpanded}
+        tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      >
+        <div className="sh-fix-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
+
+        <div className="sh-fix-main">
+          {/* Outer wraps so ONLY the trailing tags drop to a second line; the matchup
+              (two teams + separator) is an inner nowrap unit that never breaks. Positions
+              ride with their team inside the nowrap unit (wrapping them away would orphan
+              "(3rd)"); the comp/cricket/following pills wrap before the matchup ever does. */}
+          <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
+              <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={34} logoFilter={teamLogoFilter} />
+              <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
+              {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
+              <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
+              <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={34} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
+              <span className="sh-fix-name" style={nameSize}>{game.opponent}</span>
+              {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
+            </span>
+            {team.league !== 'cricket_int' && (
+              <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
+            )}
+            {isCricket && game.cricketFormat && (
+              <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>
+            )}
+            {isFollowed && (
+              <span className="sh-comptag" style={{ '--c': team.primaryColor } as React.CSSProperties}>★ Following</span>
+            )}
+          </div>
+
+          <div className="sh-fix-time">
+            <span className="sh-fix-kick">
+              <span className="lg:hidden">{mobileTimeOnly}</span>
+              <span className="hidden lg:inline">{displayTime}</span>
+            </span>
+            {mobileTzAbbr && (
+              <span className="lg:hidden" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-3)' }}>{mobileTzAbbr}</span>
+            )}
+            <span className={'sh-tag-venue is-' + (game.isHome ? 'home' : 'away')}>{game.isHome ? 'Home' : 'Away'}</span>
+            <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-3)' }} />
+          </div>
+        </div>
+
+        <div className="sh-fix-sub">
+          {game.venue && (
+            <span className="sh-meta-item"><MapPin size={14} /><span className="truncate" style={{ maxWidth: '220px' }}>{game.venue}</span></span>
+          )}
+          <span className="sh-meta-item"><Tv size={14} /><span className="truncate">{dedupeChannels(game.broadcast, game.streaming)}</span></span>
+        </div>
+      </article>
+    );
+  }
 
   return (
     <div
@@ -597,20 +685,16 @@ function ScheduleSkeleton() {
 
 // ─── FilterPill ───────────────────────────────────────────────────────────────
 
+// Phase B · Step 2 — reskinned to the design's segmented control. Call-site props
+// (label/active/onClick) and every handler are unchanged; `muted` is accepted for
+// call-site compatibility but no longer needed (active state = page accent via .sh-seg).
 function FilterPill({
-  label, active, onClick, muted = false,
+  label, active, onClick,
 }: {
   label: string; active: boolean; onClick: () => void; muted?: boolean;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap ${
-        active
-          ? muted ? 'bg-white/20 text-white' : 'bg-indigo-600 text-white'
-          : 'bg-white/8 text-white/50 hover:text-white hover:bg-white/12'
-      }`}
-    >
+    <button onClick={onClick} className={'sh-seg' + (active ? ' is-active' : '')}>
       {label}
     </button>
   );
@@ -618,6 +702,10 @@ function FilterPill({
 
 // ─── TeamFilterPill ────────────────────────────────────────────────────────────
 
+// Phase B · Step 2 (refine #2) — reskinned to `.sh-chip`; an ACTIVE chip self-colours by
+// subject: its own team's primaryColor is set inline as `--accent`, which `.sh-chip.is-active`
+// turns into the soft-tint bg + border (text stays --text, legible for dark colours). The
+// "All" chip has no primaryColor → it keeps the inherited page/focal accent.
 function TeamFilterPill({
   label, logoUrl, logoFilter, primaryColor, league, active, onClick,
 }: {
@@ -626,29 +714,16 @@ function TeamFilterPill({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0"
-      style={active && primaryColor ? {
-        background: `${primaryColor}22`,
-        color: primaryColor,
-        border: `1px solid ${primaryColor}55`,
-        boxShadow: `0 0 12px ${primaryColor}30`,
-      } : active ? {
-        background: 'rgba(99,102,241,0.25)',
-        color: 'white',
-        border: '1px solid rgba(99,102,241,0.5)',
-      } : {
-        background: 'rgba(255,255,255,0.06)',
-        color: 'rgba(255,255,255,0.45)',
-        border: '1px solid transparent',
-      }}
+      className={'sh-chip' + (active ? ' is-active' : '')}
+      style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
     >
       {logoUrl && (
         <img
           src={logoUrl}
           alt=""
-          width={13}
-          height={13}
-          className="w-[13px] h-[13px] object-contain shrink-0"
+          width={15}
+          height={15}
+          className="w-[15px] h-[15px] object-contain shrink-0"
           style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
@@ -661,6 +736,9 @@ function TeamFilterPill({
 
 // ─── LeagueFilterPill ─────────────────────────────────────────────────────────
 
+// Phase B · Step 2 (refine #2) — reskinned to `.sh-chip` (Decision i: competition stays
+// PILLS, not a select). An ACTIVE chip self-colours by subject: the competition's brand
+// hue (leagueBrandAccent — EPL stays purple) is set inline as `--accent`.
 function LeagueFilterPill({
   leagueId, active, onClick,
 }: {
@@ -670,17 +748,8 @@ function LeagueFilterPill({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0"
-      style={active ? {
-        background:  meta?.bg     ?? 'rgba(99,102,241,0.25)',
-        color:       meta?.color  ?? 'white',
-        border:      `1px solid ${meta?.border ?? 'rgba(99,102,241,0.5)'}`,
-        boxShadow:   `0 0 14px ${meta?.bg ?? '#6366f1'}55`,
-      } : {
-        background: 'rgba(255,255,255,0.06)',
-        color:      'rgba(255,255,255,0.45)',
-        border:     '1px solid transparent',
-      }}
+      className={'sh-chip' + (active ? ' is-active' : '')}
+      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : undefined}
     >
       <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
@@ -1170,14 +1239,18 @@ export default function SchedulePage() {
             My-Teams / competition pill rows below scroll within overflow-x-auto instead of
             stretching the whole page when many teams are followed. */}
         <div className="min-w-0">
-          {/* Filters */}
+          {/* Filters — Phase B · Step 2: reskinned to the design vocabulary
+              (.sh-filters.sh-card / .sh-chips > .sh-chip / .sh-segmented > .sh-seg).
+              The 3-group information architecture is preserved (Decision i: competition
+              stays PILLS, not a select); every handler and state is unchanged. Active
+              chips/segs colour from the inherited page accent (.sh-chip.is-active). */}
           {!activeLoading && (
-            <div className="mb-8 space-y-3">
+            <div className="sh-filters sh-card">
 
-              {/* Row 1: My teams */}
+              {/* My teams */}
               <div>
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">My Teams</p>
-                <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="sh-chips">
                   <TeamFilterPill
                     label="All"
                     active={!isLeagueMode && activeTeamId === 'all'}
@@ -1198,10 +1271,12 @@ export default function SchedulePage() {
                 </div>
               </div>
 
-              {/* Row 2: Browse by league */}
+              <div className="sh-filter-divider" />
+
+              {/* Browse competition (pills) */}
               <div>
                 <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse Competition</p>
-                <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                <div className="sh-chips">
                   {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill
                       key={league.id}
@@ -1216,27 +1291,38 @@ export default function SchedulePage() {
                 </div>
               </div>
 
-              {/* Row 3: Secondary filters */}
-              <div className="flex gap-1.5 items-center">
-                <FilterPill
-                  label="This Round"
-                  active={gameRangeFilter === 'this_round'}
-                  onClick={() => setGameRangeFilter(prev => prev === 'this_round' ? 'all' : 'this_round')}
-                  muted
-                />
+              <div className="sh-filter-divider" />
+
+              {/* View toggles — TWO independent single-select segmented groups (refine #3):
+                  range (This Round / All games) and, in team mode, home/away. Same state
+                  + handlers; each value is now an explicit button rather than one toggle. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="sh-segmented">
+                  <FilterPill
+                    label="This Round"
+                    active={gameRangeFilter === 'this_round'}
+                    onClick={() => setGameRangeFilter('this_round')}
+                    muted
+                  />
+                  <FilterPill
+                    label="All games"
+                    active={gameRangeFilter === 'all'}
+                    onClick={() => setGameRangeFilter('all')}
+                    muted
+                  />
+                </div>
                 {!isLeagueMode && (
-                  <>
-                    <div className="w-px h-4 bg-white/10" />
+                  <div className="sh-segmented">
                     {(['all', 'home', 'away'] as const).map(opt => (
                       <FilterPill
                         key={opt}
-                        label={opt === 'all' ? 'All games' : opt.charAt(0).toUpperCase() + opt.slice(1)}
+                        label={opt === 'all' ? 'All' : opt.charAt(0).toUpperCase() + opt.slice(1)}
                         active={homeAwayFilter === opt}
                         onClick={() => setHomeAwayFilter(opt)}
                         muted
                       />
                     ))}
-                  </>
+                  </div>
                 )}
               </div>
 
