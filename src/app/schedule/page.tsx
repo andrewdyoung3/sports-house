@@ -12,6 +12,7 @@ import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
+import { NextGameHeroSh } from '@/components/schedule/next-game-hero-sh';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { SportBall } from '@/components/schedule/sport-ball';
@@ -1123,6 +1124,19 @@ export default function SchedulePage() {
 
   const activeLoading = loading;
 
+  // Phase B · Step 2 — page-level focal accent, driven by the SAME focal team the hero
+  // uses (heroGame.team). `.sh-theme` only defines CSS custom properties, so adding it to
+  // the wrapper is visually inert except for `.sh-*` descendants (currently just the hero).
+  // Omitted when there's no focal team → the `.sh-theme` default tokens apply.
+  const focalTeam = heroGame?.team;
+  const focalAccent = focalTeam
+    ? ({
+        '--accent':    focalTeam.primaryColor,
+        '--accent-2':  focalTeam.secondaryColor ?? focalTeam.primaryColor,
+        '--on-accent': contrastColor(focalTeam.primaryColor),
+      } as React.CSSProperties)
+    : undefined;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
@@ -1137,11 +1151,15 @@ export default function SchedulePage() {
         {activeLoading && <p className="text-white/40 text-sm">Loading fixtures…</p>}
       </div>
 
-      <div>
+      <div className="sh-theme" style={focalAccent}>
 
       {/* ── Next Game Hero ── */}
+      {/* F1 (non-versus) keeps the existing hero; two-team fixtures get the new
+          focal-team-themed .sh-* hero (Phase B · Step 1). */}
       {!activeLoading && heroGame && (
-        <NextGameHero game={heroGame} userTz={userTz} />
+        heroGame.team.league === 'f1'
+          ? <NextGameHero   game={heroGame} userTz={userTz} />
+          : <NextGameHeroSh game={heroGame} userTz={userTz} />
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}
