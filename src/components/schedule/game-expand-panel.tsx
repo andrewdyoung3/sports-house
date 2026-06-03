@@ -1310,8 +1310,27 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           <div className="sh-detail-section">
             <div className="sh-detail-head"><User className="sh-icon h-[13px] w-[13px]" />Spotlight</div>
             {aiPreview.playerSpotlight ? (
-              // Flat string rendered as section body (no name/blurb split — none in the data).
-              <p className="sh-detail-body-sm">{aiPreview.playerSpotlight}</p>
+              (() => {
+                // Step 6 · 2B — restore the name / blurb split: the model emits
+                // "Name — one-line reason". Split on a spaced em/en/hyphen dash; the
+                // name becomes a badge + bold lockup, the remainder the blurb. When no
+                // delimiter is present, fall back to a flat body string.
+                const sep = aiPreview.playerSpotlight.search(/ [—–-] /);
+                if (sep === -1) {
+                  return <p className="sh-detail-body-sm">{aiPreview.playerSpotlight}</p>;
+                }
+                const name  = aiPreview.playerSpotlight.slice(0, sep);
+                const blurb = aiPreview.playerSpotlight.slice(sep).replace(/^ [—–-] /, '');
+                return (
+                  <>
+                    <div className="sh-spotlight-name">
+                      <LogoThumb src={TEAM_LOGOS[team.id]} abbr={team.abbreviation} />
+                      {name}
+                    </div>
+                    <p className="sh-detail-body-sm">{blurb}</p>
+                  </>
+                );
+              })()
             ) : (
               <p className="text-[11px] text-white/25 italic">No spotlight available</p>
             )}

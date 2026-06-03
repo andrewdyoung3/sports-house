@@ -56,7 +56,10 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] overflow-y-auto bg-black/60 backdrop-blur-sm"
+      // Step 6 · 2D — `sh-theme` on the portal root so the `.sh-*` tokens resolve inside
+      // the modal (it is portaled to <body>, outside any page-level `.sh-theme`). The
+      // backdrop scrim + its existing blur are unchanged; no new backdrop-filter is added.
+      className="sh-theme fixed inset-0 z-[200] overflow-y-auto bg-black/60 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -66,29 +69,37 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
           card is taller than the viewport; the card also caps its own height. */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className="glass-strong rounded-2xl w-full max-w-sm p-6 relative max-h-[calc(100dvh-2rem)] overflow-y-auto"
-          style={{ animation: 'slideDown 0.2s ease-out' }}
+          // Opaque dark dialog surface in the `.sh-*` vocabulary (a `--surface-2` tint
+          // over an opaque `--bg`, the same trick as the account dropdown) — no blur of
+          // its own; the backdrop supplies the scrim.
+          className="w-full max-w-sm p-6 relative max-h-[calc(100dvh-2rem)] overflow-y-auto"
+          style={{
+            background: 'linear-gradient(var(--surface-2), var(--surface-2)), var(--bg)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 'var(--radius-lg)',
+            animation: 'slideDown 0.2s ease-out',
+          }}
           onClick={(e) => e.stopPropagation()}
         >
         <button
           onClick={onClose}
           aria-label="Close"
-          className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+          className="absolute top-4 right-4 text-[var(--text-3)] hover:text-[var(--text)] transition-colors"
         >
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-xl font-semibold text-white tracking-tight">Sign in to SportHouse</h2>
-        <p className="text-sm text-white/50 mt-1 mb-5">
+        <h2 className="text-xl font-semibold tracking-tight text-[var(--text)]" style={{ fontFamily: 'var(--font-head)' }}>Sign in to SportHouse</h2>
+        <p className="text-sm text-[var(--text-3)] mt-1 mb-5">
           Sync your followed teams across all your devices. Your account keeps its own team
           list — your guest picks stay on this device and return when you sign out.
         </p>
 
         {phase === 'sent' ? (
           <div className="flex flex-col items-center text-center py-4">
-            <CheckCircle2 className="h-10 w-10 text-emerald-400 mb-3" />
-            <p className="text-white font-medium">{message}</p>
-            <p className="text-sm text-white/50 mt-1">Open it on this device to finish signing in.</p>
+            <CheckCircle2 className="h-10 w-10 mb-3" style={{ color: 'var(--win)' }} />
+            <p className="font-medium text-[var(--text)]">{message}</p>
+            <p className="text-sm text-[var(--text-3)] mt-1">Open it on this device to finish signing in.</p>
           </div>
         ) : (
           <>
@@ -96,22 +107,22 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
             <button
               onClick={handleGoogle}
               disabled={busy}
-              className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white font-medium transition-colors disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2.5 h-11 rounded-xl bg-[var(--surface-2)] hover:bg-white/[0.12] border border-[var(--border)] text-[var(--text)] font-medium transition-colors disabled:opacity-50"
             >
               {phase === 'redirecting' ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleGlyph />}
               Continue with Google
             </button>
 
             <div className="flex items-center gap-3 my-4">
-              <span className="h-px flex-1 bg-white/10" />
-              <span className="text-xs text-white/30">or</span>
-              <span className="h-px flex-1 bg-white/10" />
+              <span className="h-px flex-1 bg-[var(--border)]" />
+              <span className="text-xs text-[var(--text-3)]">or</span>
+              <span className="h-px flex-1 bg-[var(--border)]" />
             </div>
 
             {/* Email magic-link */}
             <form onSubmit={handleEmail} className="space-y-3">
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/30" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-3)]" />
                 <input
                   type="email"
                   required
@@ -120,14 +131,14 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   disabled={busy}
-                  className="w-full h-11 pl-9 pr-3 rounded-xl bg-black/30 border border-white/10 text-white placeholder:text-white/30 outline-none focus:border-white/25 transition-colors disabled:opacity-50"
+                  className="w-full h-11 pl-9 pr-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] placeholder:text-[var(--text-3)] outline-none focus:border-[var(--border-strong)] transition-colors disabled:opacity-50"
                 />
               </div>
               <button
                 type="submit"
                 disabled={busy}
-                className="w-full h-11 rounded-xl font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ background: 'linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f97316 100%)' }}
+                className="w-full h-11 rounded-xl font-semibold transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%)', color: 'var(--on-accent)' }}
               >
                 {phase === 'sending' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 Email me a link
@@ -137,7 +148,7 @@ export function AuthModal({ open, onClose }: { open: boolean; onClose: () => voi
         )}
 
         {phase === 'error' && (
-          <p className="text-sm text-rose-400 mt-4 text-center">{message}</p>
+          <p className="text-sm mt-4 text-center" style={{ color: 'var(--loss)' }}>{message}</p>
         )}
         </div>
       </div>

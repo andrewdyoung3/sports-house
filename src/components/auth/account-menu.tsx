@@ -78,14 +78,31 @@ export function AccountMenu() {
           <ChevronDown className="h-4 w-4 flex-shrink-0" />
         </button>
         {menuOpen && (
+          // Step 6 · 2C — dropdown reskinned to the `.sh-*` surface vocabulary. The
+          // navbar is already inside `.sh-theme`, so default tokens resolve. The surface
+          // is an opaque dark panel (a `--surface-2` tint layered over `--bg` via a
+          // flat gradient) — no backdrop-filter is added; legibility comes from the
+          // opaque base + a drop shadow. Position + outside-click handlers unchanged.
           <div
-            className="glass-strong absolute right-0 mt-2 w-56 rounded-xl p-2 z-50"
-            style={{ animation: 'slideDown 0.18s ease-out' }}
+            className="absolute right-0 mt-2 w-56 p-1.5 z-50"
+            style={{
+              background: 'linear-gradient(var(--surface-2), var(--surface-2)), var(--bg)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius)',
+              boxShadow: '0 12px 32px rgba(0,0,0,.45)',
+              animation: 'slideDown 0.18s ease-out',
+            }}
           >
-            <p className="px-3 py-2 text-xs text-white/40 truncate" title={label}>{label}</p>
+            <p
+              className="px-3 py-2 text-[12px] truncate"
+              style={{ color: 'var(--text-3)' }}
+              title={label}
+            >
+              {label}
+            </p>
             <button
               onClick={handleSignOut}
-              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/8 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] transition-colors text-[var(--text-2)] hover:text-[var(--text)] hover:bg-white/[0.06]"
             >
               <LogOut className="h-4 w-4" />
               Sign out

@@ -13,8 +13,10 @@
  * helpers. Static card → no new animation; no backdrop-filter (blur is a later step).
  */
 
-import { MapPin, Tv } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Tv, ChevronDown } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
+import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { formatTimeInZone } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
@@ -66,6 +68,12 @@ function timeUntil(isoDate: string, userTz: string): string | null {
 export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
   const { team } = game;
 
+  // Step 6 · 2A — the hero can now expand to the SAME GameExpandPanel the feed uses.
+  // A hero-local boolean is safe: the schedule page excludes `heroGame` from its
+  // grouped feed (see `if (game === heroGame) continue;`), so this game never mounts
+  // a second panel elsewhere — no shared-state needed.
+  const [open, setOpen] = useState(false);
+
   // Focal team paints the hero; opponent is the flat fields on UpcomingGame.
   const focalProps = {
     logoUrl:      TEAM_LOGOS[team.id],
@@ -96,7 +104,14 @@ export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
   return (
     // Accent now inherited from the page-level `.sh-theme` wrapper (Phase B · Step 2),
     // which is driven by this same focal team — so the hero is unchanged.
-    <section className="sh-hero">
+    <>
+    <section
+      className="sh-hero"
+      // When open, flatten the hero's bottom corners and drop its bottom margin so the
+      // expand panel below reads as one continuous unit (the panel carries the rounded
+      // bottom + the trailing spacing).
+      style={open ? { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}
+    >
       <div className="sh-hero-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
 
       <div className="sh-hero-body">
@@ -139,6 +154,36 @@ export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
           )}
         </div>
       </div>
+
+      {/* Step 6 · 2A — full-width "Match details" bar at the very bottom edge of the
+          card (sibling of `.sh-hero-body`, not inside it, so it spans flush to the
+          rounded edges rather than being inset by the body padding). */}
+      <button
+        type="button"
+        className="sh-hero-expand"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        Match details
+        <ChevronDown
+          size={16}
+          style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s ease' }}
+        />
+      </button>
     </section>
+
+    {open && (
+      // Sits directly beneath the (now flat-bottomed) hero. The panel matches the hero's
+      // 22px corner radius on its own bottom so the join is seamless, and carries the
+      // 22px trailing margin the hero normally provides.
+      <div style={{ marginBottom: 22 }}>
+        <GameExpandPanel
+          game={game}
+          onCollapse={() => setOpen(false)}
+          className="rounded-b-[22px]"
+        />
+      </div>
+    )}
+    </>
   );
 }
