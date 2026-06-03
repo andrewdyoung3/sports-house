@@ -117,42 +117,30 @@ export function ScheduleCalendar({
   const previewPast    = hoveredDateKey ? (pastByDate.get(hoveredDateKey)  ?? []) : [];
 
   return (
-    <div className="glass rounded-2xl p-4 select-none">
+    <div className="sh-card sh-cal select-none">
 
       {/* ── Month navigation ── */}
-      <div className="flex items-center justify-between mb-3">
-        <button
-          onClick={goPrev}
-          className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/8 transition-colors"
-          aria-label="Previous month"
-        >
-          <ChevronLeft className="h-3.5 w-3.5" />
+      <div className="sh-cal-head">
+        <button className="sh-cal-nav" onClick={goPrev} aria-label="Previous month">
+          <ChevronLeft size={14} />
         </button>
-        <span className="text-xs font-bold text-white">
-          {MONTH_NAMES[viewMonth]} {viewYear}
-        </span>
-        <button
-          onClick={goNext}
-          className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/8 transition-colors"
-          aria-label="Next month"
-        >
-          <ChevronRight className="h-3.5 w-3.5" />
+        <span className="sh-cal-title">{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <button className="sh-cal-nav" onClick={goNext} aria-label="Next month">
+          <ChevronRight size={14} />
         </button>
       </div>
 
       {/* ── Day-of-week headers ── */}
-      <div className="grid grid-cols-7 mb-1">
+      <div className="sh-cal-grid sh-cal-dow">
         {DAY_LABELS.map(d => (
-          <div key={d} className="text-[9px] font-semibold text-white/25 text-center py-0.5">
-            {d}
-          </div>
+          <span key={d} className="sh-cal-dowcell">{d}</span>
         ))}
       </div>
 
       {/* ── Calendar grid ── */}
-      <div className="grid grid-cols-7 gap-y-0.5">
+      <div className="sh-cal-grid">
         {calendarDays.map((day, i) => {
-          if (day === null) return <div key={`blank-${i}`} />;
+          if (day === null) return <div key={`blank-${i}`} className="sh-cal-cell is-empty" />;
 
           const dk          = dateKeyForDay(day);
           const dayGames    = gamesByDate.get(dk);
@@ -163,12 +151,14 @@ export function ScheduleCalendar({
           const hasPast     = !!dayPast?.length;
           const hasActivity = hasUpcoming || hasPast;
 
-          // Glow always uses team primary colour
+          // Hover glow keeps its existing TEAM-colour source (preserves the feed↔calendar highlight).
           const glowColor = hasUpcoming
             ? dayGames![0].team.primaryColor
             : hasPast
               ? dayPast![0].team.primaryColor
               : undefined;
+          // Team-coloured day dots (kept, not neutralised); upcoming = solid, past = dimmed.
+          const dots = hasUpcoming ? dayGames! : hasPast ? dayPast! : [];
 
           return (
             <button
@@ -180,22 +170,14 @@ export function ScheduleCalendar({
               onMouseEnter={() => hasActivity && onHover(dk)}
               onMouseLeave={() => onHover(null)}
               disabled={!hasActivity}
-              className={[
-                'relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-lg',
-                'text-[11px] font-medium transition-all duration-150',
-                hasActivity ? 'cursor-pointer' : 'cursor-default',
-                isToday
-                  ? 'ring-1 ring-white/35 bg-white/10 text-white font-bold'
-                  : hasUpcoming
-                    ? 'text-white/65 hover:text-white'
-                    : hasPast
-                      ? 'text-white/40 hover:text-white/70'
-                      : 'text-white/20',
-                isHovered && hasActivity ? 'scale-110' : '',
-              ].join(' ')}
-              style={isHovered && glowColor
-                ? { boxShadow: `0 0 14px ${glowColor}55`, background: `${glowColor}18` }
-                : undefined}
+              className={'sh-cal-cell' + (isToday ? ' is-today' : '')}
+              style={{
+                cursor: hasActivity ? 'pointer' : 'default',
+                transition: 'transform .15s, box-shadow .15s, background .15s, color .15s',
+                ...(isHovered && hasActivity ? { transform: 'scale(1.1)' } : {}),
+                ...(isHovered && glowColor ? { boxShadow: `0 0 14px ${glowColor}55`, background: `${glowColor}18` } : {}),
+                ...(!hasActivity && !isToday ? { color: 'var(--text-3)', opacity: 0.55 } : {}),
+              }}
               aria-label={
                 hasUpcoming
                   ? `${day} ${MONTH_NAMES[viewMonth]}, ${dayGames!.length} fixture${dayGames!.length > 1 ? 's' : ''}`
@@ -204,30 +186,22 @@ export function ScheduleCalendar({
                     : undefined
               }
             >
-              <span>{day}</span>
-              {/* Upcoming fixture dots — team primary colour */}
-              {hasUpcoming && (
-                <div className="flex gap-0.5 justify-center">
-                  {dayGames!.slice(0, 3).map((g, gi) => (
+              {day}
+              {dots.length > 0 && (
+                <span style={{ position: 'absolute', bottom: '4px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '2px' }}>
+                  {dots.slice(0, 3).map((g, gi) => (
                     <span
                       key={gi}
-                      className="w-1 h-1 rounded-full"
-                      style={{ backgroundColor: g.team.primaryColor }}
+                      style={{
+                        width: '4px', height: '4px', borderRadius: '50%',
+                        backgroundColor: g.team.primaryColor,
+                        opacity: hasUpcoming ? 1 : 0.5,
+                        // hairline so team dots stay visible on the accent-filled today cell
+                        ...(isToday ? { boxShadow: '0 0 0 1px rgba(255,255,255,0.7)' } : {}),
+                      }}
                     />
                   ))}
-                </div>
-              )}
-              {/* Past game dots — team primary colour, slightly dimmed */}
-              {!hasUpcoming && hasPast && (
-                <div className="flex gap-0.5 justify-center">
-                  {dayPast!.slice(0, 3).map((r, ri) => (
-                    <span
-                      key={ri}
-                      className="w-1 h-1 rounded-full opacity-50"
-                      style={{ backgroundColor: r.team.primaryColor }}
-                    />
-                  ))}
-                </div>
+                </span>
               )}
             </button>
           );

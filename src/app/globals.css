@@ -564,6 +564,11 @@
 .sh-standings tr.is-mine td { background: var(--accent-soft); }
 .sh-standings tr.is-mine .sh-stand-team { color: var(--accent); font-weight: 700; }
 .sh-standings tr.is-mine td:first-child { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+/* Hue-independent "this is mine" signal (Phase B · Step 3) — reads even for near-black
+   brands where the accent-soft tint + accent name go muddy. Only affects `.sh-standings`. */
+.sh-standings tr.is-mine td:first-child { border-left: 3px solid var(--accent); }
+/* Calendar hover/selected cell (dormant-safe; only `.sh-cal-cell.is-highlight`). */
+.sh-cal-cell.is-highlight { background: color-mix(in oklab, var(--accent) 14%, transparent); }
 .sh-standings tr.is-mine td:last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
 
 /* following */

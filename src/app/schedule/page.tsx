@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Calendar, List, MapPin, Tv, Plus, ChevronDown, UserMinus, X } from 'lucide-react';
+import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
@@ -16,7 +16,7 @@ import { NextGameHeroSh } from '@/components/schedule/next-game-hero-sh';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { SportBall } from '@/components/schedule/sport-ball';
-import { LeagueTable } from '@/components/schedule/league-table';
+import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/components/schedule/league-table';
 import type { Team, UpcomingGame, SportKey } from '@/types';
 
@@ -777,13 +777,17 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
 
   if (teams.length === 0) return null;
   return (
-    <div ref={containerRef} className="glass rounded-2xl p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">
-        Following
-      </p>
-      <div className="flex flex-wrap gap-2">
+    <div ref={containerRef} className="sh-card sh-following">
+      {/* Phase B · Step 3 (2C) — reskinned to .sh-card.sh-following. The per-badge
+          unfollow popup is PRESERVED (an existing interaction the design's display-only
+          badge omits); onboarding access moves to the header .sh-edit-link "Edit". */}
+      <div className="sh-card-head">
+        <span className="sh-card-head-label">Following</span>
+        <Link href="/onboarding" className="sh-edit-link">Edit</Link>
+      </div>
+      <div className="sh-follow-grid">
         {teams.map(team => (
-          <div key={team.id} className="relative">
+          <div key={team.id} className="sh-follow-item relative">
             {/* Badge — click toggles popup */}
             <button
               onClick={() => setOpenId(prev => prev === team.id ? null : team.id)}
@@ -795,7 +799,7 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
                 logoUrl={TEAM_LOGOS[team.id]}
                 abbreviation={team.abbreviation}
                 primaryColor={team.primaryColor}
-                size={44}
+                size={42}
                 className="rounded-xl"
                 logoFilter={TEAM_LOGO_FILTERS[team.id]}
               />
@@ -828,12 +832,6 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
           </div>
         ))}
       </div>
-      <Link href="/onboarding" className="block mt-3">
-        <button className="text-[10px] font-semibold text-white/25 hover:text-white/60 transition-colors flex items-center gap-1">
-          <Plus className="h-3 w-3" />
-          Add teams
-        </button>
-      </Link>
     </div>
   );
 }
@@ -1206,6 +1204,15 @@ export default function SchedulePage() {
       } as React.CSSProperties)
     : undefined;
 
+  // Phase B · Step 3 — which league the sidebar standings show (same resolution the
+  // LeagueTable call used), plus its brand colour + short code for the card-head comp tag.
+  const standingsTableLeague = (
+    activeLeagueId
+      ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league : undefined)
+      ?? [...allGames, ...(activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [])].find(g => g.id === expandedId)?.team.league
+  ) as SportKey | undefined;
+  const standingsBadge = standingsTableLeague ? LEAGUE_BADGE[standingsTableLeague] : undefined;
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
@@ -1427,14 +1434,12 @@ export default function SchedulePage() {
 
           {/* League standings — shown in league-browse mode, when a team is selected, or when a card is expanded */}
           {!activeLoading && standings && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null) && (
-            <LeagueTable
-              league={(
-                activeLeagueId
-                  ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league : undefined)
-                  ?? [...allGames, ...(activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [])].find(g => g.id === expandedId)?.team.league
-              ) as SportKey}
+            <LeagueTableSh
+              league={standingsTableLeague as SportKey}
               rows={standings}
               followedTeamIds={followedTeamIds}
+              compColor={standingsBadge?.color}
+              compShort={standingsBadge?.abbr ?? standingsBadge?.label}
             />
           )}
 
@@ -1474,6 +1479,10 @@ export default function SchedulePage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
+            {/* Phase B · Step 3 — this calendar instance is OUTSIDE the page `.sh-theme`
+                wrapper, so it carries its own `.sh-theme` + focal accent for the reskinned
+                `.sh-cal` tokens to resolve. */}
+            <div className="sh-theme" style={focalAccent}>
             <ScheduleCalendar
               games={displayedGames}
               userTz={userTz}
@@ -1494,6 +1503,7 @@ export default function SchedulePage() {
               pastResults={pastResults}
               onPastDayClick={(dk) => closeCalendar(() => handlePastDayClick(dk))}
             />
+            </div>
           </div>
         </>
       )}
