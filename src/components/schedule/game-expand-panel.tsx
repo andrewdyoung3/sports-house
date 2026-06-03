@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Minus, Cloud } from 'lucide-react';
+import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Cloud, ChevronUp, MapPin } from 'lucide-react';
 // mock-data intentionally NOT imported — this component never shows mock results.
-import { LeagueTable } from '@/components/schedule/league-table';
+import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/components/schedule/league-table';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -26,6 +26,9 @@ interface GameExpandPanelProps {
   compact?: boolean;
   /** Called with fresh standings whenever the panel fetches them — lets the parent keep its sidebar in sync. */
   onStandingsUpdate?: (rows: StandingRow[]) => void;
+  /** Closes the panel via the parent's EXISTING expand toggle (drives the collapse pill).
+   *  Optional — when absent (e.g. the F1 hero), the collapse pill is not shown. */
+  onCollapse?: () => void;
 }
 
 const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
@@ -192,29 +195,22 @@ function StandingRow({
       ? `${standing.wins}W ${standing.draws}D ${standing.losses}L`
       : `${standing.wins}W ${standing.losses}L`;
 
-  const statLine =
+  // Compact points/percentage label for the mini-ladder row (drop the verbose F/A line).
+  const ptsLabel =
     standing.points !== undefined
-      ? `${standing.points} pts · F ${standing.goalsFor ?? '—'} A ${standing.goalsAgainst ?? '—'}`
+      ? `${standing.points} pts`
       : standing.percentage !== undefined
         ? `${standing.percentage.toFixed(1)}%`
         : '';
 
   return (
-    <div className="flex items-start gap-2">
-      {/* Position number + movement arrow — fixed width keeps both rows aligned */}
-      <div className="flex items-center gap-0.5 shrink-0 w-8">
-        <span className="text-[15px] font-black text-white/85 tabular-nums leading-none">
-          {standing.position}
-        </span>
-        {trend === 'up'   && <ArrowUp   className="h-3 w-3 text-emerald-400 shrink-0" />}
-        {trend === 'down' && <ArrowDown className="h-3 w-3 text-red-400 shrink-0" />}
-        {trend === 'same' && <Minus     className="h-2.5 w-2.5 text-white/25 shrink-0" />}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-bold text-white/75 leading-none truncate">{label}</p>
-        <p className="text-[10px] text-white/40 mt-0.5 leading-none">{record} · {standing.played} played</p>
-        {statLine && <p className="text-[10px] text-white/30 mt-0.5 leading-none">{statLine}</p>}
-      </div>
+    <div className="sh-detail-ladder-row">
+      <span className="sh-l-pos">{standing.position}</span>
+      {trend === 'up'   && <ArrowUp   className="h-3 w-3 text-emerald-400 shrink-0" />}
+      {trend === 'down' && <ArrowDown className="h-3 w-3 text-red-400 shrink-0" />}
+      <span className="sh-l-name" title={label}>{label}</span>
+      <span className="sh-l-record">{record}</span>
+      {ptsLabel && <span className="sh-l-pts">{ptsLabel}</span>}
     </div>
   );
 }
@@ -261,24 +257,24 @@ function CompactForm({ results }: { results: GameResult[] }) {
         const isDraw   = r.isDraw === true;
         const outcome  = isDraw ? 'D' : r.isWin ? 'W' : 'L';
         const isLatest = i === lastIdx;
-        const badgeCls = isDraw
-          ? 'bg-amber-400/20 text-amber-300 border border-amber-600/30'
-          : r.isWin
-            ? 'bg-emerald-400/20 text-emerald-400 border border-emerald-600/30'
-            : 'bg-red-400/20 text-red-400 border border-red-700/30';
         const scoreCls = isDraw ? 'text-amber-300' : r.isWin ? 'text-emerald-400' : 'text-red-400';
         const scoreStr = isDraw
           ? `D ${r.teamScore}–${r.opponentScore}`
           : `${r.isWin ? 'W' : 'L'} ${r.teamScore}–${r.opponentScore}`;
         return (
           <div key={i} className="relative group shrink-0">
-            {/* W / D / L dot */}
+            {/* W / D / L pip (design vocabulary; draw keeps an amber tint) */}
             <span
               className={cn(
-                'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black cursor-default',
-                badgeCls,
+                'sh-pip',
+                isDraw ? '' : r.isWin ? 'is-w' : 'is-l',
                 isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
               )}
+              style={isDraw ? {
+                background: 'color-mix(in oklab, #f5c518 18%, transparent)',
+                color: '#f5c518',
+                boxShadow: 'inset 0 0 0 1px color-mix(in oklab, #f5c518 35%, transparent)',
+              } : undefined}
             >
               {outcome}
             </span>
@@ -342,25 +338,6 @@ const AI_TAGLINES = [
   'Calling the press box…',
   'Sharpening the pencils…',
 ];
-
-/**
- * Renders a spotlight text with the leading player name bolded and visually
- * separated from the analysis. Splits on " — " (em-dash) or " - " (hyphen).
- */
-function SpotlightText({ text }: { text: string }) {
-  const sepIdx = text.search(/ [—–-] /);
-  if (sepIdx === -1) {
-    return <p className="text-[11px] text-white/55 leading-relaxed">{text}</p>;
-  }
-  const name   = text.slice(0, sepIdx);
-  const detail = text.slice(sepIdx).replace(/^ [—–-] /, '');
-  return (
-    <div>
-      <p className="text-[12px] font-bold text-white/80 leading-none mb-1">{name}</p>
-      <p className="text-[11px] text-white/55 leading-relaxed">{detail}</p>
-    </div>
-  );
-}
 
 function AILoadingCard({ color }: { color: string }) {
   const [idx,     setIdx]     = useState(0);
@@ -826,7 +803,7 @@ export function GameExpandPanel(props: GameExpandPanelProps) {
   return <GameExpandPanelInner {...props} />;
 }
 
-function GameExpandPanelInner({ game, className, compact = false, onStandingsUpdate }: GameExpandPanelProps) {
+function GameExpandPanelInner({ game, className, compact = false, onStandingsUpdate, onCollapse }: GameExpandPanelProps) {
   const { team } = game;
 
   // AI only makes sense for imminent fixtures — too much changes further out.
@@ -1040,8 +1017,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
 
   return (
     <div
-      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out' }}
+      className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
+      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
     >
       {/* ── Mobile tab bar — Preview / Table ── */}
       {hasTable && (
@@ -1074,17 +1051,28 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Table tab (mobile only) ── */}
       {hasTable && activeTab === 'table' && (
         <div className="lg:hidden">
-          <LeagueTable
+          <LeagueTableSh
             league={team.league as import('@/types').SportKey}
             rows={standings!}
             followedTeamIds={new Set([team.id])}
-            opponentTeamId={game.opponentId}
           />
         </div>
       )}
 
       {/* ── Main panel content — hidden on mobile when table tab is active ── */}
       <div className={cn('space-y-5', hasTable && activeTab === 'table' ? 'hidden lg:block' : '')}>
+
+      {/* ── Collapse pill — drives the parent's EXISTING expand toggle (Phase B · Step 5) ── */}
+      {onCollapse && (
+        <button
+          type="button"
+          className="sh-detail-collapse"
+          onClick={(e) => { e.stopPropagation(); onCollapse(); }}
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+          Collapse
+        </button>
+      )}
 
       {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
       {aiLoading && aiEnabled && (
@@ -1094,18 +1082,15 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
       {aiEnabled && !aiLoading && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Match Preview
-          </p>
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
           {aiUpdating && (
-            <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mt-0.5 mb-1">
+            <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mb-1.5">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
               Refreshing with latest news…
             </p>
           )}
           {aiPreview?.context ? (
-            <p className="text-sm text-white/65 leading-relaxed">{aiPreview.context}</p>
+            <p className="sh-detail-body">{aiPreview.context}</p>
           ) : (
             <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
           )}
@@ -1115,19 +1100,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Quick Take (AI only) ── */}
       {!aiLoading && aiPreview?.keyInsights && aiPreview.keyInsights.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Quick Take
-          </p>
-          <ul className="space-y-1.5">
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Quick Take</div>
+          <ul className="sh-quick-list">
             {aiPreview.keyInsights.map((ins, i) => (
-              <li key={i} className="text-[12px] text-white/65 flex items-start gap-2 leading-snug">
-                <span
-                  className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
-                  style={{ backgroundColor: team.primaryColor }}
-                />
-                {ins}
-              </li>
+              <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{ins}</li>
             ))}
           </ul>
         </div>
@@ -1136,11 +1112,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Tactical Battle (AI only, full mode) ── */}
       {!compact && !aiLoading && aiPreview && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <Shield className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Tactical Battle
-          </p>
-          <p className="text-sm text-white/65 leading-relaxed">{aiPreview.tacticalBattle}</p>
+          <div className="sh-detail-head"><Shield className="sh-icon h-[13px] w-[13px]" />Tactical Battle</div>
+          <p className="sh-detail-body">{aiPreview.tacticalBattle}</p>
         </div>
       )}
 
@@ -1152,16 +1125,16 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         const formOppResults = isCricket ? oppResults.filter(r => new Date(r.date) >= twoMonthsBefore) : oppResults;
         // For cricket: hide form section once loaded if no games fall within 2 months of the fixture
         const showForm = !isCricket || loading || formResults.length > 0 || formOppResults.length > 0;
-        const cols = showForm
-          ? (weather ? 'grid-cols-3' : 'grid-cols-2')
-          : (weather ? 'grid-cols-2' : 'grid-cols-1');
+        // 2 OR 3 cells — Form (when present) + Ladder/Standings + Weather (when present).
+        // Weather is never dropped to satisfy the mockup's two-col; it stays the 3rd cell.
+        const colCount = (showForm ? 1 : 0) + 1 + (weather ? 1 : 0);
         return (
-      <div className={`grid gap-5 ${cols}`}>
+      <div className="sh-detail-cols" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
 
         {/* Recent form — both teams */}
         {showForm && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+        <div className="sh-detail-section">
+          <p className="sh-detail-head">
             <Trophy className="h-3 w-3" />
             Recent Form
           </p>
@@ -1195,10 +1168,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         )}
 
         {/* Standings / Cup Stage / Key Factors */}
-        <div>
+        <div className="sh-detail-section">
           {loading ? (
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+              <p className="sh-detail-head">
                 <BarChart2 className="h-3 w-3" />
                 {game.competition ?? 'Ladder'}
               </p>
@@ -1210,7 +1183,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           ) : context?.competitionStage ? (
             // ── Cup / European competition ─────────────────────────────────
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+              <p className="sh-detail-head">
                 <Trophy className="h-3 w-3" />
                 {game.competition}
               </p>
@@ -1257,7 +1230,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           ) : hasStandings && !game.competition ? (
             // ── Regular league ladder (primary league games only) ──────────
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+              <p className="sh-detail-head">
                 <BarChart2 className="h-3 w-3" />
                 Ladder
               </p>
@@ -1281,7 +1254,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           ) : (
             // ── Key Factors fallback ───────────────────────────────────────
             <>
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+              <p className="sh-detail-head">
                 <TrendingUp className="h-3 w-3" />
                 Key Factors
               </p>
@@ -1304,10 +1277,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           )}
         </div>
 
-        {/* Local Weather Forecast */}
+        {/* Local Weather Forecast — kept as the 3rd cell when present (never dropped) */}
         {weather && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+          <div className="sh-detail-section">
+            <p className="sh-detail-head">
               <Cloud className="h-3 w-3" />
               Local Weather Forecast
             </p>
@@ -1333,32 +1306,31 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
 
       {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}
       {!compact && !aiLoading && aiPreview && (
-        <div className="grid grid-cols-2 gap-5">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-              <User className="h-3 w-3" />
-              Spotlight
-            </p>
+        <div className="sh-detail-two">
+          <div className="sh-detail-section">
+            <div className="sh-detail-head"><User className="sh-icon h-[13px] w-[13px]" />Spotlight</div>
             {aiPreview.playerSpotlight ? (
-              <SpotlightText text={aiPreview.playerSpotlight} />
+              // Flat string rendered as section body (no name/blurb split — none in the data).
+              <p className="sh-detail-body-sm">{aiPreview.playerSpotlight}</p>
             ) : (
               <p className="text-[11px] text-white/25 italic">No spotlight available</p>
             )}
           </div>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-              <TrendingUp className="h-3 w-3" />
-              Verdict
-            </p>
-            <p className="text-[11px] text-white/55 leading-relaxed">{aiPreview.verdict}</p>
-          </div>
+          {aiPreview.verdict && (
+            <div className="sh-detail-section" style={{ padding: 0 }}>
+              <blockquote className="sh-verdict">
+                <span className="sh-verdict-label"><TrendingUp className="sh-icon h-[11px] w-[11px]" />Verdict</span>
+                {aiPreview.verdict}
+              </blockquote>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── Team News ── (EPL only, when available; hidden in compact mode) */}
       {!compact && !loading && hasNews && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2.5">
+          <p className="sh-detail-head">
             <Newspaper className="h-3 w-3" />
             Team News
           </p>
@@ -1416,7 +1388,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       )}
 
       {/* ── Footer: odds + add-to-calendar ── */}
-      <div className="flex items-center justify-between pt-3 border-t border-white/6">
+      <div className="sh-detail-foot">
         {game.odds ? (
           <div className="flex items-center gap-5">
             <span className="flex items-center gap-1.5 text-[10px] font-semibold text-white/30">
@@ -1431,17 +1403,20 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
             </span>
           </div>
         ) : (
-          <span className="text-[10px] text-white/20">
+          <span className="sh-meta-item">
+            <MapPin className="sh-icon h-[13px] w-[13px]" />
             {game.venue || 'Venue TBC'}
           </span>
         )}
 
+        {/* Add to calendar — no handler yet; disabled "coming soon" placeholder (restyled). */}
         <button
-          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/35 hover:text-white/70 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/8"
+          className="sh-addcal"
+          disabled
           onClick={e => { e.stopPropagation(); }}
           title="Add to calendar (coming soon)"
         >
-          <CalendarPlus className="h-3.5 w-3.5" />
+          <CalendarPlus className="sh-icon h-3.5 w-3.5" />
           Add to calendar
         </button>
       </div>

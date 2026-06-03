@@ -1397,6 +1397,7 @@ export default function SchedulePage() {
                               <GameExpandPanel
                                 game={game}
                                 compact={isLeagueMode}
+                                onCollapse={() => toggleExpand(game.id)}
                                 onStandingsUpdate={rows => {
                                   if (standingsLeague) {
                                     standingsCacheRef.current.set(standingsLeague, rows.length > 0 ? rows : null);
