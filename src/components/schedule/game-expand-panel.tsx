@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Cloud, ChevronUp, MapPin, Flag } from 'lucide-react';
 // mock-data intentionally NOT imported — this component never shows mock results.
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
-import type { StandingRow } from '@/components/schedule/league-table';
+import type { StandingRow } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
@@ -267,14 +267,9 @@ function CompactForm({ results }: { results: GameResult[] }) {
             <span
               className={cn(
                 'sh-pip',
-                isDraw ? '' : r.isWin ? 'is-w' : 'is-l',
+                isDraw ? 'is-d' : r.isWin ? 'is-w' : 'is-l',
                 isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
               )}
-              style={isDraw ? {
-                background: 'color-mix(in oklab, #f5c518 18%, transparent)',
-                color: '#f5c518',
-                boxShadow: 'inset 0 0 0 1px color-mix(in oklab, #f5c518 35%, transparent)',
-              } : undefined}
             >
               {outcome}
             </span>

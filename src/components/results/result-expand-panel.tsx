@@ -7,9 +7,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
-import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey } from '@/types';
+import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey, StandingRow } from '@/types';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
-import type { StandingRow } from '@/components/schedule/league-table';
 
 type ResultEntry = GameResult & { team: Team; id: string };
 

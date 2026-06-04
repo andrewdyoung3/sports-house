@@ -21,7 +21,7 @@ export function GameCard({ game, teamColor, teamShortName, compLabel, userTz }: 
   return (
     <div
       className="sh-tile"
-      style={{ '--accent': teamColor, borderLeftColor: teamColor } as React.CSSProperties}
+      style={{ '--accent': teamColor } as React.CSSProperties}
     >
       {/* Comp row: opponent badge + competition / league label */}
       <div className="sh-tile-comp">

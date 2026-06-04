@@ -11,7 +11,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   trade:   'text-sky-400',
   recap:   'text-emerald-400',
   preview: 'text-indigo-400',
-  general: 'text-white/40',
+  general: '[color:var(--text-3)]',
 };
 
 interface NewsItemProps {

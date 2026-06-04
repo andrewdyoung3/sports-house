@@ -17,8 +17,7 @@ import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
-import type { StandingRow } from '@/components/schedule/league-table';
-import type { Team, UpcomingGame, SportKey } from '@/types';
+import type { Team, UpcomingGame, SportKey, StandingRow } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

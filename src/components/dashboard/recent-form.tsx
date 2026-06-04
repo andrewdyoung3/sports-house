@@ -30,14 +30,9 @@ export function RecentForm({ results }: RecentFormProps) {
             <span
               className={cn(
                 'sh-pip',
-                isDraw ? '' : r.isWin ? 'is-w' : 'is-l',
+                isDraw ? 'is-d' : r.isWin ? 'is-w' : 'is-l',
                 isLatest && 'ring-1 ring-white/25 ring-offset-1 ring-offset-black/60',
               )}
-              style={isDraw ? {
-                background: 'color-mix(in oklab, #f5c518 18%, transparent)',
-                color: '#f5c518',
-                boxShadow: 'inset 0 0 0 1px color-mix(in oklab, #f5c518 35%, transparent)',
-              } : undefined}
             >
               {label}
             </span>

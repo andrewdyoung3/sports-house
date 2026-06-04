@@ -326,6 +326,7 @@
 }
 .sh-pip.is-win  { color: var(--win);  background: color-mix(in oklab, var(--win) 18%, transparent);  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--win) 40%, transparent); }
 .sh-pip.is-loss { color: var(--loss); background: color-mix(in oklab, var(--loss) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--loss) 38%, transparent); }
+.sh-pip.is-d    { background: rgba(251, 191, 36, .15); color: #fbbf24; box-shadow: inset 0 0 0 1px rgba(251, 191, 36, .35); }
 
 .sh-meta-item { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: 13.5px; }
 .sh-meta-item .sh-icon { color: var(--text-3); }
@@ -582,7 +583,7 @@
 .sh-quick-bullet { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 .sh-quick-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--comp, var(--accent)); flex-shrink: 0; margin-top: 6px; }
 
-/* W/L pips (design values) */
+/* W/D/L pips (design values) */
 .sh-pip.is-w { background: color-mix(in oklab, var(--win) 18%, transparent);  color: var(--win);  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--win) 35%, transparent); }
 .sh-pip.is-l { background: color-mix(in oklab, var(--loss) 15%, transparent); color: var(--loss); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--loss) 30%, transparent); }
 

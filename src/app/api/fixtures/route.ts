@@ -423,6 +423,7 @@ interface SOOMeta {
   oppAbbr:  string;
   oppColor: string;
   oppLogoUrl: string;
+  oppTeamId: string; // our internal team ID for the opponent (drives name substitution)
 }
 
 const SOO_META: Record<string, SOOMeta> = {
@@ -431,12 +432,14 @@ const SOO_META: Record<string, SOOMeta> = {
     selfAbbr: 'QLD',         oppAbbr: 'NSW',
     oppColor: '#003DA5',
     oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289317.png',
+    oppTeamId: 'nrl-blues',
   },
   'nrl-blues': {
     self: 'New South Wales', opponent: 'Queensland',
     selfAbbr: 'NSW',         oppAbbr: 'QLD',
     oppColor: '#6B0000',
     oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289318.png',
+    oppTeamId: 'nrl-maroons',
   },
 };
 
@@ -520,6 +523,7 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
       opponentAbbr:    meta.oppAbbr,
       opponentColor:   meta.oppColor,
       opponentLogoUrl: meta.oppLogoUrl,
+      opponentId:      meta.oppTeamId,
       isHome,
       date:            utcDate.toISOString(),
       time:            aestDisplay(aestDate),

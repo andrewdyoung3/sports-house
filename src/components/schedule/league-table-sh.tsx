@@ -17,8 +17,7 @@
  */
 
 import { TEAMS } from '@/lib/teams';
-import type { SportKey } from '@/types';
-import type { StandingRow } from '@/components/schedule/league-table';
+import type { SportKey, StandingRow } from '@/types';
 
 interface LeagueTableShProps {
   league: SportKey;
