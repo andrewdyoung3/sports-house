@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Cloud, ChevronUp, MapPin } from 'lucide-react';
+import { Trophy, TrendingUp, Zap, CalendarPlus, Info, Loader2, Newspaper, BarChart2, Shield, User, ArrowUp, ArrowDown, Cloud, ChevronUp, MapPin, Flag } from 'lucide-react';
 // mock-data intentionally NOT imported — this component never shows mock results.
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/components/schedule/league-table';
@@ -384,7 +384,7 @@ function AILoadingCard({ color }: { color: string }) {
 
 // ── F1 circuit expand panel ────────────────────────────────────────────────────
 
-function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: string }) {
+function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; className?: string; onCollapse?: () => void }) {
   const { team } = game;
   const circuitId = game.opponentId ?? '';
   const circuit   = F1_CIRCUITS[circuitId];
@@ -540,9 +540,26 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
 
   return (
     <div
-      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out' }}
+      // Step 7 — F1 panel now joins the `.sh-detail-*` editorial system: `sh-theme` makes
+      // the design tokens resolve and `--accent` is driven by the followed F1 entity's
+      // colour (e.g. #E8002D for the Formula 1 championship follow, the constructor's
+      // colour for constructor follows). No backdrop-filter; bg + animation unchanged.
+      className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
+      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
     >
+      {/* ── Collapse pill — drives the feed's EXISTING expand toggle (Step 7). Absent for
+          the old F1 hero mount, which keeps its own external "Collapse" toggle. ── */}
+      {onCollapse && (
+        <button
+          type="button"
+          className="sh-detail-collapse"
+          onClick={(e) => { e.stopPropagation(); onCollapse(); }}
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+          Collapse
+        </button>
+      )}
+
       {/* Circuit map */}
       {circuit && !imgError && (
         <div className="rounded-xl overflow-hidden">
@@ -555,133 +572,163 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
         </div>
       )}
 
-      {/* Starting grid — shown for Race sessions once qualifying is complete */}
+      {/* Starting grid — shown for Race sessions once qualifying is complete.
+          Panel-local component (no off-limits consumer) → wrapped in a `.sh-detail-section`
+          shell; its own head was restyled to `.sh-detail-head`. Constructor-coloured rows
+          are intentional F1 branding and are preserved. */}
       {game.competition === 'Race' && gridData && gridData.length > 0 && (
-        <F1StartingGrid
-          grid={gridData}
-          followedDriverId={
-            !isConstructorFollow && team.id !== 'f1-championship'
-              ? (F1_DRIVER_IDS[team.id] ?? undefined)
-              : undefined
-          }
-          followedConstructorName={isConstructorFollow ? followedConstructorName ?? undefined : undefined}
-          accentColor={team.primaryColor}
-        />
+        <div className="sh-detail-section">
+          <F1StartingGrid
+            grid={gridData}
+            followedDriverId={
+              !isConstructorFollow && team.id !== 'f1-championship'
+                ? (F1_DRIVER_IDS[team.id] ?? undefined)
+                : undefined
+            }
+            followedConstructorName={isConstructorFollow ? followedConstructorName ?? undefined : undefined}
+            accentColor={team.primaryColor}
+          />
+        </div>
       )}
 
-      {/* AI Race Preview — only for Race/Qualifying/Sprint sessions */}
+      {/* ── AI Race Preview — Race/Qualifying/Sprint sessions only. Mapped to the same
+          vocabulary as the two-team panel: context → Match Preview, keyInsights → Quick
+          Take, tacticalBattle → Field Form (F1's label), playerSpotlight + verdict →
+          .sh-detail-two. ── */}
       {(['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(game.competition ?? '')) && (
-        <div className="space-y-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5">
-            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Race Preview
-            {aiUpdating && (
-              <span className="flex items-center gap-1 text-[9px] font-normal text-white/25 normal-case tracking-normal ml-auto">
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                Updating with qualifying…
-              </span>
-            )}
-          </p>
-
+        <>
           {aiLoading ? (
-            <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Generating preview…
-            </div>
+            <AILoadingCard color={team.primaryColor} />
           ) : aiError ? (
             <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
           ) : aiPreview ? (
-            <div className="space-y-3">
-              {/* context */}
+            <>
+              {/* context → Match Preview */}
               {aiPreview.context && (
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Context</p>
-                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.context}</p>
+                  <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
+                  {aiUpdating && (
+                    <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mb-1.5">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      Updating with qualifying…
+                    </p>
+                  )}
+                  <p className="sh-detail-body">{aiPreview.context}</p>
                 </div>
               )}
-              {/* tacticalBattle → "Field Form" in F1 */}
+              {/* keyInsights → Quick Take (rendered for F1 for the first time — the data was
+                  always returned by the preview API; the old F1 panel just didn't show it) */}
+              {aiPreview.keyInsights && aiPreview.keyInsights.length > 0 && (
+                <div>
+                  <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Quick Take</div>
+                  <ul className="sh-quick-list">
+                    {aiPreview.keyInsights.map((ins, i) => (
+                      <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{ins}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {/* tacticalBattle → Field Form */}
               {aiPreview.tacticalBattle && (
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Field Form</p>
-                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.tacticalBattle}</p>
+                  <div className="sh-detail-head"><Shield className="sh-icon h-[13px] w-[13px]" />Field Form</div>
+                  <p className="sh-detail-body">{aiPreview.tacticalBattle}</p>
                 </div>
               )}
-              {/* playerSpotlight → focused driver/constructor */}
-              {aiPreview.playerSpotlight && (
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: `${team.primaryColor}99` }}>
-                    {team.division ? `${team.shortName} — ${team.division}` : team.shortName}
-                  </p>
-                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.playerSpotlight}</p>
+              {/* playerSpotlight + verdict → side-by-side editorial block */}
+              {(aiPreview.playerSpotlight || aiPreview.verdict) && (
+                <div className="sh-detail-two">
+                  <div className="sh-detail-section">
+                    <div className="sh-detail-head"><User className="sh-icon h-[13px] w-[13px]" />Spotlight</div>
+                    {aiPreview.playerSpotlight ? (
+                      (() => {
+                        // Same em-dash split as the two-team panel: "Name — reason".
+                        const sep = aiPreview.playerSpotlight.search(/ [—–-] /);
+                        if (sep === -1) {
+                          return <p className="sh-detail-body-sm">{aiPreview.playerSpotlight}</p>;
+                        }
+                        const name  = aiPreview.playerSpotlight.slice(0, sep);
+                        const blurb = aiPreview.playerSpotlight.slice(sep).replace(/^ [—–-] /, '');
+                        return (
+                          <>
+                            <div className="sh-spotlight-name">
+                              <LogoThumb src={TEAM_LOGOS[team.id]} abbr={team.abbreviation} />
+                              {name}
+                            </div>
+                            <p className="sh-detail-body-sm">{blurb}</p>
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <p className="text-[11px] text-white/25 italic">No spotlight available</p>
+                    )}
+                  </div>
+                  {aiPreview.verdict && (
+                    <div className="sh-detail-section" style={{ padding: 0 }}>
+                      <blockquote className="sh-verdict">
+                        <span className="sh-verdict-label"><TrendingUp className="sh-icon h-[11px] w-[11px]" />Verdict</span>
+                        {aiPreview.verdict}
+                      </blockquote>
+                    </div>
+                  )}
                 </div>
               )}
-              {/* verdict */}
-              {aiPreview.verdict && (
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-white/25 mb-1">Watch For</p>
-                  <p className="text-[12px] text-white/70 leading-relaxed">{aiPreview.verdict}</p>
-                </div>
-              )}
-            </div>
+            </>
           ) : null}
-        </div>
+        </>
       )}
 
       {/* Circuit info */}
-      {circuit ? (
-        <div className="space-y-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5">
-            <span style={{ color: team.primaryColor }}>◉</span>
-            {circuit.name}
-            <span className="text-white/20 font-normal">·</span>
-            <span className="text-white/40 font-normal normal-case tracking-normal">{circuit.country}</span>
+      <div className="sh-detail-section">
+        {circuit ? (
+          <>
+            <div className="sh-detail-head">
+              <Info className="sh-icon h-[13px] w-[13px]" />
+              {circuit.name}
+              <span style={{ color: 'var(--text-3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>· {circuit.country}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+              <div className="sh-detail-body-sm">
+                <span style={{ color: 'var(--text-3)' }}>Length</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600, marginLeft: 8 }}>{circuit.length}</span>
+              </div>
+              <div className="sh-detail-body-sm">
+                <span style={{ color: 'var(--text-3)' }}>Laps</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600, marginLeft: 8 }}>{circuit.laps}</span>
+              </div>
+              <div className="sh-detail-body-sm col-span-2">
+                <span style={{ color: 'var(--text-3)' }}>Lap record</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600, marginLeft: 8 }}>{circuit.lapRecord}</span>
+              </div>
+              <div className="sh-detail-body-sm col-span-2">
+                <span style={{ color: 'var(--text-3)' }}>DRS zones</span>
+                <span style={{ color: 'var(--text)', fontWeight: 600, marginLeft: 8 }}>{circuit.drsZones}</span>
+                <span style={{ color: 'var(--text-3)' }}> — {circuit.drsDescription}</span>
+              </div>
+            </div>
+            <p className="sh-detail-body-sm" style={{ marginTop: 8 }}>{circuit.description}</p>
+          </>
+        ) : (
+          <p className="sh-detail-body-sm">
+            {game.opponent}{game.venue ? ` · ${game.venue}` : ''}
           </p>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
-            <div>
-              <span className="text-white/35">Length</span>
-              <span className="ml-2 text-white/75 font-semibold">{circuit.length}</span>
-            </div>
-            <div>
-              <span className="text-white/35">Laps</span>
-              <span className="ml-2 text-white/75 font-semibold">{circuit.laps}</span>
-            </div>
-            <div className="col-span-2">
-              <span className="text-white/35">Lap record</span>
-              <span className="ml-2 text-white/75 font-semibold">{circuit.lapRecord}</span>
-            </div>
-            <div className="col-span-2">
-              <span className="text-white/35">DRS zones</span>
-              <span className="ml-2 text-white/75 font-semibold">{circuit.drsZones}</span>
-              <span className="ml-1.5 text-white/40 text-[10px]">— {circuit.drsDescription}</span>
-            </div>
-          </div>
-          <p className="text-[11px] text-white/50 leading-relaxed pt-1">{circuit.description}</p>
-        </div>
-      ) : (
-        <div>
-          <p className="text-[11px] text-white/40">
-            {game.opponent}
-            {game.venue ? ` · ${game.venue}` : ''}
-          </p>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Drivers' Championship standings */}
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-3">
-          <Trophy className="h-3 w-3" />
-          Drivers&apos; Championship
-        </p>
+      {/* Drivers' Championship standings — local restyle to the .sh-detail-ladder
+          vocabulary (NOT the shared LeagueTable, which isn't used here and whose single
+          F1 column set can't carry the constructor column + per-row colours + highlight). */}
+      <div className="sh-detail-section">
+        <div className="sh-detail-head"><Trophy className="sh-icon h-[13px] w-[13px]" />Drivers&apos; Championship</div>
         {loadingStandings ? (
           <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Loading standings…
           </div>
         ) : driverStandings && driverStandings.length > 0 ? (
-          <div className="space-y-1.5">
+          <div>
             {driverStandings.slice(0, 15).map((row, i) => {
               const constructorColor = CONSTRUCTOR_COLORS_MAP[row.constructorName ?? ''] ?? '#9CA3AF';
-              const isTop3 = row.position <= 3;
               // Highlight: followed driver → match by teamId; followed constructor → match all their drivers
               const isHighlighted = isConstructorFollow
                 ? row.constructorName === followedConstructorName
@@ -689,55 +736,39 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
               return (
                 <div
                   key={i}
-                  className={cn('flex items-center gap-2 text-[11px] rounded-lg px-1', isHighlighted && 'bg-white/6')}
-                  style={isHighlighted ? { borderLeft: `2px solid ${team.primaryColor}`, paddingLeft: '6px' } : {}}
+                  className="sh-detail-ladder-row"
+                  style={isHighlighted ? { borderLeft: '2px solid var(--accent)', paddingLeft: 6, background: 'color-mix(in oklab, var(--accent) 8%, transparent)' } : undefined}
                 >
-                  <span
-                    className={cn(
-                      'w-5 text-right font-black tabular-nums shrink-0',
-                      isTop3 ? 'text-white/85' : 'text-white/40',
-                    )}
-                  >
-                    {row.position}
-                  </span>
-                  <span
-                    className="w-7 text-[10px] font-black shrink-0 truncate"
-                    style={{ color: constructorColor }}
-                  >
+                  <span className="sh-l-pos">{row.position}</span>
+                  <span className="text-[10px] font-black shrink-0 w-7 truncate" style={{ color: constructorColor }}>
                     {row.name.split(' ').map((w: string) => w[0]).join('').slice(0, 3).toUpperCase()}
                   </span>
-                  <span className="flex-1 text-white/70 font-semibold truncate">{row.name}</span>
-                  <span className="text-[10px] text-white/35 shrink-0 truncate max-w-[80px]">
-                    {row.constructorName}
-                  </span>
-                  <span className="text-[11px] font-black text-white/85 shrink-0 w-12 text-right tabular-nums">
-                    {row.points ?? 0}<span className="text-[9px] font-normal text-white/35">pts</span>
+                  <span className="sh-l-name">{row.name}</span>
+                  <span className="sh-l-record truncate max-w-[80px]">{row.constructorName}</span>
+                  <span className="sh-l-pts">
+                    {row.points ?? 0}<span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-3)' }}>pts</span>
                   </span>
                 </div>
               );
             })}
           </div>
         ) : (
-          <p className="text-[11px] text-white/30 italic">Season standings not yet available</p>
+          <p className="sh-detail-body-sm" style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>Season standings not yet available</p>
         )}
       </div>
 
-      {/* Constructors' Championship standings */}
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-3">
-          <Trophy className="h-3 w-3" />
-          Constructors&apos; Championship
-        </p>
+      {/* Constructors' Championship standings — same local ladder restyle */}
+      <div className="sh-detail-section">
+        <div className="sh-detail-head"><Trophy className="sh-icon h-[13px] w-[13px]" />Constructors&apos; Championship</div>
         {loadingStandings ? (
           <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Loading standings…
           </div>
         ) : constructorStandings && constructorStandings.length > 0 ? (
-          <div className="space-y-1.5">
+          <div>
             {constructorStandings.map((row, i) => {
               const constructorColor = (row as any).primaryColor ?? CONSTRUCTOR_COLORS_MAP[row.name] ?? '#9CA3AF';
-              const isTop3 = row.position <= 3;
               // Highlight: followed constructor → match by teamId or name; followed driver → match their constructor
               const isHighlighted = isConstructorFollow
                 ? row.teamId === team.id || row.name === followedConstructorName
@@ -745,47 +776,41 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
               return (
                 <div
                   key={i}
-                  className={cn('flex items-center gap-2 text-[11px] rounded-lg px-1', isHighlighted && 'bg-white/6')}
-                  style={isHighlighted ? { borderLeft: `2px solid ${team.primaryColor}`, paddingLeft: '6px' } : {}}
+                  className="sh-detail-ladder-row"
+                  style={isHighlighted ? { borderLeft: '2px solid var(--accent)', paddingLeft: 6, background: 'color-mix(in oklab, var(--accent) 8%, transparent)' } : undefined}
                 >
-                  <span
-                    className={cn(
-                      'w-5 text-right font-black tabular-nums shrink-0',
-                      isTop3 ? 'text-white/85' : 'text-white/40',
-                    )}
-                  >
-                    {row.position}
-                  </span>
-                  <span
-                    className="w-7 text-[10px] font-black shrink-0 truncate"
-                    style={{ color: constructorColor }}
-                  >
+                  <span className="sh-l-pos">{row.position}</span>
+                  <span className="text-[10px] font-black shrink-0 w-7 truncate" style={{ color: constructorColor }}>
                     {row.name.slice(0, 3).toUpperCase()}
                   </span>
-                  <span className="flex-1 text-white/70 font-semibold truncate">{row.name}</span>
-                  <span className="text-[10px] text-white/35 shrink-0">
-                    {row.wins > 0 ? `${row.wins}W` : ''}
-                  </span>
-                  <span className="text-[11px] font-black text-white/85 shrink-0 w-12 text-right tabular-nums">
-                    {row.points ?? 0}<span className="text-[9px] font-normal text-white/35">pts</span>
+                  <span className="sh-l-name">{row.name}</span>
+                  <span className="sh-l-record">{row.wins > 0 ? `${row.wins}W` : ''}</span>
+                  <span className="sh-l-pts">
+                    {row.points ?? 0}<span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-3)' }}>pts</span>
                   </span>
                 </div>
               );
             })}
           </div>
         ) : (
-          <p className="text-[11px] text-white/30 italic">Season standings not yet available</p>
+          <p className="sh-detail-body-sm" style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>Season standings not yet available</p>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-end pt-3 border-t border-white/6">
+      {/* Footer — circuit/venue meta + disabled "coming soon" add-to-calendar placeholder
+          (the F1 button never had a handler; restyled to match the two-team .sh-addcal). */}
+      <div className="sh-detail-foot">
+        <span className="sh-meta-item">
+          <MapPin className="sh-icon h-[13px] w-[13px]" />
+          {circuit?.name || game.venue || 'Circuit TBC'}
+        </span>
         <button
-          className="flex items-center gap-1.5 text-[11px] font-semibold text-white/35 hover:text-white/70 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/8"
+          className="sh-addcal"
+          disabled
           onClick={e => { e.stopPropagation(); }}
           title="Add to calendar (coming soon)"
         >
-          <CalendarPlus className="h-3.5 w-3.5" />
+          <CalendarPlus className="sh-icon h-3.5 w-3.5" />
           Add to calendar
         </button>
       </div>
@@ -798,7 +823,11 @@ function F1ExpandPanel({ game, className }: { game: ScheduleEntry; className?: s
 // Wrapper: routes F1 to its own panel before any hooks are called in the inner component.
 export function GameExpandPanel(props: GameExpandPanelProps) {
   if (props.game.team.league === 'f1') {
-    return <F1ExpandPanel game={props.game} className={props.className} />;
+    // Forward onCollapse so the F1 feed rows get the collapse pill (Step 7). The old F1
+    // hero mounts without onCollapse → no in-panel pill there (its card has its own
+    // external toggle). onStandingsUpdate is intentionally not forwarded — the F1 panel
+    // fetches its own driver + constructor standings and syncs no sidebar.
+    return <F1ExpandPanel game={props.game} className={props.className} onCollapse={props.onCollapse} />;
   }
   return <GameExpandPanelInner {...props} />;
 }
