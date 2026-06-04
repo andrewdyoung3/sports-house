@@ -885,7 +885,10 @@ export default function ResultsPage() {
                           />
                           {everExpandedIds.has(result.id) && (
                             <div style={{ display: isExpanded ? 'block' : 'none' }}>
-                              <ResultExpandPanel result={result} />
+                              <ResultExpandPanel
+                                result={result}
+                                onCollapse={() => toggleExpand(result.id)}
+                              />
                             </div>
                           )}
                         </div>
