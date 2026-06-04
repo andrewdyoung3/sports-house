@@ -481,7 +481,17 @@
 .sh-theme .sh-fix {
   border-left: var(--fix-border-w, 4px) solid var(--accent);
   padding-left: var(--fix-border-pad, 18px);
+  /* Two-column layout: badge column left, text column right */
+  display: flex; flex-direction: row; align-items: center; gap: 14px;
+  padding-top: 10px; padding-bottom: 10px;
 }
+/* Text column: all match/time/sub content in a flex-column so .sh-fix-sub
+   naturally aligns under the names rather than starting below the badge. */
+.sh-theme .sh-fix-text {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+}
+/* Remove the old margin-top on sh-fix-sub — gap on the parent replaces it. */
+.sh-theme .sh-fix-text .sh-fix-sub { margin-top: 0; }
 .sh-theme .sh-fix-wm {
   font-size: 128px;
   letter-spacing: -5px;
@@ -493,6 +503,17 @@
     0 1px 3px rgba(0, 0, 0, .22);
 }
 .sh-theme .sh-fix-kick { font-size: 22px; font-weight: 800; }
+
+/* ── Feature-team badge inside .sh-fix cards (card badge restyling) ──
+   Larger, rounded-square, with a soft team-colour glow that follows the
+   logo's alpha shape. Both the TeamBadge outer wrapper div AND its inner
+   clip div need the radius override so the image clips correctly to 12px. */
+.sh-theme .sh-fix-badge-f {
+  display: inline-flex;
+  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--accent) 50%, transparent));
+}
+.sh-theme .sh-fix-badge-f > div,
+.sh-theme .sh-fix-badge-f > div > div:first-child { border-radius: 12px; }
 
 .sh-fix-detail {
   position: relative; z-index: 1; margin-top: 16px; padding-top: 16px;
@@ -640,6 +661,12 @@
 /* following */
 .sh-following { padding: 16px 18px; }
 .sh-follow-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; justify-items: center; }
+/* Auto-fill wraps before clipping; padding keeps 42px badges away from
+   the .sh-card overflow:hidden edge on all sides. */
+.sh-theme .sh-follow-grid {
+  grid-template-columns: repeat(auto-fill, minmax(42px, 46px));
+  padding: 4px;
+}
 .sh-follow-item { transition: transform .15s; }
 .sh-follow-item:hover { transform: translateY(-2px); }
 
@@ -747,6 +774,9 @@
   color: var(--text); letter-spacing: -0.2px; font-variant-numeric: tabular-nums;
 }
 .sh-tile-venue { font-size: 12.5px; color: var(--text-3); }
+/* Team-coloured left edge for tiles in .sh-theme contexts (--comp → --accent override,
+   mirrors .sh-theme .sh-fix convention). Per-tile --accent set inline from teamColor. */
+.sh-theme .sh-tile { border-left-color: var(--accent); }
 
 /* ── Scoped reduced-motion guard — collapse the new system's motion, matching the
    app's existing prefers-reduced-motion convention. ── */

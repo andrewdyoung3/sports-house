@@ -373,10 +373,20 @@ function ScheduleRow({
   // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
 
-  // Name-length responsive adjustments: shrink font + abbreviate badge when combined names are long
-  const combinedNameLen = (team.shortName + (game.opponent ?? '')).length;
-  const nameFontSize    = combinedNameLen > 22 ? '14px' : '17px';
-  const compactBadge    = combinedNameLen > 22;
+  // Three-tier opponent name: (1) raw API string when ≤14 chars; (2) our team.name
+  // when shorter than the API string (e.g. "Greater Western Sydney" → "GWS Giants");
+  // (3) team.shortName when team.name is no shorter (e.g. "Tottenham Hotspur" → "Spurs").
+  // Compact font (last resort): only if the DISPLAY name is still > 11 chars after
+  // substitution — applied equally to BOTH names so the card is always one consistent size.
+  const SHORTNAME_THRESHOLD = 14;
+  const oppTeam = game.opponentId ? TEAMS.find(t => t.id === game.opponentId) : undefined;
+  const oppDisplayName = game.opponent.length > SHORTNAME_THRESHOLD && oppTeam
+    ? (oppTeam.name.length < game.opponent.length ? oppTeam.name : oppTeam.shortName)
+    : game.opponent;
+  const longerDisplayLen = Math.max(team.shortName.length, oppDisplayName.length);
+  const isCompact     = longerDisplayLen > 11;
+  const nameFontSize  = isCompact ? '14px' : '17px';
+  const compactBadge  = isCompact;
 
   // Mobile time split: strip the trailing TZ abbreviation from the time string so it
   // can be shown on a separate line, freeing horizontal space for the team names.
@@ -407,7 +417,7 @@ function ScheduleRow({
     const compColor  = compMeta?.color ?? 'rgba(255,255,255,0.7)';
     const cricketColor = game.cricketFormat === 'test' ? '#e2a84b' : game.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
     const cricketLabel = game.cricketFormat === 'test' ? 'Test' : game.cricketFormat?.toUpperCase();
-    const nameSize   = combinedNameLen > 22 ? { fontSize: '14px' } : undefined; // keep the responsive clamp on top of the design size
+    const nameSize   = isCompact ? { fontSize: '14px' } : undefined;
     const posStyle   = { fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: 'var(--text-3)' } as React.CSSProperties;
 
     return (
@@ -424,50 +434,58 @@ function ScheduleRow({
       >
         <div className="sh-fix-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
 
-        <div className="sh-fix-main">
-          {/* Outer wraps so ONLY the trailing tags drop to a second line; the matchup
-              (two teams + separator) is an inner nowrap unit that never breaks. Positions
-              ride with their team inside the nowrap unit (wrapping them away would orphan
-              "(3rd)"); the comp/cricket/following pills wrap before the matchup ever does. */}
-          <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
-              <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={34} logoFilter={teamLogoFilter} />
-              <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
-              {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
-              <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
-              <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={34} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
-              <span className="sh-fix-name" style={nameSize}>{game.opponent}</span>
-              {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
-            </span>
-            {team.league !== 'cricket_int' && (
-              <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
-            )}
-            {isCricket && game.cricketFormat && (
-              <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>
-            )}
-            {isFollowed && (
-              <span className="sh-comptag" style={{ '--c': team.primaryColor } as React.CSSProperties}>★ Following</span>
-            )}
+        {/* Feature badge: left column (direct flex item on the article) */}
+        <span className="sh-fix-badge-f">
+          <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={56} logoFilter={teamLogoFilter} />
+        </span>
+
+        {/* Text column: main row + sub row, so the sub aligns under names */}
+        <div className="sh-fix-text">
+          <div className="sh-fix-main">
+            {/* Outer wraps so ONLY the trailing tags drop to a second line; the matchup
+                (two teams + separator) is an inner nowrap unit that never breaks. Positions
+                ride with their team inside the nowrap unit (wrapping them away would orphan
+                "(3rd)"); the comp/cricket/following pills wrap before the matchup ever does. */}
+            <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
+                <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
+                {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
+                <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
+                {/* Opponent badge: 40px circle (bumped from 32 for clearer hierarchy) */}
+                <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={40} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
+                <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
+                {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
+              </span>
+              {team.league !== 'cricket_int' && (
+                <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
+              )}
+              {isCricket && game.cricketFormat && (
+                <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>
+              )}
+              {isFollowed && (
+                <span className="sh-comptag" style={{ '--c': team.primaryColor } as React.CSSProperties}>★ Following</span>
+              )}
+            </div>
+
+            <div className="sh-fix-time">
+              <span className="sh-fix-kick">
+                <span className="lg:hidden">{mobileTimeOnly}</span>
+                <span className="hidden lg:inline">{displayTime}</span>
+              </span>
+              {mobileTzAbbr && (
+                <span className="lg:hidden" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-3)' }}>{mobileTzAbbr}</span>
+              )}
+              <span className={'sh-tag-venue is-' + (game.isHome ? 'home' : 'away')}>{game.isHome ? 'Home' : 'Away'}</span>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-3)' }} />
+            </div>
           </div>
 
-          <div className="sh-fix-time">
-            <span className="sh-fix-kick">
-              <span className="lg:hidden">{mobileTimeOnly}</span>
-              <span className="hidden lg:inline">{displayTime}</span>
-            </span>
-            {mobileTzAbbr && (
-              <span className="lg:hidden" style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-3)' }}>{mobileTzAbbr}</span>
+          <div className="sh-fix-sub">
+            {game.venue && (
+              <span className="sh-meta-item"><MapPin size={14} /><span className="truncate" style={{ maxWidth: '220px' }}>{game.venue}</span></span>
             )}
-            <span className={'sh-tag-venue is-' + (game.isHome ? 'home' : 'away')}>{game.isHome ? 'Home' : 'Away'}</span>
-            <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-3)' }} />
+            <span className="sh-meta-item"><Tv size={14} /><span className="truncate">{dedupeChannels(game.broadcast, game.streaming)}</span></span>
           </div>
-        </div>
-
-        <div className="sh-fix-sub">
-          {game.venue && (
-            <span className="sh-meta-item"><MapPin size={14} /><span className="truncate" style={{ maxWidth: '220px' }}>{game.venue}</span></span>
-          )}
-          <span className="sh-meta-item"><Tv size={14} /><span className="truncate">{dedupeChannels(game.broadcast, game.streaming)}</span></span>
         </div>
       </article>
     );

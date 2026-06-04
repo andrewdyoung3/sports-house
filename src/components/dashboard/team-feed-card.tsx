@@ -1,12 +1,13 @@
 'use client';
 
+// Step 9 — zinc-* replaced with .sh-* token system throughout. Section heads
+// use .sh-detail-head (accent icon + label); game tiles use .sh-tile-grid.
+
 import { useState, useEffect } from 'react';
 import { Calendar, Newspaper, Trophy } from 'lucide-react';
 import Link from 'next/link';
 
 import { Card, CardHeader, CardBody, CardSection } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { GameCard } from '@/components/dashboard/game-card';
 import { NewsCard } from '@/components/dashboard/news-item';
@@ -72,10 +73,16 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-bold text-white leading-tight">{team.name}</h2>
-                <Badge variant="default" className="text-[10px]">{team.league.toUpperCase()}</Badge>
+                <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--text)' }}>{team.name}</h2>
+                {/* Competition/league badge — .sh-comptag, accent-coloured */}
+                <span
+                  className="sh-comptag text-[10px]"
+                  style={{ '--c': team.primaryColor } as React.CSSProperties}
+                >
+                  {team.league.toUpperCase()}
+                </span>
               </div>
-              <p className="text-xs text-zinc-500 mt-0.5">
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
                 {team.division ?? team.league.toUpperCase()} · {team.venue}
               </p>
             </div>
@@ -86,22 +93,23 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
             <div className="text-right hidden sm:block">
               {dataLoaded && results.length > 0 ? (
                 <>
-                  <p className="text-sm font-bold text-zinc-200">
-                    <span className="text-emerald-400">{wins}W</span>
+                  <p className="text-sm font-bold" style={{ color: 'var(--text-2)' }}>
+                    <span style={{ color: 'var(--win)' }}>{wins}W</span>
                     {' – '}
-                    <span className="text-red-400">{losses}L</span>
+                    <span style={{ color: 'var(--loss)' }}>{losses}L</span>
                   </p>
-                  <p className="text-[10px] text-zinc-600">Last 5</p>
+                  <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>Last 5</p>
                 </>
               ) : dataLoaded ? (
-                <p className="text-[10px] text-zinc-600">No results</p>
+                <p className="text-[10px]" style={{ color: 'var(--text-3)' }}>No results</p>
               ) : (
-                <p className="text-[10px] text-zinc-600 animate-pulse">Loading…</p>
+                <p className="text-[10px] animate-pulse" style={{ color: 'var(--text-3)' }}>Loading…</p>
               )}
             </div>
             <button
               onClick={() => onUnfollow(team.id)}
-              className="text-zinc-600 hover:text-zinc-400 text-xs transition-colors px-1 py-1 rounded-lg hover:bg-zinc-800"
+              className="text-xs transition-colors px-1 py-1 rounded-lg hover:bg-white/[0.06]"
+              style={{ color: 'var(--text-3)' }}
               title={`Unfollow ${team.name}`}
               aria-label={`Unfollow ${team.name}`}
             >
@@ -114,7 +122,8 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
       {/* ── Recent Form ── */}
       <CardSection>
         <div className="flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5">
+          {/* .sh-detail-head with marginBottom:0 — sits inline with RecentForm pips */}
+          <p className="sh-detail-head" style={{ marginBottom: 0 }}>
             <Trophy className="h-3 w-3" /> Recent Form
           </p>
           <RecentForm results={results} />
@@ -124,12 +133,20 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
       {/* ── Upcoming Games ── */}
       {games.length > 0 && (
         <CardSection>
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5 mb-3">
+          <p className="sh-detail-head">
             <Calendar className="h-3 w-3" /> Next Up
           </p>
-          <div className="space-y-4">
+          {/* .sh-tile-grid: 2-col grid, up to 2 tiles per team */}
+          <div className="sh-tile-grid">
             {games.map(game => (
-              <GameCard key={game.id} game={game} teamColor={team.primaryColor} userTz={userTz} />
+              <GameCard
+                key={game.id}
+                game={game}
+                teamColor={team.primaryColor}
+                teamShortName={team.shortName}
+                compLabel={game.competition ?? team.league.toUpperCase()}
+                userTz={userTz}
+              />
             ))}
           </div>
         </CardSection>
@@ -137,7 +154,7 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
 
       {/* ── Latest News ── */}
       <CardBody>
-        <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5 mb-2">
+        <p className="sh-detail-head">
           <Newspaper className="h-3 w-3" /> Latest News
         </p>
         {news.length > 0 ? (
@@ -147,7 +164,7 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
             ))}
           </div>
         ) : (
-          <p className="text-[11px] text-zinc-700 italic">
+          <p className="text-[11px] italic" style={{ color: 'var(--text-3)' }}>
             {dataLoaded ? 'No recent news available' : 'Loading…'}
           </p>
         )}

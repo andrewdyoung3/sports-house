@@ -1,19 +1,29 @@
 import { cn } from '@/lib/utils';
-import type { HTMLAttributes } from 'react';
+import type { HTMLAttributes, CSSProperties } from 'react';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  /** Highlight the top edge in a custom color (used for team branding). */
+  /** Team accent colour: drives the top edge + sets --accent for all descendants. */
   accentColor?: string;
 }
 
+// Step 9 — dashboard-only component; reskinned to sh-theme + token surface.
+// sh-theme on the root means all Card descendants (section heads, pips, etc.)
+// resolve the .sh-* token system. --accent = accentColor lets child .sh-*
+// classes read the team colour automatically (icons, quick-dots, etc.).
 export function Card({ className, accentColor, style, children, ...props }: CardProps) {
   return (
     <div
-      className={cn('glass rounded-2xl overflow-hidden', className)}
+      className={cn('sh-theme rounded-[var(--radius-lg)] overflow-hidden', className)}
       style={{
-        ...(accentColor ? { borderTopColor: accentColor, borderTopWidth: '2px' } : {}),
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        ...(accentColor ? {
+          borderTopColor: accentColor,
+          borderTopWidth: '3px',
+          '--accent': accentColor,
+        } : {}),
         ...style,
-      }}
+      } as CSSProperties}
       {...props}
     >
       {children}
@@ -21,14 +31,30 @@ export function Card({ className, accentColor, style, children, ...props }: Card
   );
 }
 
-export function CardHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-5 py-4 border-b border-white/8', className)} {...props} />;
+export function CardHeader({ className, style, children, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('px-5 py-4', className)}
+      style={{ borderBottom: '1px solid var(--border)', ...style }}
+      {...props}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function CardBody({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={cn('px-5 py-4', className)} {...props} />;
 }
 
-export function CardSection({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('px-5 py-3 border-t border-white/6', className)} {...props} />;
+export function CardSection({ className, style, children, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('px-5 py-3', className)}
+      style={{ borderTop: '1px solid var(--border)', ...style }}
+      {...props}
+    >
+      {children}
+    </div>
+  );
 }
