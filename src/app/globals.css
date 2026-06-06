@@ -358,6 +358,18 @@
   color: var(--wm-color, rgba(255,255,255,.05)); pointer-events: none; user-select: none;
   z-index: 0;
 }
+/* Hero watermark — logo image replaces text when a real logo URL is available. */
+.sh-hero-wm-logo {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  height: 180px; width: auto; object-fit: contain;
+  opacity: 0.20; pointer-events: none; user-select: none; z-index: 0;
+}
+/* Hero competition logo — sits lower-right, smaller than the team layer. */
+.sh-hero-comp-logo {
+  position: absolute; right: 16px; bottom: 14px;
+  height: 70px; width: auto; object-fit: contain;
+  opacity: 0.18; pointer-events: none; user-select: none; z-index: 0;
+}
 .sh-hero-body { position: relative; z-index: 1; padding: 24px 30px 22px; }
 .sh-hero-top { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
 .sh-hero-kicker {
@@ -497,6 +509,12 @@
   font-size: 128px;
   letter-spacing: -5px;
   color: var(--fix-wm-color, color-mix(in oklab, var(--accent) 24%, transparent));
+}
+/* Card watermark — logo image inside the .sh-fix-wm wrapper. The wrapper's absolute
+   positioning is inherited; the img just needs sizing and opacity. */
+.sh-theme .sh-fix-wm > img {
+  height: 68px; width: auto; max-width: 120px;
+  object-fit: contain; opacity: 0.10; display: block;
 }
 .sh-theme .sh-fix:hover {
   box-shadow:

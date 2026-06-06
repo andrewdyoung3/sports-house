@@ -8,7 +8,7 @@ import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
-import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal } from '@/lib/utils';
+import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal, dedupeChannels } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -301,26 +301,6 @@ function FixtureBadge({ league, competition, compact }: { league: string; compet
 // ─── Schedule row ─────────────────────────────────────────────────────────────
 
 // ─── Channel deduplication ────────────────────────────────────────────────────
-// Collapses same-company broadcast + streaming entries into one token per group.
-
-const CHANNEL_GROUPS: [string, string[]][] = [
-  ['Nine/9Now',   ['Nine Network', '9Now', '9Gem']],
-  ['Seven/7plus', ['Seven Network', '7plus', '7mate']],
-  ['Fox/Kayo',    ['Fox Sports', 'Fox Footy', 'Kayo Sports']],
-  ['Stan Sport',  ['Stan Sport']],
-  ['beIN Sports', ['beIN Sports', 'beIN Sports Connect']],
-];
-
-function dedupeChannels(broadcast: string[], streaming: string[]): string {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const ch of [...broadcast, ...streaming]) {
-    const group = CHANNEL_GROUPS.find(([, members]) => members.includes(ch));
-    const key = group ? group[0] : ch;
-    if (!seen.has(key)) { seen.add(key); result.push(key); }
-  }
-  return result.join(' · ');
-}
 
 interface ScheduleRowProps {
   game: ScheduleEntry;
@@ -431,7 +411,29 @@ function ScheduleRow({
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
       >
-        <div className="sh-fix-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
+        {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
+        <div className="sh-fix-wm" aria-hidden="true">
+          {teamLogoUrl
+            ? <img src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            : team.shortName.toUpperCase()
+          }
+        </div>
+
+        {/* Competition logo watermark */}
+        {leagueLogoUrl && (
+          <img
+            src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+            className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]"
+            style={{
+              right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%',
+              ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}),
+              opacity: leagueLogoOpacity,
+              ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
+              ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
+            }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
 
         {/* Feature badge: left column (direct flex item on the article) */}
         <span className="sh-fix-badge-f">
@@ -1252,7 +1254,7 @@ export default function SchedulePage() {
       {!activeLoading && heroGame && (
         heroGame.team.league === 'f1'
           ? <NextGameHero   game={heroGame} userTz={userTz} />
-          : <NextGameHeroSh game={heroGame} userTz={userTz} />
+          : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} />
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}

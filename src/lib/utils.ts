@@ -92,6 +92,26 @@ export function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
 }
 
+/** Collapses same-company broadcast + streaming entries into one token per group. */
+const CHANNEL_GROUPS: [string, string[]][] = [
+  ['Nine/9Now',   ['Nine Network', '9Now', '9Gem']],
+  ['Seven/7plus', ['Seven Network', '7plus', '7mate']],
+  ['Fox/Kayo',    ['Fox Sports', 'Fox Footy', 'Kayo Sports']],
+  ['Stan Sport',  ['Stan Sport']],
+  ['beIN Sports', ['beIN Sports', 'beIN Sports Connect']],
+];
+
+export function dedupeChannels(broadcast: string[], streaming: string[]): string {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const ch of [...broadcast, ...streaming]) {
+    const group = CHANNEL_GROUPS.find(([, members]) => members.includes(ch));
+    const key = group ? group[0] : ch;
+    if (!seen.has(key)) { seen.add(key); result.push(key); }
+  }
+  return result.join(' · ');
+}
+
 /** Deterministic "random" number based on a string seed (for consistent mock data). */
 export function seededRandom(seed: string, index = 0): number {
   let h = index;

@@ -18,7 +18,7 @@ import { MapPin, Tv, ChevronDown } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { formatTimeInZone } from '@/lib/utils';
+import { formatTimeInZone, dedupeChannels } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -26,6 +26,7 @@ type ScheduleEntry = UpcomingGame & { team: Team };
 interface NextGameHeroShProps {
   game: ScheduleEntry;
   userTz: string;
+  leagueLogoUrl?: string;
 }
 
 // Human-readable competition names (non-F1; F1 never reaches this hero).
@@ -65,7 +66,7 @@ function timeUntil(isoDate: string, userTz: string): string | null {
   return null;
 }
 
-export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
+export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShProps) {
   const { team } = game;
 
   // Step 6 · 2A — the hero can now expand to the SAME GameExpandPanel the feed uses.
@@ -99,7 +100,7 @@ export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
     timeZone: userTz, weekday: 'long', day: 'numeric', month: 'long',
   }).format(new Date(game.date));
   const venueTag = game.isHome ? 'Home' : 'Away';
-  const watch    = game.broadcast[0] ?? game.streaming[0];
+  const watch    = dedupeChannels(game.broadcast, game.streaming);
 
   return (
     // Accent now inherited from the page-level `.sh-theme` wrapper (Phase B · Step 2),
@@ -112,7 +113,15 @@ export function NextGameHeroSh({ game, userTz }: NextGameHeroShProps) {
       // bottom + the trailing spacing).
       style={open ? { marginBottom: 0, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined}
     >
-      <div className="sh-hero-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
+      {/* Team watermark — logo when available, large text fallback otherwise */}
+      {focalProps.logoUrl
+        ? <img src={focalProps.logoUrl} alt="" aria-hidden="true" draggable={false} className="sh-hero-wm-logo" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        : <div className="sh-hero-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
+      }
+      {/* Competition logo — lower-right, smaller layer */}
+      {leagueLogoUrl && (
+        <img src={leagueLogoUrl} alt="" aria-hidden="true" draggable={false} className="sh-hero-comp-logo" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+      )}
 
       <div className="sh-hero-body">
         <div className="sh-hero-top">

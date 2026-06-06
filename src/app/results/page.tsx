@@ -319,8 +319,13 @@ function ResultRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      {/* Team name watermark (tinted to --accent via .sh-theme .sh-fix-wm) */}
-      <div className="sh-fix-wm" aria-hidden="true">{team.shortName.toUpperCase()}</div>
+      {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
+      <div className="sh-fix-wm" aria-hidden="true">
+        {teamLogoUrl
+          ? <img src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          : team.shortName.toUpperCase()
+        }
+      </div>
 
       {/* League/competition logo watermark — absolute, unaffected by the flex layout */}
       {leagueLogoUrl && (
