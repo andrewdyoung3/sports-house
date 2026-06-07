@@ -11,135 +11,113 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { unstable_cache } from 'next/cache';
-import type { AIReview } from '@/types';
-import { AI_MODEL } from '@/lib/ai-model';
+import { appendFileSync } from 'fs';
+import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
+import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
 import { getSupabaseServer } from '@/lib/supabase/server';
 
-const anthropic = new Anthropic();
+const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
 
-// ─── Sport-specific context ───────────────────────────────────────────────────
-
-const SPORT_CONTEXT: Record<string, string> = {
-  afl:         'Australian Rules Football (AFL). Use AFL-specific terminology where relevant: contested possessions, clearances, inside 50s, centre bounces, the forward 50. The table is called "the Ladder".',
-  nrl:         'NRL Rugby League (13-man code). Use NRL-specific terminology where relevant: completion rate, ruck speed, middle forwards, edges, kick chase. The table is called "the Ladder".',
-  epl:         'English Premier League (association football). Use "pitch", "half" (not period). The table is called "the Table".',
-  super_rugby: 'Super Rugby Pacific (15-man rugby union). The table is called "the Table".',
-  rugby_int:   'International Rugby Union Test match. Tone should reflect the magnitude of Test rugby.',
-};
-
-const LEAGUE_LABELS: Record<string, string> = {
-  afl:         'AFL',
-  nrl:         'NRL',
-  epl:         'Premier League',
-  super_rugby: 'Super Rugby Pacific',
-  rugby_int:   'International Rugby Union',
-};
-
-// ─── System prompt ────────────────────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `You are a sports analyst writing a brief post-match review. Direct, analytical tone — not narrative or journalistic.
-
-RULES:
-• Past tense throughout
-• Explain the tactical and structural reasons for the result — not just "they scored more"
-• No filler: avoid "credit to both sides", "gave it their all", "never-say-die spirit", etc.
-• Only name specific players if their name appears in the provided data
-• Verdict must be forward-looking: what does this result mean for the team's season?
-• Plain language — say what you mean directly
-• No W/L count recitation — the user can see the results themselves
-• Do not state uncertainty explicitly ("it's early", "small sample") — just let calibration inform tone
-• No hollow superlatives, no vague momentum phrases ("building momentum", "hitting their stride")
-
-KEY MOMENTS should be:
-• Specific and grounded — reference the scoreline, positional battle, or pattern that mattered
-• Max 12 words each
-• Not restatements of the final score
-
-SUMMARY should explain the "why" of the result — tactical/structural factors, not just what the score was. Vary your opening: don't always lead with the winning team and don't reuse the same sentence structure across reviews. Enter from different angles — the decisive tactical factor, the opposition's failure, the key phase of play, the margin of control. Avoid generic openers like "[Team] controlled this match structurally" or "[Team] were dominant throughout".
-
-VERDICT should name one forward-looking implication: a trend, a concern, or an opportunity revealed by this result.
-
-OUTPUT: Return valid JSON only, no markdown fences:
-{
-  "summary": "2–3 sentences",
-  "keyMoments": ["factor 1", "factor 2", "factor 3"],
-  "verdict": "1–2 sentences"
-}`;
-
-// ─── Data block builder ───────────────────────────────────────────────────────
-
-interface ReviewInput {
-  league:        string;
-  teamName:      string;
-  opponent:      string;
-  teamScore:     number;
-  opponentScore: number;
-  isHome:        boolean;
-  date:          string;
-  competition?:  string;
-  teamPosition?:     number;
-  teamPlayed?:       number;
-  opponentPosition?: number;
-  opponentPlayed?:   number;
+// Fetch current standings to enrich the review with table context.
+async function fetchStandings(league: string): Promise<LeagueTableRow[]> {
+  try {
+    const res = await fetch(`${BASE}/api/standings?league=${league}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data as LeagueTableRow[] : [];
+  } catch { return []; }
 }
 
-function buildDataBlock(input: ReviewInput): string {
-  const {
-    league, teamName, opponent, teamScore, opponentScore,
-    isHome, date, competition,
-    teamPosition, teamPlayed, opponentPosition, opponentPlayed,
-  } = input;
-
-  const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
-  const sportCtx    = SPORT_CONTEXT[league] ?? '';
-  const homeAway    = isHome ? 'Home' : 'Away';
-  const result      = teamScore > opponentScore ? 'WIN' : teamScore < opponentScore ? 'LOSS' : 'DRAW';
-  const comp        = competition ?? 'Regular season';
-  const dateStr     = new Date(date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
-
-  let block = `SPORT CONTEXT\n${sportCtx}\n\nMATCH DATA\nLeague: ${leagueLabel}\nCompetition: ${comp}\nDate: ${dateStr}\n${homeAway}: ${teamName} vs ${opponent}\nScore: ${teamName} ${teamScore} – ${opponentScore} ${opponent}\nResult: ${result}\n`;
-
-  if (teamPosition !== undefined || opponentPosition !== undefined) {
-    block += '\nCURRENT STANDINGS\n';
-    if (teamPosition !== undefined) {
-      block += `${teamName}: ${teamPosition}${teamPlayed !== undefined ? ` (${teamPlayed} played)` : ''}\n`;
-    }
-    if (opponentPosition !== undefined) {
-      block += `${opponent}: ${opponentPosition}${opponentPlayed !== undefined ? ` (${opponentPlayed} played)` : ''}\n`;
-    }
-  }
-
-  return block;
+// Fetch match stats from the ESPN-backed endpoint (EPL, NRL, SRU).
+// Returns null for AFL (no ESPN player stats) or on error.
+async function fetchMatchStats(
+  league: string,
+  teamId: string,
+  date: string,
+  teamScore: number,
+  opponentScore: number,
+  competition?: string,
+): Promise<MatchStats | null> {
+  if (league === 'afl') return null; // AFL has no usable ESPN player stats
+  try {
+    const params = new URLSearchParams({
+      league, teamId, date,
+      teamScore:     String(teamScore),
+      opponentScore: String(opponentScore),
+      ...(competition ? { competition } : {}),
+    });
+    const res = await fetch(`${BASE}/api/match-stats?${params}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return null;
+    return await res.json() as MatchStats;
+  } catch { return null; }
 }
+
+// Pinned to instruct-2507 — reviews are speed-critical (5-10 min post-match target).
+// ai-preview uses AI_MODEL (configurable) for quality testing; reviews stay on the
+// fast non-thinking model regardless of what ai-preview is pointed at.
+const REVIEW_MODEL = 'qwen3:30b-a3b-instruct-2507-q4_K_M';
+
+const ollama = new OpenAI({
+  baseURL: process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1',
+  apiKey:  'ollama',
+  timeout: 15 * 60 * 1000, // 15 minutes
+});
+
+function aiLog(msg: string) {
+  const line = `[${new Date().toISOString()}] [ai-review] ${msg}\n`;
+  try { appendFileSync('/tmp/sporthouse-ai.log', line); } catch { /* non-fatal */ }
+  console.log(msg);
+}
+
+// Prompt assembly and data-block builder live in @/lib/review-prompt (shared with eval harness)
 
 // ─── Cached generator ─────────────────────────────────────────────────────────
 
 const generateReview = unstable_cache(
   async (cacheKey: string, dataBlock: string): Promise<AIReview | null> => {
+    const t0 = Date.now();
+    aiLog(`start cacheKey=${cacheKey} model=${REVIEW_MODEL}`);
     try {
-      const msg = await anthropic.messages.create({
-        model:      AI_MODEL,
-        max_tokens: 400,
-        system:     SYSTEM_PROMPT,
-        messages:   [{ role: 'user', content: dataBlock }],
+      const msg = await ollama.chat.completions.create({
+        model:      REVIEW_MODEL,
+        max_tokens: 3000,
+        messages:   [
+          { role: 'system', content: REVIEW_SYSTEM_PROMPT },
+          { role: 'user',   content: dataBlock },
+        ],
       });
 
-      const text = msg.content.find(b => b.type === 'text')?.text ?? '';
-      // Strip markdown fences if present
-      const cleaned = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-      const parsed  = JSON.parse(cleaned) as AIReview;
+      const text = msg.choices[0]?.message?.content ?? '';
+      const withoutThink = text.includes('</think>') ? text.replace(/<think>[\s\S]*?<\/think>\s*/i, '') : text;
+      const cleaned = withoutThink.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      let parsed: AIReview;
+      try {
+        parsed = JSON.parse(cleaned) as AIReview;
+      } catch {
+        aiLog(`parse-fail cacheKey=${cacheKey} raw_len=${text.length} first300=${JSON.stringify(cleaned.slice(0, 300))}`);
+        const s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+        if (s >= 0 && e > s) { parsed = JSON.parse(cleaned.slice(s, e + 1)) as AIReview; }
+        else throw new SyntaxError(`Non-JSON review output: ${cleaned.slice(0, 120)}`);
+      }
 
       if (!parsed.summary || !Array.isArray(parsed.keyMoments) || !parsed.verdict) return null;
+      aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms`);
       return parsed;
     } catch (err) {
+      aiLog(`error cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms err=${err}`);
       console.error('[/api/ai-review] generation error', err);
       return null;
     }
   },
-  // Cache key array — results are immutable so we cache by game key forever
-  ['ai-review-v2'],
+  ['ai-review-v4'],
   { revalidate: false },
 );
 
@@ -151,14 +129,16 @@ const SAFE_STR = /^[\w\s'.&\-,()]+$/;
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // Auth gate (FIRST — before body read, cache lookup, or any Claude call): require ANY
-  // valid Supabase session (anonymous included). getUser() revalidates the JWT against
-  // Supabase Auth. Fail closed — null client / no user / error → 401, so a session-less
-  // caller can never trigger paid work.
-  const sb = getSupabaseServer();
-  const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
-  if (!user) {
-    return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+  // Auth gate — cron poller bypasses Supabase auth via shared secret; all other
+  // callers require a valid session (anonymous included).
+  const cronSecret = req.headers.get('x-cron-secret');
+  const isCron     = cronSecret && cronSecret === process.env.CRON_SECRET;
+  if (!isCron) {
+    const sb = getSupabaseServer();
+    const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
   }
 
   try {
@@ -166,8 +146,7 @@ export async function POST(req: NextRequest) {
 
     const {
       league, teamName, opponent, teamScore, opponentScore,
-      isHome, date, competition, gameId,
-      teamPosition, teamPlayed, opponentPosition, opponentPlayed,
+      isHome, date, competition, gameId, teamId, opponentId,
     } = body as ReviewInput & { gameId?: string };
 
     // Basic validation
@@ -178,20 +157,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid team names' }, { status: 400 });
     }
 
+    const tScore = Number(teamScore);
+    const oScore = Number(opponentScore);
+
+    // Fetch standings + match-stats in parallel to enrich the review data block
+    const [standings, matchStats] = await Promise.all([
+      fetchStandings(league),
+      teamId ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
+    ]);
+
+    // Resolve team standings from the table
+    let teamPosition: number | undefined, teamPlayed: number | undefined, teamPoints: number | undefined, teamPercentage: number | undefined;
+    let opponentPosition: number | undefined, opponentPlayed: number | undefined, opponentPoints: number | undefined, opponentPercentage: number | undefined;
+
+    if (standings.length > 0) {
+      const tRow = standings.find(r =>
+        r.name?.toLowerCase().includes(teamName.toLowerCase().split(' ')[0]) ||
+        teamName.toLowerCase().includes((r.name ?? '').toLowerCase().split(' ')[0]),
+      );
+      const oRow = standings.find(r =>
+        r.name?.toLowerCase().includes(opponent.toLowerCase().split(' ')[0]) ||
+        opponent.toLowerCase().includes((r.name ?? '').toLowerCase().split(' ')[0]),
+      );
+      // AFL: standings route omits 'points' — compute from wins/draws (4/win, 2/draw)
+      const computePts = (r: LeagueTableRow) =>
+        r.points > 0 ? r.points : r.wins * 4 + r.draws * 2;
+      if (tRow) { teamPosition = tRow.position; teamPlayed = tRow.played; teamPoints = computePts(tRow); teamPercentage = tRow.percentage; }
+      if (oRow) { opponentPosition = oRow.position; opponentPlayed = oRow.played; opponentPoints = computePts(oRow); opponentPercentage = oRow.percentage; }
+    }
+
     const input: ReviewInput = {
       league, teamName, opponent,
-      teamScore:     Number(teamScore),
-      opponentScore: Number(opponentScore),
+      teamScore:     tScore,
+      opponentScore: oScore,
       isHome:        Boolean(isHome),
       date:          String(date),
       competition:   competition ? String(competition) : undefined,
-      teamPosition:     teamPosition     !== undefined ? Number(teamPosition)     : undefined,
-      teamPlayed:       teamPlayed       !== undefined ? Number(teamPlayed)       : undefined,
-      opponentPosition: opponentPosition !== undefined ? Number(opponentPosition) : undefined,
-      opponentPlayed:   opponentPlayed   !== undefined ? Number(opponentPlayed)   : undefined,
+      teamId:        teamId ? String(teamId) : undefined,
+      opponentId:    opponentId ? String(opponentId) : undefined,
+      teamPosition, teamPlayed, teamPoints, teamPercentage,
+      opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
+      leagueTable: standings.length > 0 ? standings : undefined,
+      matchStats:  matchStats ?? undefined,
     };
 
-    const dataBlock = buildDataBlock(input);
+    const dataBlock = buildReviewDataBlock(input);
     // Use gameId as cache discriminator if provided, otherwise derive from match data
     const cacheKey  = gameId ?? `${league}-${teamName}-${opponent}-${date.slice(0, 10)}`;
 

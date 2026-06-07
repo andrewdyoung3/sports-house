@@ -151,14 +151,17 @@ async function fetchAFLPreview(
       if (s.name === (oppSqName ?? opponentName)) opponentStanding = entry;
     }
     // Full table for mathematical analysis (AFL: 4pts/win, 2pts/draw)
+    // Percentage is the AFL tiebreaker when teams are level on ladder points.
     leagueTable = (standings as any[]).map((s: any): LeagueTableRow => ({
-      name:     String(s.name ?? ''),
-      position: Number(s.rank ?? 0),
-      played:   Number(s.played ?? 0),
-      wins:     Number(s.wins ?? 0),
-      draws:    Number(s.draws ?? 0),
-      losses:   Number(s.losses ?? 0),
-      points:   Number(s.points ?? 0),
+      name:       String(s.name ?? ''),
+      position:   Number(s.rank ?? 0),
+      played:     Number(s.played ?? 0),
+      wins:       Number(s.wins ?? 0),
+      draws:      Number(s.draws ?? 0),
+      losses:     Number(s.losses ?? 0),
+      // Squiggle uses "pts" not "points" — check both
+      points:     Number(s.pts ?? s.points ?? 0),
+      percentage: s.percentage != null ? parseFloat(String(s.percentage)) : undefined,
     })).filter(r => r.name);
   }
 
@@ -215,14 +218,16 @@ async function fetchAFLPreview(
 
         if (squadRes?.ok) {
           const { squads: rawSquads = [] } = await squadRes.json();
+          // Squiggle sometimes returns an array, sometimes {home, away} dict — guard both.
+          if (Array.isArray(rawSquads) && rawSquads.length > 0) {
           // Resolve opponent's Squiggle team name
           const oppSqKey  = Object.entries(SQUIGGLE_NAME).find(
             ([, v]) => v.toLowerCase() === opponentName.toLowerCase(),
           )?.[0];
           const oppSqName = oppSqKey ? SQUIGGLE_NAME[oppSqKey] : opponentName;
 
-          const teamEntries = (rawSquads as any[]).filter((p: any) => p.team === sqTeam);
-          const oppEntries  = (rawSquads as any[]).filter((p: any) => p.team === oppSqName);
+          const teamEntries = rawSquads.filter((p: any) => p.team === sqTeam);
+          const oppEntries  = rawSquads.filter((p: any) => p.team === oppSqName);
 
           if (teamEntries.length > 0) {
             teamSquad = teamEntries.map((p: any) => (p.name ?? '') as string).filter(Boolean);
@@ -230,6 +235,7 @@ async function fetchAFLPreview(
           if (oppEntries.length > 0) {
             opponentSquad = oppEntries.map((p: any) => (p.name ?? '') as string).filter(Boolean);
           }
+          } // end Array.isArray guard
         }
       }
     }

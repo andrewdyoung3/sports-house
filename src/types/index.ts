@@ -171,6 +171,12 @@ export interface LeagueTableRow {
   losses: number;
   /** Competition points (e.g. EPL: 3/win; AFL: 4/win; NRL: 2/win). */
   points: number;
+  /**
+   * AFL only: for/against percentage (points scored ÷ points conceded × 100).
+   * The official ladder tiebreaker when teams are level on competition points.
+   * Omitted for all other leagues — do not populate if not a genuine tiebreaker.
+   */
+  percentage?: number;
 }
 
 export interface PreviewContext {

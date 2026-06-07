@@ -10,82 +10,202 @@
  * model labels) for unbiased judging, a SEPARATE de-anonymization key file, and a
  * cost/latency summary table.
  *
- * ⚠️  This calls the REAL Anthropic API (small cost — cents) and requires
- *     ANTHROPIC_API_KEY (read from process.env, falling back to .env.local).
- *
- * Run:
- *   npx tsx scripts/eval-previews.ts             # real run — calls the API
- *   npx tsx scripts/eval-previews.ts --dry-run   # build prompts only, no API calls
- *   EVAL_SAMPLES=2 npx tsx scripts/eval-previews.ts   # 2 samples/model for variance
- *
- * Adding a third (e.g. local) model later: add an entry to MODELS and, if it isn't
- * Anthropic, add a branch in callModel() for its provider.
+ * Run modes:
+ *   npx tsx scripts/eval-previews.ts                      # Anthropic models, all fixtures
+ *   npx tsx scripts/eval-previews.ts --dry-run            # build prompts only, no API calls
+ *   npx tsx scripts/eval-previews.ts --local-only         # Ollama only, all fixtures
+ *   npx tsx scripts/eval-previews.ts --variant-eval       # 3 prompt variants × 2 fixtures, Ollama
+ *   EVAL_SAMPLES=2 npx tsx scripts/eval-previews.ts       # 2 samples/model for variance
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import OpenAI    from 'openai';
+import { execSync }  from 'node:child_process';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildPreviewPrompt, type PreviewPromptInput } from '@/lib/preview-prompt';
+import { buildPreviewPrompt, SYSTEM_PROMPT, type PreviewPromptInput } from '@/lib/preview-prompt';
 import type { AIPreview, GameResult, LeagueTableRow, TeamStanding } from '@/types';
 
-// ── Env: load ANTHROPIC_API_KEY from .env.local if not already in the environment ──
+// ── Env: load from .env.local if not already in the environment ──────────────
 function loadEnvLocal(): void {
-  if (process.env.ANTHROPIC_API_KEY || !existsSync('.env.local')) return;
+  if (!existsSync('.env.local')) return;
   for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
     if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
   }
 }
 
-// ── Model registry ────────────────────────────────────────────────────────────
-// inputPrice/outputPrice are USD per 1M tokens. APPROXIMATE — confirm against current
-// Anthropic pricing before quoting absolute dollars; the ratio is what matters for a
-// relative comparison. `provider` is the extension point for a future local model.
-interface ModelCfg {
-  label: string;
-  model: string;
-  provider: 'anthropic' | 'local';
-  inputPrice: number;
-  outputPrice: number;
+// ── Prompt variants ────────────────────────────────────────────────────────────
+// Extracted at eval startup by reading the committed (Haiku-era) version from git.
+// The Haiku-era SYSTEM_PROMPT is the committed version — no GROUNDING block, no
+// STRUCTURE block (both were added in the post-migration grounding sprint).
+function getHaikuEraSystemPrompt(): string {
+  try {
+    const committed = execSync('git show HEAD:src/lib/preview-prompt.ts', { encoding: 'utf8' });
+    const m = committed.match(/export const SYSTEM_PROMPT = `([\s\S]+?)`;/);
+    return m?.[1] ?? SYSTEM_PROMPT;
+  } catch {
+    console.warn('[eval] Could not read Haiku-era prompt from git — using current SYSTEM_PROMPT');
+    return SYSTEM_PROMPT;
+  }
 }
+
+// Strip the DERIVED FACTS section from a user data block (for variants a & b).
+// The section starts with "DERIVED FACTS —" and ends at the next blank line.
+function stripDerivedFacts(userBlock: string): string {
+  return userBlock.replace(/^DERIVED FACTS —[\s\S]*?\n\n/m, '').replace(/\n{3,}/g, '\n\n');
+}
+
+interface PromptVariant {
+  label:              string;
+  systemPrompt:       string;
+  // If false, strip the leagueTable from context so DERIVED FACTS isn't generated.
+  // The data block is built from the input, then post-processed to remove the section.
+  stripDerivedFacts:  boolean;
+}
+
+// Built lazily so git isn't called unless --variant-eval is active.
+let _variants: PromptVariant[] | null = null;
+function getVariants(): PromptVariant[] {
+  if (_variants) return _variants;
+  const HAIKU  = getHaikuEraSystemPrompt();
+  _variants = [
+    { label: '(a) haiku-era (no grounding, no derived)',   systemPrompt: HAIKU,         stripDerivedFacts: true  },
+    { label: '(b) haiku + GROUNDING (no derived facts)',   systemPrompt: SYSTEM_PROMPT, stripDerivedFacts: true  },
+    { label: '(c) haiku + GROUNDING + DERIVED FACTS',      systemPrompt: SYSTEM_PROMPT, stripDerivedFacts: false },
+  ];
+  return _variants;
+}
+
+// ── Model registry ────────────────────────────────────────────────────────────
+interface ModelCfg {
+  label:       string;
+  model:       string;
+  provider:    'anthropic' | 'ollama';
+  inputPrice:  number; // USD per 1M tokens (0 for local)
+  outputPrice: number;
+  maxTokens?:  number; // override per model (Ollama needs more for thinking budget)
+}
+
 const MODELS: ModelCfg[] = [
-  { label: 'sonnet-4-6', model: 'claude-sonnet-4-6', provider: 'anthropic', inputPrice: 3.0, outputPrice: 15.0 },
-  { label: 'haiku-4-5',  model: 'claude-haiku-4-5',  provider: 'anthropic', inputPrice: 1.0, outputPrice: 5.0 },
-  // Future: { label: 'local-qwen-7b', model: 'qwen2.5:7b', provider: 'local', inputPrice: 0, outputPrice: 0 },
+  { label: 'sonnet-4-6',         model: 'claude-sonnet-4-6',                    provider: 'anthropic', inputPrice: 3.0,  outputPrice: 15.0 },
+  { label: 'haiku-4-5',          model: 'claude-haiku-4-5',                     provider: 'anthropic', inputPrice: 1.0,  outputPrice: 5.0  },
+  { label: 'instruct-2507-30b',  model: 'qwen3:30b-a3b-instruct-2507-q4_K_M',  provider: 'ollama',    inputPrice: 0,    outputPrice: 0, maxTokens: 4000 },
+  { label: 'thinking-2507-30b',  model: 'qwen3:30b-a3b-thinking-2507-q4_K_M',  provider: 'ollama',    inputPrice: 0,    outputPrice: 0, maxTokens: 6000 },
 ];
 
-// Eval params — fixed for reproducibility. Production leaves temperature at the API
-// default; we pin temperature: 0 here so reruns are comparable. max_tokens matches
-// production's non-compact default (800).
-const SAMPLES    = Math.max(1, Number(process.env.EVAL_SAMPLES ?? 1)); // samples/model/fixture
-const MAX_TOKENS = 800;
-const TEMPERATURE = 0;
+const SAMPLES    = Math.max(1, Number(process.env.EVAL_SAMPLES ?? 1));
+const MAX_TOKENS = 800; // Anthropic default; Ollama uses model.maxTokens
 
 // ── Fixture builders ────────────────────────────────────────────────────────────
 let dateCounter = 0;
-const ago = (): string => {
-  dateCounter += 7;
-  return new Date(Date.now() - dateCounter * 86_400_000).toISOString();
-};
-const res = (
-  opponent: string, opponentAbbr: string, isHome: boolean, isWin: boolean,
-  teamScore: number, opponentScore: number, extra: Partial<GameResult> = {},
-): GameResult => ({ opponent, opponentAbbr, isHome, isWin, teamScore, opponentScore, date: ago(), ...extra });
-
-const standing = (
-  name: string, position: number, played: number, wins: number, draws: number, losses: number,
-  points: number, extra: Partial<TeamStanding> = {},
-): TeamStanding => ({ name, position, played, wins, draws, losses, points, ...extra });
-
-const row = (
-  name: string, position: number, played: number, wins: number, draws: number, losses: number, points: number,
-): LeagueTableRow => ({ name, position, played, wins, draws, losses, points });
+const ago = (): string => { dateCounter += 7; return new Date(Date.now() - dateCounter * 86_400_000).toISOString(); };
+const res = (opponent: string, opponentAbbr: string, isHome: boolean, isWin: boolean, teamScore: number, opponentScore: number, extra: Partial<GameResult> = {}): GameResult =>
+  ({ opponent, opponentAbbr, isHome, isWin, teamScore, opponentScore, date: ago(), ...extra });
+const standing = (name: string, position: number, played: number, wins: number, draws: number, losses: number, points: number, extra: Partial<TeamStanding> = {}): TeamStanding =>
+  ({ name, position, played, wins, draws, losses, points, ...extra });
+const row = (name: string, position: number, played: number, wins: number, draws: number, losses: number, points: number): LeagueTableRow =>
+  ({ name, position, played, wins, draws, losses, points });
 
 interface Fixture { name: string; note: string; input: PreviewPromptInput }
 
-// ── Curated fixtures: AFL / NRL / EPL / Super Rugby / Test Rugby / F1 / cricket ──
-// plus edge cases: derby, mismatch, finals, title clinch, relegation, early-season
-// (no form), neutral venue, Test-match magnitude.
+// ── VARIANT-EVAL fixtures (the two known benchmark fixtures with live-accurate data) ──
+// Data matches what was in the actual benchmark run (Round 13, 2026).
+const VARIANT_FIXTURES: Fixture[] = [
+  {
+    name: 'AFL — Brisbane Lions vs Richmond (Round 13)',
+    note: 'Benchmark fixture: Lions 8th (28 pts), Richmond 17th (8 pts). Neutral venue. Expert tip: 23/23 Lions by 43 pts.',
+    input: {
+      league: 'afl', teamId: 'afl-lions', opponentId: 'afl-tigers',
+      teamName: 'Brisbane Lions', opponentName: 'Richmond',
+      venue: 'Bellerive Oval', isHome: false,
+      teamResults: [
+        res('Gold Coast',            'GCS', false, true,  106, 75),
+        res('Fremantle',             'FRE', false, false,  78, 103),
+        res('Greater Western Sydney','GWS', false, false,  88, 166),
+        res('Essendon',              'ESS', true,  false,  90, 100),
+        res('North Melbourne',       'NME', true,  true,  130, 60),
+      ],
+      oppResults: [],
+      context: {
+        teamStanding:     standing('Brisbane Lions', 8,  13, 7, 0, 6, 28, { percentage: 106.2 }),
+        opponentStanding: standing('Richmond',       17, 12, 2, 0, 10, 8),
+        teamManager:  'Chris Fagan',
+        opponentManager: 'Adem Yze',
+        // leagueTable deliberately omitted here — variant runner adds it for variant (c) only
+        tips: { favouriteTeam: 'Brisbane Lions', tipsFor: 23, tipsTotal: 23, avgMargin: 43 },
+      },
+    },
+  },
+  {
+    name: 'NRL — Brisbane Broncos vs Rabbitohs (Round 13)',
+    note: 'Benchmark fixture: Broncos 12th (12 pts), Rabbitohs 8th/last finals spot (16 pts). Rabbitohs home (Accor Stadium).',
+    input: {
+      league: 'nrl', teamId: 'nrl-broncos', opponentId: 'nrl-rabbitohs',
+      teamName: 'Brisbane Broncos', opponentName: 'Rabbitohs',
+      venue: 'Accor Stadium', isHome: false,
+      teamResults: [],
+      oppResults:  [],
+      context: {
+        teamStanding:     standing('Broncos',   12, 13, 5, 0, 8, 12),
+        opponentStanding: standing('Rabbitohs', 8,  12, 6, 0, 6, 16),
+        teamManager:     'Michael Maguire',
+        opponentManager: 'Wayne Bennett',
+        // leagueTable omitted here — added for variant (c) only
+      },
+    },
+  },
+];
+
+// Full AFL ladder for variant (c) context injection
+const AFL_LEAGUE_TABLE: LeagueTableRow[] = [
+  row('Fremantle',           1,  13, 12, 0, 1, 48),
+  row('Sydney',              2,  13, 11, 0, 2, 44),
+  row('Hawthorn',            3,  13,  8, 1, 4, 34),
+  row('Geelong',             4,  13,  8, 0, 5, 32),
+  row('Western Bulldogs',    5,  13,  8, 0, 5, 32),
+  row('Gold Coast',          6,  12,  7, 0, 5, 28),
+  row('Adelaide',            7,  12,  7, 0, 5, 28),
+  row('Brisbane Lions',      8,  13,  7, 0, 6, 28),
+  row('Melbourne',           9,  12,  7, 0, 5, 28),
+  row('Port Adelaide',       10, 12,  6, 0, 6, 24),
+  row('GWS Giants',          11, 12,  6, 0, 6, 24),
+  row('Collingwood',         12, 12,  5, 1, 6, 22),
+  row('Carlton',             13, 12,  5, 0, 7, 20),
+  row('St Kilda',            14, 12,  5, 0, 7, 20),
+  row('West Coast',          15, 12,  4, 0, 8, 16),
+  row('North Melbourne',     16, 12,  3, 0, 9, 12),
+  row('Richmond',            17, 12,  2, 0, 10, 8),
+  row('Essendon',            18, 12,  1, 0, 11, 4),
+];
+
+// NRL ladder for variant (c)
+const NRL_LEAGUE_TABLE: LeagueTableRow[] = [
+  row('Panthers',    1,  13, 12, 0, 1, 26),
+  row('Warriors',    2,  12,  9, 0, 3, 22),
+  row('Roosters',    3,  12,  8, 0, 4, 20),
+  row('Sea Eagles',  4,  13,  8, 0, 5, 18),
+  row('Dolphins',    5,  12,  7, 0, 5, 18),
+  row('Sharks',      6,  12,  7, 0, 5, 18),
+  row('Knights',     7,  13,  8, 0, 5, 18),
+  row('Rabbitohs',   8,  12,  6, 0, 6, 16),
+  row('Cowboys',     9,  14,  8, 0, 6, 16),
+  row('Storm',       10, 12,  6, 0, 6, 16),
+  row('Raiders',     11, 12,  5, 0, 7, 14),
+  row('Broncos',     12, 13,  5, 0, 8, 12),
+  row('Bulldogs',    13, 12,  4, 0, 8, 12),
+  row('Titans',      14, 12,  4, 0, 8, 12),
+  row('Tigers',      15, 12,  4, 0, 8, 12),
+  row('Eels',        16, 12,  4, 0, 8, 10),
+  row('Dragons',     17, 13,  1, 0, 12, 4),
+];
+
+const LEAGUE_TABLES: Record<string, LeagueTableRow[]> = {
+  afl: AFL_LEAGUE_TABLE,
+  nrl: NRL_LEAGUE_TABLE,
+};
+
+// ── Full eval fixtures (original blind-comparison set) ──────────────────────────
 const FIXTURES: Fixture[] = [
   {
     name: 'AFL — mid-season, two mid-table sides',
@@ -93,29 +213,13 @@ const FIXTURES: Fixture[] = [
     input: {
       league: 'afl', teamId: 'afl-cats', opponentId: 'afl-dockers',
       teamName: 'Geelong Cats', opponentName: 'Fremantle Dockers',
-      venue: 'GMHBA Stadium', isHome: true, competition: 'AFL',
+      venue: 'GMHBA Stadium', isHome: true,
       teamResults: [res('Carlton', 'CAR', false, true, 92, 80), res('Sydney', 'SYD', true, false, 71, 95), res('Essendon', 'ESS', true, true, 110, 64)],
-      oppResults: [res('West Coast', 'WCE', true, true, 88, 70), res('Melbourne', 'MEL', false, false, 60, 99), res('Adelaide', 'ADL', true, true, 101, 90)],
+      oppResults:  [res('West Coast', 'WCE', true, true, 88, 70), res('Melbourne', 'MEL', false, false, 60, 99), res('Adelaide', 'ADL', true, true, 101, 90)],
       context: {
         teamStanding: standing('Geelong', 7, 10, 6, 0, 4, 24, { percentage: 108 }),
         opponentStanding: standing('Fremantle', 9, 10, 5, 0, 5, 20, { percentage: 99 }),
         teamManager: 'Chris Scott', opponentManager: 'Justin Longmuir',
-      },
-    },
-  },
-  {
-    name: 'AFL — derby (same-city rivals)',
-    note: 'Edge: derby. Two Melbourne clubs, recent head-to-head edge.',
-    input: {
-      league: 'afl', teamId: 'afl-pies', opponentId: 'afl-blues',
-      teamName: 'Collingwood Magpies', opponentName: 'Carlton Blues',
-      venue: 'MCG', isHome: true, competition: 'AFL',
-      teamResults: [res('Carlton', 'CAR', false, true, 89, 84), res('Richmond', 'RIC', true, true, 120, 75)],
-      oppResults: [res('Collingwood', 'COL', true, false, 84, 89), res('Brisbane', 'BRI', false, true, 96, 90)],
-      context: {
-        teamStanding: standing('Collingwood', 3, 10, 8, 0, 2, 32, { percentage: 121 }),
-        opponentStanding: standing('Carlton', 6, 10, 6, 0, 4, 24, { percentage: 110 }),
-        teamManager: 'Craig McRae', opponentManager: 'Michael Voss',
       },
     },
   },
@@ -125,9 +229,9 @@ const FIXTURES: Fixture[] = [
     input: {
       league: 'nrl', teamId: 'nrl-panthers', opponentId: 'nrl-titans',
       teamName: 'Penrith Panthers', opponentName: 'Gold Coast Titans',
-      venue: 'BlueBet Stadium', isHome: true, competition: 'NRL',
+      venue: 'BlueBet Stadium', isHome: true,
       teamResults: [res('Storm', 'MEL', false, true, 28, 18), res('Roosters', 'SYD', true, true, 34, 12), res('Broncos', 'BRI', true, true, 24, 20)],
-      oppResults: [res('Sharks', 'CRO', true, false, 10, 40), res('Eels', 'PAR', false, false, 16, 30), res('Knights', 'NEW', true, false, 18, 22)],
+      oppResults:  [res('Sharks', 'CRO', true, false, 10, 40), res('Eels', 'PAR', false, false, 16, 30), res('Knights', 'NEW', true, false, 18, 22)],
       context: {
         teamStanding: standing('Penrith', 1, 12, 11, 0, 1, 22),
         opponentStanding: standing('Gold Coast', 16, 12, 2, 0, 10, 4),
@@ -136,30 +240,14 @@ const FIXTURES: Fixture[] = [
     },
   },
   {
-    name: 'NRL — finals (do-or-die)',
-    note: 'Edge: finals stakes. Knockout, no margin for error.',
-    input: {
-      league: 'nrl', teamId: 'nrl-storm', opponentId: 'nrl-roosters',
-      teamName: 'Melbourne Storm', opponentName: 'Sydney Roosters',
-      venue: 'AAMI Park', isHome: true, competition: 'NRL Finals Week 1',
-      teamResults: [res('Panthers', 'PEN', true, false, 18, 28), res('Sharks', 'CRO', false, true, 26, 14), res('Cowboys', 'NQC', true, true, 32, 6)],
-      oppResults: [res('Rabbitohs', 'SOU', true, true, 30, 12), res('Sea Eagles', 'MAN', false, true, 22, 20), res('Broncos', 'BRI', true, false, 16, 24)],
-      context: {
-        teamStanding: standing('Melbourne', 2, 24, 17, 0, 7, 34),
-        opponentStanding: standing('Sydney Roosters', 6, 24, 14, 0, 10, 28),
-        teamManager: 'Craig Bellamy', opponentManager: 'Trent Robinson',
-      },
-    },
-  },
-  {
-    name: 'EPL — title-race summit clash (with clinch maths)',
-    note: 'Edge: title race + a full table so the clinching logic fires.',
+    name: 'EPL — title-race summit clash',
+    note: 'Edge: title race + full table so the clinching logic fires.',
     input: {
       league: 'epl', teamId: 'epl-arsenal', opponentId: 'epl-mancity',
       teamName: 'Arsenal', opponentName: 'Manchester City',
-      venue: 'Emirates Stadium', isHome: true, competition: 'Premier League',
+      venue: 'Emirates Stadium', isHome: true,
       teamResults: [res('Liverpool', 'LIV', false, false, 1, 1, { isDraw: true }), res('Chelsea', 'CHE', true, true, 3, 1), res('Spurs', 'TOT', false, true, 2, 0)],
-      oppResults: [res('Newcastle', 'NEW', true, true, 4, 1), res('Aston Villa', 'AVL', false, true, 2, 1), res('Brighton', 'BHA', true, false, 1, 2)],
+      oppResults:  [res('Newcastle', 'NEW', true, true, 4, 1), res('Aston Villa', 'AVL', false, true, 2, 1), res('Brighton', 'BHA', true, false, 1, 2)],
       context: {
         teamStanding: standing('Arsenal', 1, 36, 27, 4, 5, 85),
         opponentStanding: standing('Manchester City', 2, 36, 24, 6, 6, 78),
@@ -175,121 +263,18 @@ const FIXTURES: Fixture[] = [
     },
   },
   {
-    name: 'EPL — relegation six-pointer',
-    note: 'Edge: relegation scrap at the foot of the table.',
-    input: {
-      league: 'epl', teamId: 'epl-burnley', opponentId: 'epl-luton',
-      teamName: 'Burnley', opponentName: 'Luton Town',
-      venue: 'Turf Moor', isHome: true, competition: 'Premier League',
-      teamResults: [res('Everton', 'EVE', false, false, 0, 2), res('Fulham', 'FUL', true, false, 1, 1, { isDraw: true }), res('Wolves', 'WOL', false, false, 1, 3)],
-      oppResults: [res('Brentford', 'BRE', true, true, 2, 1), res('Crystal Palace', 'CRY', false, false, 0, 1), res('West Ham', 'WHU', true, false, 1, 2)],
-      context: {
-        teamStanding: standing('Burnley', 19, 35, 5, 9, 21, 24),
-        opponentStanding: standing('Luton Town', 18, 35, 6, 7, 22, 25),
-        teamManager: 'Vincent Kompany', opponentManager: 'Rob Edwards',
-      },
-    },
-  },
-  {
-    name: 'EPL — early season, no form yet',
-    note: 'Edge: small sample. Round 2, almost no results — the prompt must avoid hedging.',
-    input: {
-      league: 'epl', teamId: 'epl-chelsea', opponentId: 'epl-newcastle',
-      teamName: 'Chelsea', opponentName: 'Newcastle United',
-      venue: 'Stamford Bridge', isHome: true, competition: 'Premier League',
-      teamResults: [res('Manchester City', 'MCI', false, false, 0, 2)],
-      oppResults: [res('Southampton', 'SOU', true, true, 1, 0)],
-      context: {
-        teamStanding: standing('Chelsea', 14, 1, 0, 0, 1, 0),
-        opponentStanding: standing('Newcastle United', 6, 1, 1, 0, 0, 3),
-        teamManager: 'Enzo Maresca', opponentManager: 'Eddie Howe',
-      },
-    },
-  },
-  {
-    name: 'Super Rugby — mid-table clash',
-    note: 'Rugby union vocabulary; trans-Tasman fixture.',
-    input: {
-      league: 'super_rugby', teamId: 'sru-reds', opponentId: 'sru-crusaders',
-      teamName: 'Queensland Reds', opponentName: 'Crusaders',
-      venue: 'Suncorp Stadium', isHome: true, competition: 'Super Rugby Pacific',
-      teamResults: [res('Brumbies', 'BRU', false, false, 19, 24), res('Waratahs', 'WAR', true, true, 33, 21)],
-      oppResults: [res('Chiefs', 'CHI', true, true, 28, 17), res('Blues', 'BLU', false, false, 15, 20)],
-      context: {
-        teamStanding: standing('Queensland Reds', 6, 11, 6, 0, 5, 29),
-        opponentStanding: standing('Crusaders', 4, 11, 7, 0, 4, 34),
-      },
-    },
-  },
-  {
-    name: 'Test Rugby — international (magnitude)',
+    name: 'Test Rugby — Wallabies vs All Blacks',
     note: 'Edge: Test-match gravity; neutral framing of a marquee fixture.',
     input: {
       league: 'rugby_int', teamId: 'rint-wallabies', opponentId: 'rint-allblacks',
       teamName: 'Australia Wallabies', opponentName: 'New Zealand All Blacks',
       venue: 'Stadium Australia', isHome: true, competition: 'The Rugby Championship',
       teamResults: [res('South Africa', 'RSA', false, false, 17, 30), res('Argentina', 'ARG', true, true, 34, 22)],
-      oppResults: [res('Argentina', 'ARG', false, true, 38, 30), res('South Africa', 'RSA', true, false, 20, 24)],
+      oppResults:  [res('Argentina', 'ARG', false, true, 38, 30), res('South Africa', 'RSA', true, false, 20, 24)],
       context: {
         teamStanding: standing('Australia', 3, 4, 1, 0, 3, 5),
         opponentStanding: standing('New Zealand', 1, 4, 3, 0, 1, 14),
       },
-    },
-  },
-  {
-    name: 'F1 — race weekend (driver POV)',
-    note: 'Edge: completely different data model (buildF1DataBlock + 2026 regs).',
-    input: {
-      league: 'f1', teamId: 'f1_ver', opponentId: undefined,
-      teamName: 'Max Verstappen', opponentName: 'Japanese Grand Prix',
-      venue: 'Suzuka Circuit', competition: 'Race',
-      teamResults: [res('Bahrain GP', 'BHR', false, true, 0, 0, { f1Position: 'P1' }), res('Saudi GP', 'SAU', false, false, 0, 0, { f1Position: 'P4' })],
-      oppResults: [],
-      context: {
-        f1FollowedType: 'driver', f1FollowedName: 'Max Verstappen', f1FollowedConstructorName: 'Red Bull',
-        f1SessionType: 'Race', f1RaceName: 'Japanese Grand Prix', f1CircuitName: 'Suzuka Circuit', f1RoundNumber: 4,
-        f1DriverStandings: [
-          { position: 1, driverName: 'Lando Norris', constructorName: 'McLaren', points: 77, wins: 2, ergastDriverId: 'norris' },
-          { position: 2, driverName: 'Max Verstappen', constructorName: 'Red Bull', points: 69, wins: 1, ergastDriverId: 'max_verstappen' },
-          { position: 3, driverName: 'Charles Leclerc', constructorName: 'Ferrari', points: 61, wins: 1, ergastDriverId: 'leclerc' },
-        ],
-        f1ConstructorStandings: [
-          { position: 1, constructorName: 'McLaren', points: 140, wins: 2 },
-          { position: 2, constructorName: 'Ferrari', points: 112, wins: 1 },
-          { position: 3, constructorName: 'Red Bull', points: 101, wins: 1 },
-        ],
-        f1RecentRaceResults: [
-          { round: 3, raceName: 'Saudi Arabian Grand Prix', results: [
-            { position: 1, driverName: 'Lando Norris', constructorName: 'McLaren', ergastDriverId: 'norris' },
-            { position: 2, driverName: 'Charles Leclerc', constructorName: 'Ferrari', ergastDriverId: 'leclerc' },
-            { position: 3, driverName: 'Oscar Piastri', constructorName: 'McLaren', ergastDriverId: 'piastri' },
-          ] },
-        ],
-      },
-    },
-  },
-  {
-    name: 'NRL — State of Origin (neutral-venue edge)',
-    note: 'Edge: representative series game flagged at a neutral venue.',
-    input: {
-      league: 'nrl', teamId: 'nrl-maroons', opponentId: 'nrl-blues',
-      teamName: 'Queensland Maroons', opponentName: 'NSW Blues',
-      venue: 'Optus Stadium', isHome: false, competition: 'State of Origin — Game 1',
-      teamResults: [res('NSW Blues', 'NSW', true, false, 10, 18)],
-      oppResults: [res('Queensland Maroons', 'QLD', false, true, 18, 10)],
-      context: {},
-    },
-  },
-  {
-    name: 'Cricket (BBL) — NOT a production AI-preview league',
-    note: 'Edge: unsupported league. Exercises the generic path (no SPORT_CONTEXT entry); production never previews cricket.',
-    input: {
-      league: 'bbl', teamId: 'bbl-heat', opponentId: 'bbl-sixers',
-      teamName: 'Brisbane Heat', opponentName: 'Sydney Sixers',
-      venue: 'The Gabba', isHome: true, competition: 'Big Bash League',
-      teamResults: [res('Sydney Sixers', 'SIX', false, true, 0, 0, { cricketFormat: 't20', cricketResult: 'Won by 7 wickets' })],
-      oppResults: [res('Brisbane Heat', 'HEA', true, false, 0, 0, { cricketFormat: 't20', cricketResult: 'Lost by 7 wickets' })],
-      context: {},
     },
   },
 ];
@@ -298,35 +283,64 @@ const FIXTURES: Fixture[] = [
 interface RunResult { text: string; inputTokens: number; outputTokens: number; latencyMs: number }
 
 async function callModel(cfg: ModelCfg, system: string, user: string): Promise<RunResult> {
-  if (cfg.provider !== 'anthropic') {
-    // Extension point: a local model (Ollama/MLX) would be invoked here.
-    throw new Error(`provider '${cfg.provider}' not implemented in this eval`);
-  }
-  const client = new Anthropic();
   const t0 = Date.now();
-  const resp = await client.messages.create({
-    model: cfg.model,
-    max_tokens: MAX_TOKENS,
-    temperature: TEMPERATURE,
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
-  const latencyMs = Date.now() - t0;
-  const block = resp.content.find(b => b.type === 'text') as { text?: string } | undefined;
-  return { text: block?.text ?? '', inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens, latencyMs };
+
+  if (cfg.provider === 'ollama') {
+    const client = new OpenAI({
+      baseURL: process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1',
+      apiKey:  'ollama',
+      timeout: 10 * 60 * 1000,
+    });
+    const resp = await client.chat.completions.create({
+      model:      cfg.model,
+      max_tokens: cfg.maxTokens ?? 4000,
+      messages:   [{ role: 'system', content: system }, { role: 'user', content: user }],
+    });
+    const latencyMs   = Date.now() - t0;
+    const raw         = resp.choices[0]?.message?.content ?? '{}';
+    const stripped    = raw.includes('</think>') ? raw.replace(/<think>[\s\S]*?<\/think>\s*/i, '') : raw;
+    return {
+      text:         stripped,
+      inputTokens:  resp.usage?.prompt_tokens     ?? 0,
+      outputTokens: resp.usage?.completion_tokens ?? 0,
+      latencyMs,
+    };
+  }
+
+  if (cfg.provider === 'anthropic') {
+    const client = new Anthropic();
+    const resp = await client.messages.create({
+      model:       cfg.model,
+      max_tokens:  MAX_TOKENS,
+      temperature: 0,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+    const latencyMs = Date.now() - t0;
+    const block = resp.content.find(b => b.type === 'text') as { text?: string } | undefined;
+    return { text: block?.text ?? '', inputTokens: resp.usage.input_tokens, outputTokens: resp.usage.output_tokens, latencyMs };
+  }
+
+  throw new Error(`Unknown provider: ${cfg.provider}`);
 }
 
 const costUsd = (cfg: ModelCfg, inTok: number, outTok: number): number =>
   (inTok / 1e6) * cfg.inputPrice + (outTok / 1e6) * cfg.outputPrice;
 
-/** Render an AIPreview JSON payload as readable markdown; fall back to raw text. */
-function renderPreview(text: string): string {
-  let p: AIPreview | null = null;
+function parsePreview(text: string): AIPreview | null {
   try {
     const cleaned = text.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
-    p = JSON.parse(cleaned) as AIPreview;
-  } catch { /* fall through to raw */ }
-  if (!p || !p.context) return '```\n' + text.trim() + '\n```';
+    const jsonStart = cleaned.indexOf('{');
+    const jsonEnd   = cleaned.lastIndexOf('}');
+    const candidate = (jsonStart >= 0 && jsonEnd > jsonStart) ? cleaned.slice(jsonStart, jsonEnd + 1) : cleaned;
+    return JSON.parse(candidate) as AIPreview;
+  } catch { return null; }
+}
+
+/** Render an AIPreview JSON payload as readable markdown; fall back to raw text. */
+function renderPreview(text: string): string {
+  const p = parsePreview(text);
+  if (!p?.context) return '```\n' + text.trim() + '\n```';
   const insights = (p.keyInsights ?? []).map(i => `- ${i}`).join('\n');
   return [
     `**Context.** ${p.context}`,
@@ -337,18 +351,127 @@ function renderPreview(text: string): string {
   ].join('\n\n');
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Grounding audit (variant eval only) ────────────────────────────────────────
+function auditGrounding(text: string, userMsg: string): { valid: boolean; fabricatedNums: string[]; groundedNums: string[] } {
+  const p = parsePreview(text);
+  if (!p) return { valid: false, fabricatedNums: [], groundedNums: [] };
+  const REQUIRED = ['context', 'tacticalBattle', 'playerSpotlight', 'verdict', 'keyInsights'];
+  const valid = REQUIRED.every(k => (p as Record<string,unknown>)[k]);
+  const outNums   = [...new Set([...JSON.stringify(p).matchAll(/\b(\d{2,})\b/g)].map(m => m[1]))];
+  const inNums    = new Set([...userMsg.matchAll(/\b(\d{2,})\b/g)].map(m => m[1]));
+  return {
+    valid,
+    fabricatedNums: outNums.filter(n => !inNums.has(n)),
+    groundedNums:   outNums.filter(n =>  inNums.has(n)),
+  };
+}
+
+// ── Variant eval mode ──────────────────────────────────────────────────────────
+async function runVariantEval(dryRun: boolean): Promise<void> {
+  const variants = getVariants();
+  const ollamaModels = MODELS.filter(m => m.provider === 'ollama');
+  const outDir = 'eval-output';
+  mkdirSync(outDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const outPath = join(outDir, `variant-eval-${stamp}.md`);
+  const logPath = '/tmp/sporthouse-ai.log';
+
+  const md: string[] = [
+    '# Prompt Variant Comparison — Local Model Grounding Audit',
+    '',
+    `Generated ${new Date().toISOString()}`,
+    `Variants: ${variants.map(v => v.label).join(' | ')}`,
+    `Models: ${ollamaModels.map(m => m.label).join(', ')}`,
+    '',
+    '| Fixture | Model | Variant | Time (s) | Valid JSON | Fab. Nums | Quality |',
+    '|---------|-------|---------|----------|------------|-----------|---------|',
+  ];
+
+  for (const fx of VARIANT_FIXTURES) {
+    const leagueTable = LEAGUE_TABLES[fx.input.league];
+
+    for (const model of ollamaModels) {
+      for (const variant of variants) {
+        // Build the input — add leagueTable for variant (c), omit for (a)/(b)
+        const inputWithTable: PreviewPromptInput = {
+          ...fx.input,
+          context: {
+            ...fx.input.context,
+            leagueTable: variant.stripDerivedFacts ? undefined : leagueTable,
+          },
+        };
+
+        const { system: _sys, user: rawUser } = buildPreviewPrompt(inputWithTable);
+        const user   = variant.stripDerivedFacts ? stripDerivedFacts(rawUser) : rawUser;
+        const system = variant.systemPrompt;
+
+        const userLines = user.split('\n').length;
+        console.log(`\n[${fx.name}] [${model.label}] [${variant.label}]`);
+        console.log(`  System: ${system.length} chars | User: ${user.length} chars (${userLines} lines)`);
+
+        if (dryRun) {
+          md.push(`| ${fx.name} | ${model.label} | ${variant.label} | -- | -- | -- | dry-run |`);
+          continue;
+        }
+
+        let result: RunResult;
+        try {
+          const t0 = Date.now();
+          const line = `[${new Date().toISOString()}] [eval] start model=${model.model} variant=${variant.label} fixture=${fx.name}\n`;
+          try { appendFileSync(logPath, line); } catch {}
+
+          result = await callModel(model, system, user);
+
+          const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+          const doneLog = `[${new Date().toISOString()}] [eval] done model=${model.model} variant=${variant.label} elapsed=${elapsed}s\n`;
+          try { appendFileSync(logPath, doneLog); } catch {}
+        } catch (e) {
+          console.error(`  ✗ ERROR: ${(e as Error).message}`);
+          md.push(`| ${fx.name} | ${model.label} | ${variant.label} | ERR | -- | -- | ERROR: ${(e as Error).message.slice(0, 40)} |`);
+          continue;
+        }
+
+        const audit   = auditGrounding(result.text, user);
+        const elapsed = (result.latencyMs / 1000).toFixed(1);
+        const verdict = !audit.valid
+          ? 'INVALID JSON'
+          : audit.fabricatedNums.length > 0
+            ? `FAIL (fab: ${audit.fabricatedNums.join(', ')})`
+            : 'PASS';
+
+        console.log(`  ✓ ${elapsed}s | valid=${audit.valid} | fab=[${audit.fabricatedNums.join(',')}]`);
+        console.log(`  Output preview: ${result.text.slice(0, 200)}`);
+
+        md.push(`| ${fx.name.slice(0, 40)} | ${model.label} | ${variant.label} | ${elapsed} | ${audit.valid ? 'YES' : 'NO'} | ${audit.fabricatedNums.length} (${audit.fabricatedNums.slice(0,4).join(',')}) | ${verdict} |`);
+
+        // Full output section in the doc
+        md.push('', `<details><summary>${fx.name} | ${model.label} | ${variant.label}</summary>`, '');
+        md.push('**User data block (first 30 lines):**', '```');
+        md.push(...user.split('\n').slice(0, 30));
+        md.push('```', '');
+        md.push('**Model output:**', '```json');
+        md.push(result.text.slice(0, 2000));
+        md.push('```', '', '</details>', '');
+      }
+    }
+  }
+
+  writeFileSync(outPath, md.join('\n'));
+  console.log(`\nVariant eval saved to ${outPath}`);
+}
+
+// ── Blind comparison mode (original) ──────────────────────────────────────────
 interface Totals { inTok: number; outTok: number; cost: number; latency: number; n: number }
 
-async function main(): Promise<void> {
-  const dryRun = process.argv.includes('--dry-run');
+async function runBlindComparison(dryRun: boolean, localOnly: boolean): Promise<void> {
   loadEnvLocal();
-  if (!dryRun && !process.env.ANTHROPIC_API_KEY) {
-    console.error('✗ ANTHROPIC_API_KEY not set (env or .env.local). Use --dry-run to build prompts only.');
+  const models = localOnly ? MODELS.filter(m => m.provider === 'ollama') : MODELS;
+
+  if (!dryRun && !localOnly && !process.env.ANTHROPIC_API_KEY) {
+    console.error('✗ ANTHROPIC_API_KEY not set. Use --dry-run or --local-only.');
     process.exit(1);
   }
 
-  // Seeded RNG so the A/B ordering is reproducible across runs.
   let seed = 20260530;
   const rnd = (): number => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 
@@ -361,38 +484,28 @@ async function main(): Promise<void> {
   const md: string[] = [];
   const key: Array<{ fixture: string; A: string; B: string }> = [];
   const totals: Record<string, Totals> = {};
-  for (const m of MODELS) totals[m.label] = { inTok: 0, outTok: 0, cost: 0, latency: 0, n: 0 };
+  for (const m of models) totals[m.label] = { inTok: 0, outTok: 0, cost: 0, latency: 0, n: 0 };
 
-  md.push(
-    '# AI Match-Preview — Blind Model Comparison',
-    '',
-    `Generated ${new Date().toISOString()} · models: ${MODELS.map(m => m.label).join(' vs ')} · ` +
-    `samples/model=${SAMPLES} · temperature=${TEMPERATURE} · max_tokens=${MAX_TOKENS}`,
-    '',
-    'Each fixture below shows two previews as **Option A / Option B**, anonymized and ' +
-    'order-randomized so you can judge quality without knowing which model produced which. ' +
-    `The mapping lives in a separate key file: \`${keyPath}\` — read it only after judging.`,
-    '', '---', '',
-  );
+  md.push('# AI Match-Preview — Blind Model Comparison', '',
+    `Generated ${new Date().toISOString()} · models: ${models.map(m => m.label).join(' vs ')} · ` +
+    `samples/model=${SAMPLES}`, '', '---', '');
 
   for (const fx of FIXTURES) {
     const { system, user } = buildPreviewPrompt(fx.input);
     md.push(`## ${fx.name}`, '', `*${fx.note}*`, '');
 
     if (dryRun) {
-      md.push(`_dry-run: prompt assembled OK — system ${system.length} chars, user ${user.length} chars; no model call._`, '', '---', '');
+      md.push(`_dry-run: system ${system.length} chars, user ${user.length} chars_`, '', '---', '');
       console.log(`[dry-run] ${fx.name}: system ${system.length} / user ${user.length} chars`);
       continue;
     }
 
     const display: Record<string, string> = {};
-    for (const m of MODELS) {
+    for (const m of models) {
       for (let s = 0; s < SAMPLES; s++) {
         let r: RunResult;
-        try {
-          r = await callModel(m, system, user);
-        } catch (err) {
-          console.error(`  ✗ ${m.label} failed on "${fx.name}":`, (err as Error).message);
+        try { r = await callModel(m, system, user); }
+        catch (err) {
           r = { text: `[ERROR: ${(err as Error).message}]`, inputTokens: 0, outputTokens: 0, latencyMs: 0 };
         }
         const t = totals[m.label];
@@ -404,39 +517,42 @@ async function main(): Promise<void> {
       console.log(`  ✓ ${m.label} · ${fx.name}`);
     }
 
-    // Randomize which model is shown as A vs B for this fixture.
-    const ordered = rnd() < 0.5 ? [MODELS[0], MODELS[1]] : [MODELS[1], MODELS[0]];
-    md.push('### Option A', '', renderPreview(display[ordered[0].label]), '');
-    md.push('### Option B', '', renderPreview(display[ordered[1].label]), '');
-    key.push({ fixture: fx.name, A: ordered[0].label, B: ordered[1].label });
+    if (models.length >= 2) {
+      const ordered = rnd() < 0.5 ? [models[0], models[1]] : [models[1], models[0]];
+      md.push('### Option A', '', renderPreview(display[ordered[0].label]), '');
+      md.push('### Option B', '', renderPreview(display[ordered[1].label]), '');
+      key.push({ fixture: fx.name, A: ordered[0].label, B: ordered[1].label });
+    } else {
+      md.push('### Output', '', renderPreview(display[models[0].label]), '');
+    }
     md.push('---', '');
   }
 
-  // ── Summary table ──
   md.push('## Cost / latency summary', '');
-  md.push('| Model | calls | input tok | output tok | total cost (USD)¹ | avg latency |');
+  md.push('| Model | calls | input tok | output tok | cost (USD) | avg latency |');
   md.push('|---|---:|---:|---:|---:|---:|');
-  for (const m of MODELS) {
+  for (const m of models) {
     const t = totals[m.label];
-    md.push(
-      `| ${m.label} (\`${m.model}\`) | ${t.n} | ${t.inTok.toLocaleString()} | ${t.outTok.toLocaleString()} | ` +
-      `$${t.cost.toFixed(4)} | ${t.n ? Math.round(t.latency / t.n) : 0} ms |`,
-    );
+    md.push(`| ${m.label} | ${t.n} | ${t.inTok.toLocaleString()} | ${t.outTok.toLocaleString()} | $${t.cost.toFixed(4)} | ${t.n ? Math.round(t.latency / t.n) : 0} ms |`);
   }
-  md.push('', '¹ Prices are approximate ($/1M tokens, see MODELS in the script) — confirm against current Anthropic pricing.', '');
 
-  if (!dryRun) {
-    writeFileSync(keyPath, JSON.stringify(key, null, 2) + '\n');
-  }
+  if (!dryRun) writeFileSync(keyPath, JSON.stringify(key, null, 2) + '\n');
   writeFileSync(artifactPath, md.join('\n'));
-
-  console.log('\n── Summary ──');
-  for (const m of MODELS) {
-    const t = totals[m.label];
-    console.log(`${m.label.padEnd(12)} calls=${t.n}  in=${t.inTok}  out=${t.outTok}  cost=$${t.cost.toFixed(4)}  avgLatency=${t.n ? Math.round(t.latency / t.n) : 0}ms`);
-  }
   console.log(`\nArtifact: ${artifactPath}`);
-  if (!dryRun) console.log(`Key:      ${keyPath}`);
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+async function main(): Promise<void> {
+  loadEnvLocal();
+  const dryRun     = process.argv.includes('--dry-run');
+  const variantEval = process.argv.includes('--variant-eval');
+  const localOnly  = process.argv.includes('--local-only');
+
+  if (variantEval) {
+    await runVariantEval(dryRun);
+  } else {
+    await runBlindComparison(dryRun, localOnly);
+  }
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

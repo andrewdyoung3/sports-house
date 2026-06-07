@@ -149,8 +149,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v33: Full league table + mathematical competition status in AI data block.
-const CACHE_KEY = (gameId: string) => `ai-preview-v33:${gameId}`;
+// v38: competition-context COMPETITION PROFILE + SEASON STATE injected into all prompts.
+const CACHE_KEY = (gameId: string) => `ai-preview-v38:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -1086,25 +1086,25 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Main panel content — hidden on mobile when table tab is active ── */}
       <div className={cn('space-y-5', hasTable && activeTab === 'table' ? 'hidden lg:block' : '')}>
 
-      {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
-      {aiLoading && aiEnabled && (
-        <AILoadingCard color={team.primaryColor} />
-      )}
-
       {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
-      {aiEnabled && !aiLoading && (
+      {aiEnabled && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
             <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
             Match Preview
+            {aiUpdating && (
+              <span className="flex items-center gap-1 text-[9px] font-normal text-white/25 normal-case tracking-normal ml-auto">
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                Refreshing with latest news…
+              </span>
+            )}
           </p>
-          {aiUpdating && (
-            <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mt-0.5 mb-1">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              Refreshing with latest news…
+          {aiLoading ? (
+            <p className="text-[11px] text-white/30 italic flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin shrink-0" style={{ color: team.primaryColor + '99' }} />
+              AI preview is being prepared…
             </p>
-          )}
-          {aiPreview?.context ? (
+          ) : aiPreview?.context ? (
             <p className="text-sm text-white/65 leading-relaxed">{aiPreview.context}</p>
           ) : (
             <p className="text-[11px] text-white/25 italic">Preview unavailable</p>

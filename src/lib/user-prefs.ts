@@ -141,7 +141,20 @@ export function toggleTeam(team: Team): Team[] {
     ? current.filter(t => t.id !== team.id)
     : [...current, team];
   saveFollowedTeams(updated);
+  // When a team is newly followed, fire-and-forget pre-generation so the
+  // first preview load hits the cache instead of waiting 30-60s.
+  if (!exists) void warmTeamPreviews(team.id, team.league);
   return updated;
+}
+
+async function warmTeamPreviews(teamId: string, league: string): Promise<void> {
+  try {
+    await fetch('/api/warm-team', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ teamId, league }),
+    });
+  } catch { /* non-fatal */ }
 }
 
 export function clearFollowedTeams(): void {

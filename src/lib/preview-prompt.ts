@@ -8,6 +8,7 @@
 
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
+import { getCompetitionProfile } from '@/lib/competition-context';
 
 // ─── Team home-venue lookup ───────────────────────────────────────────────────
 // Built once at module load; maps teamId → registered home venue string.
@@ -279,12 +280,15 @@ function buildTableSection(
     sorted.forEach(t => alwaysShow.add(t.position));
   }
 
-  // Always include both fixture teams
-  sorted.filter(t => t.name === teamName || t.name === opponentName)
+  // Always include both fixture teams (fuzzy match handles ESPN short-name vs full-name)
+  sorted.filter(t => rowMatchesTeam(t.name, teamName) || rowMatchesTeam(t.name, opponentName))
     .forEach(t => alwaysShow.add(t.position));
 
-  const rowLabel = (league === 'epl' || league === 'nrl') ? 'pts' : 'pts';
+  const isAFL = league === 'afl';
   lines.push(`LEAGUE TABLE (${totalRounds} rounds total — ${totalRounds} games each):`);
+  if (isAFL) {
+    lines.push(`  [AFL: Percentage (pts scored ÷ pts conceded × 100) is the official ladder tiebreaker when teams are level on competition points]`);
+  }
 
   let lastPos = 0;
   for (const t of sorted) {
@@ -293,16 +297,189 @@ function buildTableSection(
       lines.push('  ...');
     }
     const remaining = Math.max(0, totalRounds - t.played);
-    const marker = (t.name === teamName || t.name === opponentName) ? ' ◄' : '';
+    const marker = (rowMatchesTeam(t.name, teamName) || rowMatchesTeam(t.name, opponentName)) ? ' ◄' : '';
+    const pctNote = (isAFL && t.percentage !== undefined) ? `  ${t.percentage.toFixed(1)}%` : '';
     lines.push(
       `  ${String(t.position).padStart(2)}. ${t.name.padEnd(28)} ` +
       `${t.played}P  ${t.wins}W ${t.draws}D ${t.losses}L  ` +
-      `${t.points} ${rowLabel}  (${remaining} remaining)${marker}`,
+      `${t.points} pts${pctNote}  (${remaining} remaining)${marker}`,
     );
     lastPos = t.position;
   }
 
   return lines;
+}
+
+// ─── Name matching ────────────────────────────────────────────────────────────
+
+/**
+ * Fuzzy-matches a table row name against a fixture team name.
+ * Handles cases where ESPN uses a short name ("Broncos") while the app uses
+ * the full name ("Brisbane Broncos"), or vice versa.
+ */
+function rowMatchesTeam(rowName: string, teamName: string): boolean {
+  const r = rowName.toLowerCase();
+  const t = teamName.toLowerCase();
+  return r === t || t.includes(r) || r.includes(t);
+}
+
+// ─── Derived facts ────────────────────────────────────────────────────────────
+
+/**
+ * Pre-computes standings arithmetic from the live table and emits it as a
+ * DERIVED FACTS block the model must quote verbatim — no recalculation needed.
+ *
+ * Guards: if all points are zero (data corruption) or we can't find either
+ * fixture team in the table, returns [] so nothing is emitted.
+ */
+function buildDerivedFacts(
+  league: string,
+  table: LeagueTableRow[],
+  teamName: string,
+  opponentName: string,
+): string[] {
+  if (table.length === 0) return [];
+  const sorted = [...table].sort((a, b) => a.position - b.position);
+
+  // Zero-points guard: if every row is 0 the data is corrupt — emit nothing
+  if (sorted.every(r => r.points === 0)) return [];
+
+  const teamRow = sorted.find(r => rowMatchesTeam(r.name, teamName));
+  const oppRow  = sorted.find(r => rowMatchesTeam(r.name, opponentName));
+  if (!teamRow && !oppRow) return [];
+
+  const facts: string[] = [
+    'DERIVED FACTS — pre-computed from the table above. Use these numbers verbatim; do NOT recalculate:',
+  ];
+
+  // ── Head-to-head gap ──────────────────────────────────────────────────────
+  if (teamRow && oppRow && (teamRow.points > 0 || oppRow.points > 0)) {
+    const diff = (teamRow.points) - (oppRow.points);
+    if (diff > 0) {
+      facts.push(`  • ${teamName} leads ${opponentName} by ${diff} competition point${diff === 1 ? '' : 's'} on the table.`);
+    } else if (diff < 0) {
+      facts.push(`  • ${opponentName} leads ${teamName} by ${Math.abs(diff)} competition point${Math.abs(diff) === 1 ? '' : 's'} on the table.`);
+    } else {
+      // Level on competition points — for AFL, percentage is the tiebreaker
+      if (league === 'afl' && teamRow.percentage !== undefined && oppRow.percentage !== undefined) {
+        const tPct = teamRow.percentage;
+        const oPct = oppRow.percentage;
+        if (tPct > oPct) {
+          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${teamName} hold the higher ladder position on percentage (${tPct.toFixed(1)}% vs ${oPct.toFixed(1)}%) — AFL official tiebreaker.`);
+        } else if (oPct > tPct) {
+          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${opponentName} hold the higher ladder position on percentage (${oPct.toFixed(1)}% vs ${tPct.toFixed(1)}%) — AFL official tiebreaker.`);
+        } else {
+          facts.push(`  • ${teamName} and ${opponentName} are level on both competition points and percentage.`);
+        }
+      } else {
+        facts.push(`  • ${teamName} and ${opponentName} are level on competition points.`);
+      }
+    }
+  }
+
+  // ── Finals cutoff gap (AFL / NRL / Super Rugby — top 8) ──────────────────
+  const finalsSpot = FINALS_SPOTS[league];
+  if (finalsSpot && sorted.length > finalsSpot) {
+    const cutoff    = sorted[finalsSpot - 1]; // 8th place
+    const cutoffPts = cutoff.points;
+    if (cutoffPts > 0) {
+      // For AFL: find all teams tied on the cutoff points (percentage decides ordering)
+      const teamsOnCutoffPts = (league === 'afl')
+        ? sorted.filter(r => r.points === cutoffPts)
+        : [];
+
+      for (const [name, row] of [
+        [teamName, teamRow],
+        [opponentName, oppRow],
+      ] as [string, LeagueTableRow | undefined][]) {
+        if (!row || row.points === 0) continue;
+        // Team IS the cutoff row — they hold the last finals spot
+        if (row.name === cutoff.name) {
+          if (league === 'afl' && teamsOnCutoffPts.length > 1 && row.percentage !== undefined) {
+            facts.push(
+              `  • ${name} are in ${ordinalSuffix(finalsSpot)} place — the last finals position (${cutoffPts} pts, ${row.percentage.toFixed(1)}% percentage). ` +
+              `${teamsOnCutoffPts.length} teams are tied on ${cutoffPts} pts at the cutoff; percentage determines their ladder order.`
+            );
+          } else {
+            facts.push(`  • ${name} are in ${ordinalSuffix(finalsSpot)} place — the last finals position (${cutoffPts} pts).`);
+          }
+          continue;
+        }
+        const gap = row.points - cutoffPts;
+        if (gap > 0) {
+          facts.push(`  • ${name} is ${gap} point${gap === 1 ? '' : 's'} inside the finals places (${ordinalSuffix(finalsSpot)} is ${cutoff.name} with ${cutoffPts} pts).`);
+        } else if (gap < 0) {
+          facts.push(`  • ${name} is ${Math.abs(gap)} point${Math.abs(gap) === 1 ? '' : 's'} outside the finals places (${ordinalSuffix(finalsSpot)} is ${cutoff.name} with ${cutoffPts} pts).`);
+        } else {
+          // Level on points with cutoff — AFL needs percentage context
+          if (league === 'afl' && row.percentage !== undefined && cutoff.percentage !== undefined) {
+            const n = teamsOnCutoffPts.length;
+            const rank = teamsOnCutoffPts
+              .slice()
+              .sort((a, b) => (b.percentage ?? 0) - (a.percentage ?? 0))
+              .findIndex(r => rowMatchesTeam(r.name, name)) + 1;
+            if (row.percentage > cutoff.percentage) {
+              facts.push(`  • ${name} are level on points with the finals cutoff (${cutoffPts} pts) but sit inside top 8 on percentage (${row.percentage.toFixed(1)}% vs ${cutoff.name}'s ${cutoff.percentage.toFixed(1)}%) — ${n} teams on ${cutoffPts} pts; percentage determines their order.`);
+            } else if (row.percentage < cutoff.percentage) {
+              facts.push(`  • ${name} are level on points with the finals cutoff (${cutoffPts} pts) but sit outside top 8 on percentage (${row.percentage.toFixed(1)}% vs ${cutoff.name}'s ${cutoff.percentage.toFixed(1)}%) — ${n > 1 ? `${ordinalSuffix(rank)} of ${n} teams on ${cutoffPts} pts` : 'percentage decides who makes finals'}.`);
+            } else {
+              facts.push(`  • ${name} are level with the finals cutoff on both points (${cutoffPts} pts) and percentage (${row.percentage.toFixed(1)}%).`);
+            }
+          } else {
+            facts.push(`  • ${name} is level on points with the finals cutoff (${ordinalSuffix(finalsSpot)}, ${cutoff.name}, ${cutoffPts} pts).`);
+          }
+        }
+      }
+    }
+  }
+
+  // ── EPL: gap to top-4 Champions League places ────────────────────────────
+  if (league === 'epl' && sorted.length >= EPL_UCL_SPOTS + 1) {
+    const fourthRow = sorted[EPL_UCL_SPOTS - 1];
+    const fifthRow  = sorted[EPL_UCL_SPOTS];
+    const fourthPts = fourthRow?.points ?? 0;
+    if (fourthPts > 0) {
+      for (const [name, row] of [
+        [teamName, teamRow],
+        [opponentName, oppRow],
+      ] as [string, LeagueTableRow | undefined][]) {
+        if (!row || row.points === 0) continue;
+        if (row.position <= EPL_UCL_SPOTS) {
+          const margin = row.points - (fifthRow?.points ?? 0);
+          facts.push(`  • ${name} are in the top four, ${margin} point${margin === 1 ? '' : 's'} clear of 5th place.`);
+        } else {
+          const gap = fourthPts - row.points;
+          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} behind the top four (4th is ${fourthRow.name} with ${fourthPts} pts).`);
+        }
+      }
+    }
+  }
+
+  // ── EPL: gap to relegation zone ──────────────────────────────────────────
+  if (league === 'epl' && sorted.length >= EPL_RELEGATION_FROM) {
+    const safetyRow = sorted[EPL_RELEGATION_FROM - 2]; // 17th
+    const safetyPts = safetyRow?.points ?? 0;
+    if (safetyPts > 0) {
+      for (const [name, row] of [
+        [teamName, teamRow],
+        [opponentName, oppRow],
+      ] as [string, LeagueTableRow | undefined][]) {
+        if (!row || row.points === 0) continue;
+        const gap = row.points - safetyPts;
+        if (gap > 0) {
+          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} above the relegation zone (17th is ${safetyRow.name} with ${safetyPts} pts).`);
+        } else if (gap < 0) {
+          facts.push(`  • ${name} are in the relegation zone, ${Math.abs(gap)} point${Math.abs(gap) === 1 ? '' : 's'} from safety (17th is ${safetyRow.name} with ${safetyPts} pts).`);
+        } else {
+          facts.push(`  • ${name} are level with the relegation cutoff (17th, ${safetyRow.name}, ${safetyPts} pts).`);
+        }
+      }
+    }
+  }
+
+  // Only the header with no facts → skip
+  if (facts.length <= 1) return [];
+  return facts;
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -374,6 +551,12 @@ CALIBRATING HOW MUCH WEIGHT TO GIVE THE DATA:
 • Uneven played counts: if one team has played significantly more games, mention it if it affects how you read the relative form.
 • Weight the quality of opposition. Beating a bottom-half side in Round 2 tells you much less than beating a top-four rival.
 • If a team's form tells a different story from their ladder position — strong play but mid-table, or flat form but high up — point that out. That tension is usually more interesting than the number itself.
+
+SEASON STRUCTURE — authoritative source, non-negotiable:
+• The COMPETITION PROFILE in the data block is the authoritative description of how this competition works: format, finals structure, qualification cutoffs, and key concepts. All statements about season structure, finals, qualification, relegation, or how the championship is decided MUST come from the COMPETITION PROFILE — never from your training knowledge about the competition.
+• The SEASON STATE line tells you exactly where we are in the season. Use it — do not infer the season stage from the round number or team records alone.
+• If COMPETITION PROFILE says "NO finals" (e.g. Premier League), do NOT write about a team's finals chances. If it says "Top 8 qualify," do NOT claim a different cutoff. If it says "NO relegation," do NOT reference relegation. Any claim about competition structure that contradicts the COMPETITION PROFILE is an error.
+• Short competitions (Six Nations, Rugby Championship, Test series — under 6 rounds) are consequential from the first game — every result matters for the series outcome. The standard thirds/early-season framework does not apply; treat every fixture as meaningful from the outset.
 
 COMPETITION STATUS — non-negotiable mathematical facts:
 When the data block contains a "COMPETITION STATUS" section, those facts are mathematically certain — computed from the live points table and games remaining. They OVERRIDE any framing you might otherwise apply based on the seasonal-dynamics rules below. Do NOT soften, hedge, or contradict them.
@@ -503,6 +686,21 @@ F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORM
 • "tacticalBattle" (labelled "Field Form" in F1): Describe the current form and trajectory of the broader field — who has been quick over recent rounds, which constructors are performing above/below expectation under the new regs, key rivalries developing in the championship. Cover the whole grid at a high level; the followed driver/constructor gets extra depth but should not crowd out the field picture.
 • "playerSpotlight" (labelled "Focus: {followed name}" in F1): At least 80% of this section must be directly about the FOLLOWED ENTITY named in the data block — their specific strengths/weaknesses at this circuit, how their car handles active aero and MO deployment, their championship trajectory, what this race means for them. Brief mention of rivals is only permitted when directly relevant to the followed entity's own situation (e.g. a points gap to their nearest rival). Do NOT lead with or centre on any other driver.
 • "verdict": Key things to watch in this race weekend — specific overtaking opportunities, strategic scenarios (undercut/overcut windows, safety car beneficiaries, tyre strategy), weather factors, and what would constitute a successful weekend for the followed entity.
+
+GROUNDING — absolute constraint, no exceptions:
+• Only cite statistics, percentages, rankings, or records that are explicitly present in the data block below. Never invent numbers. If a stat is not in the data, do not state it.
+• Only name individual players whose names appear in the provided STARTING LINEUP or TEAM NEWS sections. If no player data is provided, do not name any player — describe roles and patterns instead.
+• Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
+• DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
+• EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
+
+STRUCTURE — four elements required in every preview, distributed naturally across the sections:
+• KEY MATCHUP: Name the single most decisive tactical or personnel contest — the specific duel where the fixture will be decided. One concrete clash, not a general overview.
+• RECENT FORM: What each side's last few results reveal structurally — pattern and cause, not scorelines. Connect it directly to this fixture.
+• STATISTICAL ANGLE: One meaningful number or comparative record that frames the game (ranked in the league where possible). Only include it if it adds genuine analytical weight.
+• REASONED PREDICTION: The most probable outcome with specific reasoning. Name the decisive factor. No hedged non-answers.
+
+These four elements must appear across the response — they do not need to be labelled separately.
 
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
@@ -714,23 +912,49 @@ export function buildDataBlock(
     }
   }
 
-  // Season phase — only for primary-league fixtures with a known total-rounds count
-  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
-  const played = context.teamStanding?.played ?? context.opponentStanding?.played;
-  if (!isOffLeague && totalRounds && played !== undefined) {
-    const third = Math.ceil(totalRounds / 3);
-    const phase = played <= third
-      ? 'first third — early season'
-      : played <= third * 2
-        ? 'second third — mid-season'
-        : 'final third — late season';
-    const roundsRemaining = totalRounds - played;
-    lines.push(
-      `SEASON PHASE: Round ${played} of ${totalRounds} — ` +
-      `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} remaining (${phase})`
-    );
+  // ── Competition profile (static) ────────────────────────────────────────────
+  // Injected for primary-league fixtures so the model knows exactly how the
+  // competition works — format, finals structure, qualification cutoffs.
+  const compProfile = !isOffLeague ? getCompetitionProfile(league) : null;
+  if (compProfile) {
+    lines.push(`COMPETITION PROFILE — ${compProfile.name} (authoritative — use this for all season-structure, finals, qualification, and relegation statements):`);
+    lines.push(compProfile.profile);
+    lines.push('');
   }
+
   lines.push(`SPORT: ${sportCtx}`);
+
+  // ── Season state (computed) ──────────────────────────────────────────────────
+  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
+  const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
+  if (!isOffLeague && totalRounds && played !== undefined) {
+    const quarter   = Math.ceil(totalRounds / 4);
+    const third     = Math.ceil(totalRounds / 3);
+    const runHomeCutoff = Math.floor(totalRounds * 0.65);
+    const isFinalsPhase = played >= totalRounds; // regular season complete
+    const phase =
+      isFinalsPhase      ? 'finals series'
+      : played <= quarter    ? 'early season'
+      : played <= runHomeCutoff ? 'mid-season'
+      : 'run home — final stretch of the regular season';
+    const roundsRemaining = totalRounds - played;
+
+    const teamRemaining = context.teamStanding?.played !== undefined
+      ? Math.max(0, totalRounds - context.teamStanding.played) : undefined;
+    const oppRemaining  = context.opponentStanding?.played !== undefined
+      ? Math.max(0, totalRounds - context.opponentStanding.played) : undefined;
+
+    const remParts: string[] = [];
+    if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
+    if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
+
+    lines.push(
+      `SEASON STATE: Round ${played} of ${totalRounds} — ` +
+      `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
+      (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
+    );
+    if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
+  }
   if (context.teamManager || context.opponentManager) {
     const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
     const oppMgr  = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
@@ -785,6 +1009,13 @@ export function buildDataBlock(
       if (statusNotes.length > 0) {
         lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
         statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+        lines.push('');
+      }
+
+      // Derived standings arithmetic — pre-computed so the model never has to
+      const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName);
+      if (derivedFacts.length > 0) {
+        lines.push(...derivedFacts);
         lines.push('');
       }
     } else if (context.teamStanding || context.opponentStanding) {
