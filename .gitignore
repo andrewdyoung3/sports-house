@@ -23,3 +23,6 @@ client_secret_*.json
 
 # Generated eval artifacts (scripts/eval-previews.ts)
 eval-output/
+.DS_Store
+.env.local.save
+*.save
