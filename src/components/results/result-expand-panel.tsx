@@ -3,26 +3,26 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Zap, TrendingUp, Loader2, Newspaper,
-  Users, ChevronDown,
+  Users, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
-import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey } from '@/types';
-import { LeagueTable } from '@/components/schedule/league-table';
-import type { StandingRow } from '@/components/schedule/league-table';
+import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey, StandingRow } from '@/types';
+import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 
 type ResultEntry = GameResult & { team: Team; id: string };
 
 interface ResultExpandPanelProps {
   result: ResultEntry;
   className?: string;
+  /** Closes the panel via the parent's existing expand toggle (drives the collapse pill). */
+  onCollapse?: () => void;
 }
 
 const REAL_DATA_LEAGUES   = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
 const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
-// Both review and match-stats are immutable — no TTL needed.
 
 const REVIEW_CACHE_KEY = (id: string) => `ai-review-v2:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
@@ -66,8 +66,8 @@ function AILoadingCard({ color }: { color: string }) {
         <Newspaper className="absolute inset-0 m-auto h-4 w-4" style={{ color }} />
       </div>
       <p
-        className="text-[11px] font-semibold text-white/40 tracking-wide transition-opacity duration-300"
-        style={{ opacity: visible ? 1 : 0 }}
+        className="text-[11px] font-semibold tracking-wide transition-opacity duration-300"
+        style={{ color: 'var(--text-3)', opacity: visible ? 1 : 0 }}
       >
         {AI_TAGLINES[idx]}
       </p>
@@ -79,9 +79,12 @@ function AILoadingCard({ color }: { color: string }) {
 
 function PlayerStatsPill({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-white/6 rounded-md px-1.5 py-0.5">
-      <span className="text-white/35">{label}</span>
-      <span className="text-white/75 font-bold">{value}</span>
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-semibold rounded-md px-1.5 py-0.5"
+      style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}
+    >
+      <span style={{ color: 'var(--text-3)' }}>{label}</span>
+      <span className="font-bold">{value}</span>
     </span>
   );
 }
@@ -91,7 +94,6 @@ function TeamStatsPanel({ data, accentColor }: { data: TeamMatchStats; accentCol
 
   return (
     <div className="min-w-0">
-      {/* Team name */}
       <p
         className="text-[10px] font-black uppercase tracking-widest mb-2 truncate"
         style={{ color: accentColor }}
@@ -99,7 +101,6 @@ function TeamStatsPanel({ data, accentColor }: { data: TeamMatchStats; accentCol
         {firstName}
       </p>
 
-      {/* Aggregate stats — compact pill row */}
       {data.aggStats.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {data.aggStats.map((s, i) => (
@@ -108,22 +109,25 @@ function TeamStatsPanel({ data, accentColor }: { data: TeamMatchStats; accentCol
         </div>
       )}
 
-      {/* Player list */}
       {data.players.length > 0 ? (
         <div className="space-y-1.5">
           {data.players.map((p, i) => (
             <div key={i} className="flex items-start gap-1.5 min-w-0">
-              {/* Position tag */}
               {p.position && (
-                <span className="text-[9px] font-black uppercase text-white/20 w-6 shrink-0 text-right leading-[1.6] tabular-nums">
+                <span
+                  className="text-[9px] font-black uppercase w-6 shrink-0 text-right leading-[1.6] tabular-nums"
+                  style={{ color: 'var(--text-3)' }}
+                >
                   {p.position.slice(0, 3)}
                 </span>
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold text-white/70 leading-none truncate mb-0.5">{p.name}</p>
+                <p className="text-[11px] font-semibold leading-none truncate mb-0.5" style={{ color: 'var(--text-2)' }}>
+                  {p.name}
+                </p>
                 <div className="flex flex-wrap gap-0.5">
                   {p.stats.map((s, j) => (
-                    <span key={j} className="text-[9px] font-bold text-white/40 tabular-nums">
+                    <span key={j} className="text-[9px] font-bold tabular-nums" style={{ color: 'var(--text-3)' }}>
                       {s.label}:{s.value}
                     </span>
                   ))}
@@ -133,7 +137,7 @@ function TeamStatsPanel({ data, accentColor }: { data: TeamMatchStats; accentCol
           ))}
         </div>
       ) : (
-        <p className="text-[10px] text-white/20 italic">No player data</p>
+        <p className="text-[10px] italic" style={{ color: 'var(--text-3)' }}>No player data</p>
       )}
     </div>
   );
@@ -154,7 +158,6 @@ function PlayerStatsSection({ result, primaryColor }: PlayerStatsSectionProps) {
     if (isOpen) { setIsOpen(false); return; }
     setIsOpen(true);
 
-    // Already loaded or gave up
     if (stats || notFound) return;
 
     setLoading(true);
@@ -188,48 +191,41 @@ function PlayerStatsSection({ result, primaryColor }: PlayerStatsSectionProps) {
   }
 
   return (
-    <div className="pt-3 border-t border-white/6">
-      {/* Toggle button */}
+    // Step 8b — reskinned to .sh-detail-section; toggle button adopts .sh-detail-head
+    // styling with a trailing chevron, matching the panel's section vocabulary.
+    <div className="sh-detail-section">
       <button
         onClick={handleToggle}
-        className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-white/35 hover:text-white/60 transition-colors group"
+        className="sh-detail-head w-full cursor-pointer"
+        style={{ marginBottom: isOpen ? 12 : 0 }}
       >
-        <Users className="h-3 w-3" />
+        <Users className="sh-icon h-[13px] w-[13px]" />
         Player Stats
         <ChevronDown
-          className={cn(
-            'h-3 w-3 transition-transform duration-200',
-            isOpen ? 'rotate-180' : '',
-          )}
+          className={cn('h-3 w-3 ml-auto transition-transform duration-200', isOpen ? 'rotate-180' : '')}
+          style={{ color: 'var(--text-3)' }}
         />
       </button>
 
-      {/* Collapsible content */}
       {isOpen && (
-        <div className="mt-3" style={{ animation: 'slideDown 0.18s ease-out' }}>
+        <div style={{ animation: 'slideDown 0.18s ease-out' }}>
           {loading && (
-            <div className="flex items-center gap-1.5 text-white/25 text-[11px] py-2">
+            <div className="flex items-center gap-1.5 text-[11px] py-2" style={{ color: 'var(--text-3)' }}>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Loading player stats…
             </div>
           )}
 
           {!loading && notFound && (
-            <p className="text-[11px] text-white/20 italic py-1">
+            <p className="text-[11px] italic py-1" style={{ color: 'var(--text-3)' }}>
               Player stats not available for this game.
             </p>
           )}
 
           {!loading && stats && (
             <div className="grid grid-cols-2 gap-4">
-              <TeamStatsPanel
-                data={stats.team}
-                accentColor={primaryColor}
-              />
-              <TeamStatsPanel
-                data={stats.opponent}
-                accentColor="#6B7280"
-              />
+              <TeamStatsPanel data={stats.team}     accentColor={primaryColor} />
+              <TeamStatsPanel data={stats.opponent} accentColor="#6B7280" />
             </div>
           )}
         </div>
@@ -240,9 +236,9 @@ function PlayerStatsSection({ result, primaryColor }: PlayerStatsSectionProps) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ResultExpandPanel({ result, className }: ResultExpandPanelProps) {
+export function ResultExpandPanel({ result, className, onCollapse }: ResultExpandPanelProps) {
   const { team } = result;
-  const isRealLeague  = REAL_DATA_LEAGUES.has(team.league);
+  const isRealLeague   = REAL_DATA_LEAGUES.has(team.league);
   const hasStatsLeague = STATS_LEAGUES.has(team.league);
 
   const [aiReview,  setAiReview]  = useState<AIReview | null>(null);
@@ -273,7 +269,6 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
         const teamRow = rows?.find(r => r.teamId === team.id);
         const oppRow  = rows?.find(r => r.name?.toLowerCase().includes(result.opponent.toLowerCase().slice(0, 6)));
 
-        // Guarantee an auth session (mint anon if needed) before the gated AI fetch.
         await ensureSession();
         fetch('/api/ai-review', {
           method:  'POST',
@@ -309,33 +304,39 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
 
   const followedTeamIdsSet = useMemo(() => new Set([team.id]), [team.id]);
 
-  const outcomeColor = result.isDraw
-    ? '#f59e0b'
-    : result.isWin
-      ? '#34d399'
-      : '#f87171';
-
   return (
+    // Step 8b — sh-theme + --accent so the .sh-detail-* tokens resolve against this
+    // panel's feature team (it renders as a sibling of the result row, outside any
+    // team-coloured ancestor). Pattern mirrors game-expand-panel (two-team path).
     <div
-      className={cn('border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out' }}
+      className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
+      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
     >
-      {/* ── AI loading ── */}
+      {/* ── Collapse pill — wired to the results page toggle (when provided) ── */}
+      {onCollapse && (
+        <button
+          type="button"
+          className="sh-detail-collapse"
+          onClick={e => { e.stopPropagation(); onCollapse(); }}
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+          Collapse
+        </button>
+      )}
+
+      {/* ── AI loading card ── */}
       {aiLoading && isRealLeague && (
         <AILoadingCard color={team.primaryColor} />
       )}
 
-      {/* ── Match Review ── */}
+      {/* ── Match Report (summary + fallback) ── */}
       {!aiLoading && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Match Review
-          </p>
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Report</div>
           {aiReview?.summary ? (
-            <p className="text-sm text-white/65 leading-relaxed">{aiReview.summary}</p>
+            <p className="sh-detail-body">{aiReview.summary}</p>
           ) : (
-            <p className="text-sm text-white/35 italic leading-relaxed">
+            <p className="sh-detail-body" style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>
               {result.isWin
                 ? `${team.shortName} won ${result.teamScore}–${result.opponentScore} ${result.isHome ? 'at home' : 'away'}.`
                 : result.isDraw
@@ -347,41 +348,31 @@ export function ResultExpandPanel({ result, className }: ResultExpandPanelProps)
         </div>
       )}
 
-      {/* ── Key Factors ── */}
+      {/* ── Key Factors → Quick Take bullets ── */}
       {!aiLoading && aiReview?.keyMoments && aiReview.keyMoments.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <Zap className="h-3 w-3" style={{ color: team.primaryColor }} />
-            Key Factors
-          </p>
-          <ul className="space-y-1.5">
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Key Factors</div>
+          <ul className="sh-quick-list">
             {aiReview.keyMoments.map((m, i) => (
-              <li key={i} className="text-[12px] text-white/65 flex items-start gap-2 leading-snug">
-                <span
-                  className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0"
-                  style={{ backgroundColor: outcomeColor }}
-                />
-                {m}
-              </li>
+              <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{m}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* ── Going Forward ── */}
+      {/* ── Going Forward → .sh-verdict blockquote ── */}
       {!aiLoading && aiReview?.verdict && (
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 flex items-center gap-1.5 mb-2">
-            <TrendingUp className="h-3 w-3" />
-            Going Forward
-          </p>
-          <p className="text-[11px] text-white/55 leading-relaxed">{aiReview.verdict}</p>
-        </div>
+        <blockquote className="sh-verdict">
+          <span className="sh-verdict-label">
+            <TrendingUp className="sh-icon h-[11px] w-[11px]" />Going Forward
+          </span>
+          {aiReview.verdict}
+        </blockquote>
       )}
 
-      {/* ── League Table ── */}
+      {/* ── League Table — swapped to LeagueTableSh (shared LeagueTable untouched) ── */}
       {standings && standings.length > 0 && (
-        <LeagueTable
+        <LeagueTableSh
           league={team.league as SportKey}
           rows={standings}
           followedTeamIds={followedTeamIdsSet}

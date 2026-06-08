@@ -136,6 +136,8 @@ export interface TeamStanding {
   constructorName?: string; // F1: constructor/team name for the driver
 }
 
+export type StandingRow = TeamStanding & { teamId?: string };
+
 export interface NewsHeadline {
   headline: string;
   description?: string;

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Hanken_Grotesk, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Navbar } from '@/components/layout/navbar';
 import { PrefsSync } from '@/components/providers/prefs-sync';
@@ -7,6 +7,22 @@ import { PrefsSync } from '@/components/providers/prefs-sync';
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
+  display: 'swap',
+});
+
+// Phase-A design-system fonts — loaded and exposed as CSS variables, but NOT activated.
+// Inter (font-sans) remains the active root font; the new `.sh-theme` layer consumes
+// these via --font-hanken / --font-jetbrains and is mounted nowhere yet (dormant).
+const hanken = Hanken_Grotesk({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800', '900'],
+  variable: '--font-hanken',
+  display: 'swap',
+});
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-jetbrains',
   display: 'swap',
 });
 
@@ -27,7 +43,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${hanken.variable} ${jetbrains.variable} font-sans antialiased`}>
         {/*
          * Fixed atmospheric bokeh layer — sits behind all content.
          * Large blurred orbs create the depth; small sharp dots add the

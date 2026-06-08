@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Trophy, Plus, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 import { getFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
@@ -95,19 +95,14 @@ const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
   cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT' },
 };
 
+// Step 8 — emits .sh-comptag, matching the schedule's FixtureBadge vocabulary.
 function ResultBadge({ league, competition }: { league: string; competition?: string }) {
   const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
-  const meta = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[league] ?? null);
-  const label  = meta?.label ?? (competition ?? league.toUpperCase());
-  const bg     = meta?.bg    ?? 'rgba(255,255,255,0.06)';
-  const color  = meta?.color ?? 'rgba(255,255,255,0.40)';
+  const meta  = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[league] ?? null);
+  const label = meta?.label ?? (competition ?? league.toUpperCase());
+  const color = meta?.color ?? 'rgba(255,255,255,0.40)';
   return (
-    <span
-      className="inline-flex items-center text-[10px] font-black uppercase tracking-wide rounded border px-[5px] py-[3px] shrink-0 leading-none"
-      style={{ background: bg, color, borderColor: `${color}44` }}
-    >
-      {label}
-    </span>
+    <span className="sh-comptag" style={{ '--c': color } as React.CSSProperties}>{label}</span>
   );
 }
 
@@ -198,41 +193,124 @@ function ResultRow({
   const teamLogoUrl    = TEAM_LOGOS[team.id];
   const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
 
-  const isDraw = result.isDraw === true;
+  const isDraw     = result.isDraw === true;
   const scoreColor = isDraw ? '#f59e0b' : result.isWin ? '#34d399' : '#f87171';
 
   const dateStr = new Date(result.date).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short',
-    timeZone: userTz,
+    day: 'numeric', month: 'short', timeZone: userTz,
   });
 
-  // League / competition watermark metadata
+  // League / competition watermark metadata (kept for visual layering inside .sh-fix)
   const baseComp = result.competition?.startsWith('State of Origin') ? 'State of Origin' : result.competition;
-  const leagueMeta      = (baseComp ? COMPETITION_BADGE[baseComp] : undefined)
-    ?? LEAGUE_BADGE[team.league];
+  const leagueMeta        = (baseComp ? COMPETITION_BADGE[baseComp] : undefined) ?? LEAGUE_BADGE[team.league];
   const leagueLogoUrl     = leagueMeta?.logoUrl;
   const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
   const leagueLogoBlend   = leagueMeta?.logoBlend;
   const leagueLogoFilter  = leagueMeta?.logoFilter;
   const leagueLogoHeight  = leagueMeta?.logoHeight;
-  // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
-  // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
+  // Logo center: translateX(50%) makes `right: 49px` the CENTER anchor for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
 
+  // ── Step 8 — F1 gate: keep the original render for F1 results ─────────────────
+  // The two-team .sh-fix path below handles all other leagues (AFL, NRL, EPL, cricket…).
+  if (team.league === 'f1') {
+    return (
+      <div
+        className={[
+          'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer min-h-[84px]',
+          'transition-all duration-300 ease-out select-none',
+          isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
+        ].join(' ')}
+        style={{
+          borderLeftColor: `${team.primaryColor}cc`,
+          borderLeftWidth: '3px',
+          boxShadow: isHighlighted && !isExpanded
+            ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
+            : undefined,
+        }}
+        onClick={onToggle}
+        onMouseEnter={() => onHover(dateKey)}
+        onMouseLeave={() => onHover(null)}
+        role="button"
+        aria-expanded={isExpanded}
+        tabIndex={0}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      >
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
+        {teamLogoUrl && (
+          <img src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+            className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
+            style={{ right: '88px', opacity: 0.10 }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        )}
+        {leagueLogoUrl && (
+          <img src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+            className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center"
+            style={{
+              right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
+              ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
+              ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
+            }}
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        )}
+        <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
+          <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={52} logoFilter={teamLogoFilter} />
+        </div>
+        <div className="flex-1 min-w-0 relative z-10">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[17px] font-semibold text-white/70 leading-none">{team.shortName}</span>
+            <span className="text-[14px] font-medium text-white/30">{result.isHome ? 'vs' : '@'}</span>
+            <TeamBadge logoUrl={result.opponentLogoUrl} abbreviation={result.opponentAbbr} primaryColor="#6B7280" size={30} className="rounded-md" logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']} />
+            <span className="text-[17px] font-semibold text-white/70 leading-none">{result.opponent}</span>
+            <ResultBadge league={team.league} competition={result.competition} />
+          </div>
+          <div className="flex items-center gap-2 mt-1.5">
+            <OutcomeBadge result={result} />
+            <span className="text-[11px] text-white/30">{dateStr}</span>
+            {result.isHome ? <span className="text-[10px] text-white/20">Home</span> : <span className="text-[10px] text-white/20">Away</span>}
+          </div>
+        </div>
+        <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
+          <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: result.f1Position ? f1PositionColor(result.f1Position) : scoreColor }}>
+            {result.f1Position ?? `${result.teamScore}–${result.opponentScore}`}
+          </p>
+          <ChevronDown className={`h-4 w-4 text-white/20 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Step 8 — two-team path: .sh-fix card (mirrors the schedule's ScheduleRow) ─
+  const hasCricketScore = !!result.cricketScore;
+
+  // W/L/D outcome chip
+  const outcomeChipClass = 'sh-result-outcome' + (isDraw ? '' : result.isWin ? ' is-win' : ' is-loss');
+  const outcomeLabel     = isDraw ? 'D' : result.isWin ? 'W' : 'L';
+  // Draw uses inline amber (no .is-draw CSS class exists in the design)
+  const drawChipStyle = isDraw
+    ? { color: '#f59e0b', background: 'rgba(245,158,11,0.18)', boxShadow: 'inset 0 0 0 1px rgba(245,158,11,0.4)' }
+    : undefined;
+
+  // Score class: feature team's score gets win color, opponent gets muted
+  const teamScoreClass = isDraw ? undefined : (result.isWin ? 'is-win-score' : 'is-loss-score');
+  const oppScoreClass  = isDraw ? undefined : (result.isWin ? 'is-loss-score' : 'is-win-score');
+  const drawScoreStyle = isDraw ? { color: '#f59e0b' } : undefined;
+
+  // Three-tier opponent name: same logic as ScheduleRow (shortName substitution first,
+  // compact font only as last resort when display name is still long after substitution).
+  const SHORTNAME_THRESHOLD = 14;
+  const oppTeam = result.opponentId ? TEAMS.find(t => t.id === result.opponentId) : undefined;
+  const oppDisplayName = result.opponent.length > SHORTNAME_THRESHOLD && oppTeam
+    ? (oppTeam.name.length < result.opponent.length ? oppTeam.name : oppTeam.shortName)
+    : result.opponent;
+  const longerDisplayLen = Math.max(team.shortName?.length ?? 0, oppDisplayName.length);
+  const nameSize         = longerDisplayLen > 11 ? { fontSize: '14px' } : undefined;
+
   return (
-    <div
-      className={[
-        'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer min-h-[84px]',
-        'transition-all duration-300 ease-out select-none',
-        isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
-      ].join(' ')}
-      style={{
-        borderLeftColor: `${team.primaryColor}cc`,
-        borderLeftWidth: '3px',
-        boxShadow: isHighlighted && !isExpanded
-          ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
-          : undefined,
-      }}
+    <article
+      className={'sh-fix' + (isExpanded ? ' is-open' : '')}
+      style={{ '--accent': team.primaryColor } as React.CSSProperties}
       onClick={onToggle}
       onMouseEnter={() => onHover(dateKey)}
       onMouseLeave={() => onHover(null)}
@@ -241,43 +319,21 @@ function ResultRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      {/* Team-colour ambient tint */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }}
-      />
+      {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
+      <div className="sh-fix-wm" aria-hidden="true">
+        {teamLogoUrl
+          ? <img src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          : team.shortName.toUpperCase()
+        }
+      </div>
 
-      {/* ── Background watermarks ──
-           width/height give intrinsic dimensions so the browser reserves space; the
-           CSS height + w-auto still govern the displayed size, and the UA-mapped
-           aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
-      {teamLogoUrl && (
-        <img
-          src={teamLogoUrl}
-          alt=""
-          aria-hidden="true"
-          width={100}
-          height={100}
-          className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
-          style={{ right: '88px', opacity: 0.10 }}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-      )}
+      {/* League/competition logo watermark — absolute, unaffected by the flex layout */}
       {leagueLogoUrl && (
         <img
-          src={leagueLogoUrl}
-          alt=""
-          aria-hidden="true"
-          width={100}
-          height={100}
-          className={[
-            'absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center',
-            team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
-          ].join(' ')}
+          src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+          className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]"
           style={{
-            right: LOGO_CENTER_RIGHT,
-            height: leagueLogoHeight ?? '140%',
-            opacity: leagueLogoOpacity,
+            right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
             ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
             ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
           }}
@@ -285,83 +341,81 @@ function ResultRow({
         />
       )}
 
-      {/* Team badge */}
-      <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
-        <TeamBadge
-          logoUrl={teamLogoUrl}
-          abbreviation={team.abbreviation}
-          primaryColor={team.primaryColor}
-          size={52}
-          logoFilter={teamLogoFilter}
-        />
-      </div>
+      {/* Feature badge: left column (direct flex item on the article) */}
+      <span className="sh-fix-badge-f">
+        <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={56} logoFilter={teamLogoFilter} />
+      </span>
 
-      {/* Matchup */}
-      <div className="flex-1 min-w-0 relative z-10">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[17px] font-semibold text-white/70 leading-none">
-            {team.shortName}
-          </span>
-          <span className="text-[14px] font-medium text-white/30">
-            {result.isHome ? 'vs' : '@'}
-          </span>
-          <TeamBadge
-            logoUrl={result.opponentLogoUrl}
-            abbreviation={result.opponentAbbr}
-            primaryColor="#6B7280"
-            size={30}
-            className="rounded-md"
-            logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']}
-          />
-          <span className="text-[17px] font-semibold text-white/70 leading-none">
-            {result.opponent}
-          </span>
-          <ResultBadge league={team.league} competition={result.competition} />
+      {/* Text column: main row + sub row, so the sub aligns under names */}
+      <div className="sh-fix-text">
+        <div className="sh-fix-main">
+          {/* Teams + inline score.
+              Outer .sh-fix-teams wraps so only the trailing comp pill can drop to a new line;
+              inner span keeps the matchup unit (both teams + score) on one nowrap unit. */}
+          <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
+              <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
+
+              {/* Standard score (two numbers, split by win/loss colour) */}
+              {!hasCricketScore && (
+                <span className="sh-result-score-inline">
+                  <span className={teamScoreClass} style={drawScoreStyle}>{result.teamScore}</span>
+                  <span className="sh-fix-sep">–</span>
+                  <span className={oppScoreClass}  style={drawScoreStyle}>{result.opponentScore}</span>
+                </span>
+              )}
+
+              {/* Cricket score (smaller text, dot separator; scores include overs notation) */}
+              {hasCricketScore && (
+                <span className="sh-result-score-inline" style={{ fontSize: '13px', letterSpacing: 0 }}>
+                  <span className={teamScoreClass} style={drawScoreStyle}>{result.cricketScore}</span>
+                  {result.cricketOppScore && (
+                    <><span className="sh-fix-sep">·</span>
+                    <span className={oppScoreClass} style={drawScoreStyle}>{result.cricketOppScore}</span></>
+                  )}
+                </span>
+              )}
+
+              {/* Opponent badge: 40px circle (bumped from 32 for clearer hierarchy) */}
+              <TeamBadge logoUrl={result.opponentLogoUrl} abbreviation={result.opponentAbbr} primaryColor="#6B7280" size={40} logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']} />
+              <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
+            </span>
+
+            {/* Competition badge */}
+            <ResultBadge league={team.league} competition={result.competition} />
+
+            {/* Cricket format label (Test / ODI / T20) — matches schedule's cricket pill */}
+            {result.cricketFormat && (
+              <span className="sh-comptag" style={{ '--c': result.cricketFormat === 'test' ? '#e2a84b' : result.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa' } as React.CSSProperties}>
+                {result.cricketFormat === 'test' ? 'Test' : result.cricketFormat.toUpperCase()}
+              </span>
+            )}
+          </div>
+
+          {/* Right slot: outcome chip + home/away tag + chevron */}
+          <div className="sh-fix-time">
+            <span className={outcomeChipClass} style={drawChipStyle}>{outcomeLabel}</span>
+            <span className={'sh-tag-venue is-' + (result.isHome ? 'home' : 'away')}>
+              {result.isHome ? 'Home' : 'Away'}
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+              style={{ color: 'var(--text-3)' }}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2 mt-1.5">
-          <OutcomeBadge result={result} />
-          <span className="text-[11px] text-white/30">{dateStr}</span>
-          {result.isHome
-            ? <span className="text-[10px] text-white/20">Home</span>
-            : <span className="text-[10px] text-white/20">Away</span>
-          }
+
+        {/* Sub-row: date + cricket result text (no venue — GameResult has no venue field) */}
+        <div className="sh-fix-sub">
+          <span className="sh-meta-item">{dateStr}</span>
           {result.cricketResult && (
-            <span className="text-[10px] text-white/30 truncate max-w-[140px]" title={result.cricketResult}>
-              {result.cricketResult}
+            <span className="sh-meta-item">
+              <span className="truncate" style={{ maxWidth: '200px' }} title={result.cricketResult}>{result.cricketResult}</span>
             </span>
           )}
         </div>
       </div>
-
-      {/* Score / F1 position + chevron */}
-      <div className="text-right shrink-0 flex items-center gap-2 relative z-10">
-        <div>
-          {result.f1Position ? (
-            <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: f1PositionColor(result.f1Position) }}>
-              {result.f1Position}
-            </p>
-          ) : result.cricketScore ? (
-            <div className="text-right">
-              <p className="text-[13px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
-                {result.cricketScore}
-              </p>
-              {result.cricketOppScore && (
-                <p className="text-[11px] font-semibold leading-none text-white/40 mt-0.5">
-                  {result.cricketOppScore}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-[19px] font-black leading-none tabular-nums" style={{ color: scoreColor }}>
-              {result.teamScore}–{result.opponentScore}
-            </p>
-          )}
-        </div>
-        <ChevronDown
-          className={`h-4 w-4 text-white/20 transition-transform duration-200 shrink-0 ${isExpanded ? 'rotate-180' : ''}`}
-        />
-      </div>
-    </div>
+    </article>
   );
 }
 
@@ -420,14 +474,15 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
   const previewResults = hoveredDateKey ? (resultsByDate.get(hoveredDateKey) ?? []) : [];
 
   return (
-    <div className="glass rounded-2xl p-4 select-none">
+    // Step 8 — glass → sh-card for the token surface; internal hover/glow logic unchanged.
+    <div className="sh-card select-none">
       {/* Month nav */}
       <div className="flex items-center justify-between mb-3">
-        <button onClick={goPrev} className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/8 transition-colors" aria-label="Previous month">
+        <button onClick={goPrev} className="p-1.5 rounded-lg hover:bg-white/8 transition-colors" style={{ color: 'var(--text-3)' }} aria-label="Previous month">
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="text-xs font-bold text-white">{MONTH_NAMES[viewMonth]} {viewYear}</span>
-        <button onClick={goNext} className="p-1.5 rounded-lg text-white/35 hover:text-white hover:bg-white/8 transition-colors" aria-label="Next month">
+        <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <button onClick={goNext} className="p-1.5 rounded-lg hover:bg-white/8 transition-colors" style={{ color: 'var(--text-3)' }} aria-label="Next month">
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -435,7 +490,7 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
       {/* Day headers */}
       <div className="grid grid-cols-7 mb-1">
         {DAY_LABELS.map(d => (
-          <div key={d} className="text-[9px] font-semibold text-white/25 text-center py-0.5">{d}</div>
+          <div key={d} className="text-[9px] font-semibold text-center py-0.5" style={{ color: 'var(--text-3)' }}>{d}</div>
         ))}
       </div>
 
@@ -490,10 +545,10 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
       </div>
 
       {/* Hover preview */}
-      <div className="mt-3 pt-3 border-t border-white/10 overflow-hidden transition-all duration-200" style={{ minHeight: '2.5rem' }}>
+      <div className="mt-3 pt-3 overflow-hidden transition-all duration-200" style={{ minHeight: '2.5rem', borderTop: '1px solid var(--border)' }}>
         {previewResults.length > 0 ? (
           <div style={{ animation: 'slideDown 0.18s ease-out' }}>
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 mb-2">
+            <p className="text-[9px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>
               {new Date(previewResults[0].date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
             </p>
             <div className="space-y-2">
@@ -517,7 +572,7 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
             </div>
           </div>
         ) : (
-          <p className="text-[9px] text-white/18 text-center leading-tight">
+          <p className="text-[9px] text-center leading-tight" style={{ color: 'var(--text-3)' }}>
             {viewHasResults ? 'Hover a date · click to jump' : 'No results this month'}
           </p>
         )}
@@ -528,6 +583,9 @@ function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick 
 
 // ─── Filter pill ──────────────────────────────────────────────────────────────
 
+// Step 8 — reskinned to .sh-chip (mirrors the schedule's TeamFilterPill).
+// Active chip self-colours by subject: --accent set inline from the team's primaryColor;
+// "All" chip has no primaryColor → keeps the inherited default accent.
 function TeamFilterPill({
   label, logoUrl, logoFilter, primaryColor, active, onClick,
 }: {
@@ -536,18 +594,11 @@ function TeamFilterPill({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap shrink-0"
-      style={active && primaryColor ? {
-        background: `${primaryColor}22`, color: primaryColor,
-        border: `1px solid ${primaryColor}55`, boxShadow: `0 0 12px ${primaryColor}30`,
-      } : active ? {
-        background: 'rgba(99,102,241,0.25)', color: 'white', border: '1px solid rgba(99,102,241,0.5)',
-      } : {
-        background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.45)', border: '1px solid transparent',
-      }}
+      className={'sh-chip' + (active ? ' is-active' : '')}
+      style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
     >
       {logoUrl && (
-        <img src={logoUrl} alt="" width={16} height={16} className="w-4 h-4 object-contain shrink-0"
+        <img src={logoUrl} alt="" width={15} height={15} className="w-[15px] h-[15px] object-contain shrink-0"
           style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       )}
@@ -558,22 +609,29 @@ function TeamFilterPill({
 
 // ─── Followed teams widget ────────────────────────────────────────────────────
 
+// Step 8 — reskinned to .sh-card.sh-following (mirrors the schedule's FollowedTeamsWidget).
+// The hover tooltip per badge is preserved; the "Add teams" action becomes the .sh-edit-link
+// in the card head (matching the schedule's "Edit" affordance).
 function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
   if (teams.length === 0) return null;
   return (
-    <div className="glass rounded-2xl p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">Following</p>
-      <div className="flex flex-wrap gap-2">
+    <div className="sh-card sh-following">
+      <div className="sh-card-head">
+        <span className="sh-card-head-label">Following</span>
+        <Link href="/onboarding" className="sh-edit-link">Edit</Link>
+      </div>
+      <div className="sh-follow-grid">
         {teams.map(team => (
-          <div key={team.id} className="relative group">
+          <div key={team.id} className="sh-follow-item relative group">
             <TeamBadge
               logoUrl={TEAM_LOGOS[team.id]}
               logoFilter={TEAM_LOGO_FILTERS[team.id]}
               abbreviation={team.abbreviation}
               primaryColor={team.primaryColor}
-              size={44}
+              size={42}
               className="rounded-xl"
             />
+            {/* Hover tooltip — preserved; styled with team accent for recognition */}
             <div
               className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded-md text-[10px] font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-20"
               style={{ background: `${team.primaryColor}dd`, color: contrastColor(team.primaryColor) }}
@@ -583,12 +641,6 @@ function FollowedTeamsWidget({ teams }: { teams: Team[] }) {
           </div>
         ))}
       </div>
-      <Link href="/onboarding" className="block mt-3">
-        <button className="text-[10px] font-semibold text-white/25 hover:text-white/60 transition-colors flex items-center gap-1">
-          <Plus className="h-3 w-3" />
-          Add teams
-        </button>
-      </Link>
     </div>
   );
 }
@@ -608,10 +660,10 @@ function ResultsSkeleton() {
     <div className="space-y-8">
       {[0, 1, 2].map(i => (
         <div key={i}>
-          <div className="h-4 w-52 bg-white/8 rounded animate-pulse mb-3" />
+          <div className="h-4 w-52 rounded animate-pulse mb-3" style={{ background: 'var(--border)' }} />
           <div className="space-y-2">
             {[0, 1].map(j => (
-              <div key={j} className="h-[72px] bg-white/5 border border-white/8 rounded-xl animate-pulse" />
+              <div key={j} className="h-[72px] rounded-xl animate-pulse" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }} />
             ))}
           </div>
         </div>
@@ -750,16 +802,18 @@ export default function ResultsPage() {
     />
   );
 
+  // Step 8 — sh-theme with NO inline --accent override; default tokens govern the page
+  // chrome. Per-card accent is set per .sh-fix card (each result row drives its own colour).
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="sh-theme max-w-5xl mx-auto px-4 py-8">
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
-          <Trophy className="h-6 w-6 text-indigo-400" />
+        <h1 className="text-2xl font-black flex items-center gap-2 mb-1" style={{ color: 'var(--text)', fontFamily: 'var(--font-head)' }}>
+          <Trophy className="h-6 w-6" style={{ color: 'var(--accent)' }} />
           Your Results
         </h1>
-        {loading && <p className="text-white/40 text-sm">Loading results…</p>}
+        {loading && <p className="text-sm" style={{ color: 'var(--text-3)' }}>Loading results…</p>}
       </div>
 
       {/* Two-column layout */}
@@ -770,11 +824,14 @@ export default function ResultsPage() {
             My-Teams pill row below scrolls within overflow-x-auto instead of stretching the
             whole page when many teams are followed. */}
         <div className="min-w-0">
-          {/* Team filter pills */}
+          {/* Team filter — Step 8: reskinned to .sh-filters.sh-card / .sh-chips / .sh-chip.
+              Single group (My Teams) only — results has no comp or view-toggle filters.
+              Horizontal scroll preserved (overrides .sh-chips flex-wrap:wrap) so a
+              large followed-teams list scrolls rather than stretching the column. */}
           {!loading && teams.length > 1 && (
-            <div className="mb-6">
-              <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">My Teams</p>
-              <div className="flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="sh-filters sh-card">
+              <p className="text-[9px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: 'var(--text-3)' }}>My Teams</p>
+              <div className="sh-chips">
                 <TeamFilterPill
                   label="All"
                   active={activeTeamId === 'all'}
@@ -799,7 +856,7 @@ export default function ResultsPage() {
           {loading ? (
             <ResultsSkeleton />
           ) : filteredResults.length === 0 ? (
-            <div className="text-center py-20 text-white/40">
+            <div className="text-center py-20" style={{ color: 'var(--text-3)' }}>
               <Trophy className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No results yet for this team.</p>
             </div>
@@ -808,11 +865,11 @@ export default function ResultsPage() {
               {groupedByDate.map(({ dateKey, representativeDate, results: dayResults }) => (
                 <section key={dateKey} id={`result-date-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <p className="text-[13px] font-black uppercase tracking-[0.12em] text-white/50 shrink-0">
+                    <p className="text-[13px] font-black uppercase tracking-[0.12em] shrink-0" style={{ color: 'var(--text-3)', fontFamily: 'var(--font-head)' }}>
                       {formatDateHeading(representativeDate, userTz)}
                     </p>
-                    <div className="flex-1 h-px bg-white/8" />
-                    <span className="text-[10px] font-semibold text-white/25 shrink-0 uppercase tracking-wide">
+                    <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                    <span className="text-[10px] font-semibold shrink-0 uppercase tracking-wide" style={{ color: 'var(--text-3)' }}>
                       {dayResults.length} {dayResults.length !== 1 ? 'results' : 'result'}
                     </span>
                   </div>
@@ -825,8 +882,8 @@ export default function ResultsPage() {
                       return (
                         <div
                           key={result.id}
-                          className="rounded-2xl"
                           style={{
+                            borderRadius: 'var(--radius)',
                             transition: 'box-shadow 0.4s ease-out',
                             boxShadow: clickedDateKey === dateKey
                               ? `0 0 48px ${result.team.primaryColor}70, 0 0 0 1px ${result.team.primaryColor}50`
@@ -846,7 +903,10 @@ export default function ResultsPage() {
                           />
                           {everExpandedIds.has(result.id) && (
                             <div style={{ display: isExpanded ? 'block' : 'none' }}>
-                              <ResultExpandPanel result={result} />
+                              <ResultExpandPanel
+                                result={result}
+                                onCollapse={() => toggleExpand(result.id)}
+                              />
                             </div>
                           )}
                         </div>
@@ -886,19 +946,22 @@ export default function ResultsPage() {
             ].join(' ')}
             onClick={() => closeCalendar()}
           />
-          {/* Sheet — slides up on open, down on close */}
+          {/* Sheet — slides up on open, down on close. sh-theme so the inner
+              ResultsCalendar's .sh-card tokens resolve outside the page wrapper. */}
           <div
             className={[
-              'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
+              'sh-theme fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
               'transition-transform duration-[420ms] ease-out',
               calendarVisible ? 'translate-y-0' : 'translate-y-full',
             ].join(' ')}
+            style={{ borderTopColor: 'var(--border)' }}
           >
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm font-semibold text-white/80">Calendar</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>Calendar</p>
               <button
                 onClick={() => closeCalendar()}
-                className="text-white/40 hover:text-white transition-colors p-1"
+                className="transition-colors p-1 hover:text-[var(--text)]"
+                style={{ color: 'var(--text-3)' }}
               >
                 <X className="h-5 w-5" />
               </button>

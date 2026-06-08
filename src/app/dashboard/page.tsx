@@ -43,7 +43,6 @@ export default function DashboardPage() {
         icon={LayoutGrid}
         title="No teams yet"
         body="Your dashboard is empty. Select the teams you follow and we'll build your personalised sports feed."
-        bodyClassName="text-zinc-400"
       />
     );
   }
@@ -55,16 +54,18 @@ export default function DashboardPage() {
     teams: teams.filter(t => t.league === l.id),
   })).filter(g => g.teams.length > 0);
 
+  // Step 9 — sh-theme wraps the page chrome; default --accent (#9b6bff) governs the
+  // sidebar and header. Each TeamFeedCard Card sets its own --accent via accentColor.
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="sh-theme max-w-7xl mx-auto px-4 py-8">
       {/* ── Header ── */}
       <div className="flex items-start justify-between mb-8 gap-4">
         <div>
-          <h1 className="text-2xl font-black text-white flex items-center gap-2">
-            <LayoutGrid className="h-6 w-6 text-indigo-400" />
+          <h1 className="text-2xl font-black flex items-center gap-2" style={{ color: 'var(--text)', fontFamily: 'var(--font-head)' }}>
+            <LayoutGrid className="h-6 w-6" style={{ color: 'var(--accent)' }} />
             Your Dashboard
           </h1>
-          <p className="text-zinc-500 text-sm mt-1">
+          <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>
             Following {teams.length} team{teams.length !== 1 ? 's' : ''} across{' '}
             {leagueGroups.length} league{leagueGroups.length !== 1 ? 's' : ''}
           </p>
@@ -84,7 +85,7 @@ export default function DashboardPage() {
           <div className="sticky top-24 space-y-6">
             {leagueGroups.map(({ league, teams: lt }) => (
               <div key={league.id}>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 mb-2 flex items-center gap-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1" style={{ color: 'var(--text-3)' }}>
                   <SportBall league={league.id} size={12} /> {league.name}
                 </p>
                 <ul className="space-y-0.5">
@@ -92,7 +93,8 @@ export default function DashboardPage() {
                     <li key={team.id}>
                       <a
                         href={`#team-${team.id}`}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-all group"
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm hover:text-white/85 hover:bg-white/[0.06] transition-all group"
+                        style={{ color: 'var(--text-2)' }}
                       >
                         <span
                           className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[9px] font-black shrink-0 transition-opacity"
@@ -108,9 +110,12 @@ export default function DashboardPage() {
               </div>
             ))}
 
-            <div className="pt-2 border-t border-zinc-800">
+            <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
               <Link href="/onboarding">
-                <button className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800/60 transition-all w-full">
+                <button
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm hover:text-white/70 hover:bg-white/[0.06] transition-all w-full"
+                  style={{ color: 'var(--text-3)' }}
+                >
                   <Plus className="h-4 w-4" />
                   Add team
                 </button>

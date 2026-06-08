@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Flag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface F1GridEntry {
@@ -68,15 +69,18 @@ export function F1StartingGrid({
 
   return (
     <div>
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35 mb-3 flex items-center gap-1.5">
-        <span style={{ color: accentColor }}>▦</span>
+      {/* Step 7 — head adopts the `.sh-detail-*` vocabulary (Flag icon tinted to the
+          panel accent). The constructor-coloured rows below are intentional F1 branding
+          and are left as-is. */}
+      <div className="sh-detail-head">
+        <Flag className="sh-icon h-[13px] w-[13px]" style={{ color: accentColor }} />
         Starting Grid
-      </p>
+      </div>
 
       {/* Column headers */}
       <div className="grid grid-cols-2 gap-x-3 mb-1.5 px-1">
-        <p className="text-[9px] font-bold uppercase tracking-widest text-white/20">Left side</p>
-        <p className="text-[9px] font-bold uppercase tracking-widest text-white/20">Right side</p>
+        <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Left side</p>
+        <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-3)' }}>Right side</p>
       </div>
 
       <div className="space-y-1">
@@ -148,7 +152,7 @@ export function F1StartingGrid({
         ))}
       </div>
 
-      <p className="text-[9px] text-white/20 mt-2 pl-1">
+      <p className="text-[9px] mt-2 pl-1" style={{ color: 'var(--text-3)' }}>
         Hover a driver to see qualifying time · Left = odd positions, Right = even
       </p>
     </div>
