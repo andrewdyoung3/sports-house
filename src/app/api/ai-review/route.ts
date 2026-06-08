@@ -85,7 +85,9 @@ const generateReview = unstable_cache(
   async (cacheKey: string, dataBlock: string): Promise<AIReview | null> => {
     const t0 = Date.now();
     aiLog(`start cacheKey=${cacheKey} model=${REVIEW_MODEL}`);
-    try {
+
+    // Inner: one model call → cleaned + parsed AIReview. Throws SyntaxError on total failure.
+    const generate = async (): Promise<AIReview> => {
       const msg = await ollama.chat.completions.create({
         model:      REVIEW_MODEL,
         max_tokens: 3000,
@@ -94,18 +96,28 @@ const generateReview = unstable_cache(
           { role: 'user',   content: dataBlock },
         ],
       });
-
       const text = msg.choices[0]?.message?.content ?? '';
       const withoutThink = text.includes('</think>') ? text.replace(/<think>[\s\S]*?<\/think>\s*/i, '') : text;
       const cleaned = withoutThink.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-      let parsed: AIReview;
       try {
-        parsed = JSON.parse(cleaned) as AIReview;
+        return JSON.parse(cleaned) as AIReview;
       } catch {
         aiLog(`parse-fail cacheKey=${cacheKey} raw_len=${text.length} first300=${JSON.stringify(cleaned.slice(0, 300))}`);
         const s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
-        if (s >= 0 && e > s) { parsed = JSON.parse(cleaned.slice(s, e + 1)) as AIReview; }
-        else throw new SyntaxError(`Non-JSON review output: ${cleaned.slice(0, 120)}`);
+        if (s >= 0 && e > s) return JSON.parse(cleaned.slice(s, e + 1)) as AIReview;
+        throw new SyntaxError(`Non-JSON review output: ${cleaned.slice(0, 120)}`);
+      }
+    };
+
+    try {
+      let parsed: AIReview;
+      try {
+        parsed = await generate();
+      } catch (e) {
+        if (!(e instanceof SyntaxError)) throw e;
+        // Total parse failure — retry the model call once.
+        aiLog(`total-parse-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms — retrying model call`);
+        parsed = await generate(); // throws → caught below → returns null → 500
       }
 
       if (!parsed.summary || !Array.isArray(parsed.keyMoments) || !parsed.verdict) return null;

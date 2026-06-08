@@ -1,0 +1,72 @@
+[
+  {
+    "game": "AFL — Brisbane Lions vs Richmond",
+    "model": "instruct-2507 (MoE 30B)",
+    "elapsed": "21.5",
+    "error": null,
+    "audit": {
+      "valid": true,
+      "hasAllFields": true,
+      "fabricatedStats": [],
+      "groundedStats": [
+        "28",
+        "20",
+        "50",
+        "43",
+        "10"
+      ]
+    },
+    "output": {
+      "context": "Brisbane Lions sit in the final finals spot on the Ladder with 28 points, 20 clear of Richmond in 17th place. This fixture is a pivotal moment in Brisbane's quest to solidify their top-eight position, while for Richmond it's a chance to close the gap on the competition and avoid falling further into the relegation scrap. A win for Brisbane would extend their finals window and deepen Richmond's defensive struggles.",
+      "tacticalBattle": "Chris Fagan's structured, high-tempo Lions attack faces Adem Yze's compact, ball-in-hand style at Bellerive Oval. The decisive contest will be in the contested possession battle — Brisbane's superior efficiency in the corridor and forward 50 could overwhelm Richmond's tenuous defensive line, especially with their low clearance count and weak inside 50 output.",
+      "playerSpotlight": "Lachie Neale (Brisbane Lions) remains central to the team’s engine room, linking play through handball chains and dictating tempo across the midfield. His ability to generate clearances and win contested balls under pressure will be critical in preventing Richmond from establishing rhythm in transition and capitalising on Brisbane’s superior ball movement.",
+      "verdict": "Brisbane Lions are the clear favourites, with the model predicting a 43-point win — a reflection of their consistent attack and Richmond’s inability to sustain structure through midfield and defence. The Lions’ recent form shows resilience, while Richmond lacks the cohesion to challenge them at this level. A strong result for Brisbane will further secure their finals berth.",
+      "keyInsights": [
+        "Brisbane leads by 20 points on the Ladder",
+        "Richmond yet to win in 10 games",
+        "Experts predict a 43-point margin"
+      ]
+    }
+  },
+  {
+    "game": "AFL — Brisbane Lions vs Richmond",
+    "model": "thinking-2507 (MoE 30B)",
+    "elapsed": "0.0",
+    "error": "HTTP 404: {\"error\":{\"message\":\"model 'qwen3:30b-a3b-thinking-2507-q4_K_M' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n",
+    "audit": null,
+    "output": null
+  },
+  {
+    "game": "NRL — Brisbane Broncos vs Rabbitohs",
+    "model": "instruct-2507 (MoE 30B)",
+    "elapsed": "18.4",
+    "error": null,
+    "audit": {
+      "valid": true,
+      "hasAllFields": true,
+      "fabricatedStats": [],
+      "groundedStats": [
+        "16"
+      ]
+    },
+    "output": {
+      "context": "The Rabbitohs are in the final finals spot on the Ladder with 16 points, needing to maintain their position in the second third of the season. The Broncos, 4 points behind and 4 points outside the top eight, face a must-win fixture to keep their finals hopes alive as they travel to Accor Stadium with no margin for error.",
+      "tacticalBattle": "Wayne Bennett's tight-knit, ball-in-hand structure faces Michael Maguire's high-tempo, wide-play system. The Rabbitohs' strong ruck speed and set restarts will test the Broncos' completion rate and defensive line speed, particularly up the short side where the Rabbitohs have consistently attacked. The edge-to-edge contest will be pivotal, as Brisbane relies on ball-in-hand momentum to counter South Sydney's structured middle-forwards and disciplined kick-chase game.",
+      "playerSpotlight": "Jesse Luketa (Rabbitohs) brings elite ruck speed and defensive line-breaking capability. His presence at the second dummy-half spot allows Wayne Bennett to consistently recycle the ball through the middle, capitalising on Brisbane’s slower transitions. His ability to control set restarts and dictate pace will be decisive in a game where field-position margins matter most.",
+      "verdict": "The Rabbitohs’ structured play and home advantage in a tight contest will likely see them extend their finals window. Brisbane’s attack, while inconsistent, threatens to exploit gaps in the South Sydney middle if they gain early field position. The game will be decided by possession control and ruck speed, with the Rabbitohs’ superior set restarts and discipline giving them the edge.",
+      "keyInsights": [
+        "Rabbitohs lead by 4 pts on the Ladder",
+        "Broncos are 4 pts outside top 8",
+        "Home advantage boosts Rabbitohs' set-play control"
+      ]
+    }
+  },
+  {
+    "game": "NRL — Brisbane Broncos vs Rabbitohs",
+    "model": "thinking-2507 (MoE 30B)",
+    "elapsed": "0.0",
+    "error": "HTTP 404: {\"error\":{\"message\":\"model 'qwen3:30b-a3b-thinking-2507-q4_K_M' not found\",\"type\":\"not_found_error\",\"param\":null,\"code\":null}}\n",
+    "audit": null,
+    "output": null
+  }
+]

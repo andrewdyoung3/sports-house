@@ -356,7 +356,7 @@ function auditGrounding(text: string, userMsg: string): { valid: boolean; fabric
   const p = parsePreview(text);
   if (!p) return { valid: false, fabricatedNums: [], groundedNums: [] };
   const REQUIRED = ['context', 'tacticalBattle', 'playerSpotlight', 'verdict', 'keyInsights'];
-  const valid = REQUIRED.every(k => (p as Record<string,unknown>)[k]);
+  const valid = REQUIRED.every(k => (p as unknown as Record<string,unknown>)[k]);
   const outNums   = [...new Set([...JSON.stringify(p).matchAll(/\b(\d{2,})\b/g)].map(m => m[1]))];
   const inNums    = new Set([...userMsg.matchAll(/\b(\d{2,})\b/g)].map(m => m[1]));
   return {

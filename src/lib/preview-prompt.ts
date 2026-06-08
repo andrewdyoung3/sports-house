@@ -337,6 +337,8 @@ function buildDerivedFacts(
   table: LeagueTableRow[],
   teamName: string,
   opponentName: string,
+  played?: number,
+  totalRounds?: number,
 ): string[] {
   if (table.length === 0) return [];
   const sorted = [...table].sort((a, b) => a.position - b.position);
@@ -477,9 +479,82 @@ function buildDerivedFacts(
     }
   }
 
+  // ── Rounds until finals (finals-based leagues only) ─────────────────────
+  const hasFinals = !!FINALS_SPOTS[league];
+  if (hasFinals && played !== undefined && totalRounds !== undefined && played < totalRounds) {
+    const roundsLeft = totalRounds - played;
+    facts.push(`  • Rounds until finals: ${roundsLeft} (regular season has ${totalRounds} rounds total).`);
+  }
+
   // Only the header with no facts → skip
   if (facts.length <= 1) return [];
   return facts;
+}
+
+// ─── Player-name whitelist ────────────────────────────────────────────────────
+//
+// Parses a rendered data-block prompt string and returns:
+//   whitelist    — lowercase names of all players explicitly injected into the block
+//   hasPlayerData — whether any lineup/squad/injury section was present at all
+//
+// Used by validatePlayerNames in route.ts to catch invented player names.
+
+export function collectPlayerWhitelist(prompt: string): {
+  whitelist: Set<string>;
+  hasPlayerData: boolean;
+} {
+  const whitelist = new Set<string>();
+  let hasPlayerData = false;
+
+  // Helper: parse a comma-separated player list from section text.
+  // Handles: "  TeamName: P1, P2, ..." and "  → label: P1, P2" lines.
+  // Strips parenthetical suffixes like "(26 players)", "(doubtful)".
+  function addNamesFromLine(line: string): void {
+    const colonIdx = line.indexOf(':');
+    if (colonIdx < 0) return;
+    for (const raw of line.slice(colonIdx + 1).split(',')) {
+      const name = raw.replace(/\([^)]*\)/g, '').trim();
+      if (name && name.length > 1) whitelist.add(name.toLowerCase());
+    }
+  }
+
+  // Locate a section by its header prefix and extract up to the next blank line.
+  function extractSection(header: RegExp): string | null {
+    const m = prompt.match(new RegExp(header.source + '[^\\n]*\\n((?:[^\\n]+\\n)*?)\\n', 'i'));
+    return m ? m[1] : null;
+  }
+
+  const lineupText = extractSection(/MOST RECENT STARTING LINEUP/);
+  if (lineupText) {
+    hasPlayerData = true;
+    for (const line of lineupText.split('\n')) addNamesFromLine(line);
+  }
+
+  const squadText = extractSection(/SQUAD SUBMISSION/);
+  if (squadText) {
+    hasPlayerData = true;
+    for (const line of squadText.split('\n')) addNamesFromLine(line);
+  }
+
+  const injuryText = extractSection(/INJURY REPORT/);
+  if (injuryText) {
+    hasPlayerData = true;
+    for (const line of injuryText.split('\n')) addNamesFromLine(line);
+  }
+
+  // Also whitelist coach names from HEAD COACHES line (they may be named in output)
+  const coachM = prompt.match(/HEAD COACHES:\s*(.+)/);
+  if (coachM) {
+    for (const part of coachM[1].split('|')) {
+      const c = part.indexOf(':');
+      if (c >= 0) {
+        const name = part.slice(c + 1).trim();
+        if (name) whitelist.add(name.toLowerCase());
+      }
+    }
+  }
+
+  return { whitelist, hasPlayerData };
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
@@ -555,6 +630,7 @@ CALIBRATING HOW MUCH WEIGHT TO GIVE THE DATA:
 SEASON STRUCTURE — authoritative source, non-negotiable:
 • The COMPETITION PROFILE in the data block is the authoritative description of how this competition works: format, finals structure, qualification cutoffs, and key concepts. All statements about season structure, finals, qualification, relegation, or how the championship is decided MUST come from the COMPETITION PROFILE — never from your training knowledge about the competition.
 • The SEASON STATE line tells you exactly where we are in the season. Use it — do not infer the season stage from the round number or team records alone.
+• FINALS PROXIMITY — ABSOLUTE RULE: Do NOT describe finals, playoffs, or the end of the regular season as "near", "approaching", "weeks away", "looming", or any equivalent language unless the SEASON STATE phase is "run home" or "finals series". In early-season and mid-season phases, finals are not near — the DERIVED FACTS "Rounds until finals: N" is the authoritative figure; use it instead of invented time-based language.
 • If COMPETITION PROFILE says "NO finals" (e.g. Premier League), do NOT write about a team's finals chances. If it says "Top 8 qualify," do NOT claim a different cutoff. If it says "NO relegation," do NOT reference relegation. Any claim about competition structure that contradicts the COMPETITION PROFILE is an error.
 • Short competitions (Six Nations, Rugby Championship, Test series — under 6 rounds) are consequential from the first game — every result matters for the series outcome. The standard thirds/early-season framework does not apply; treat every fixture as meaningful from the outset.
 
@@ -706,7 +782,7 @@ OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No ex
 {
   "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
   "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically — name the actual system clash.",
-  "playerSpotlight": "REQUIRED — always populate this field, never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: lead with the single most analytically compelling player's full name, then 1–2 sentences connecting them to concrete gamestate factors. Draw on training knowledge of current squads when no roster data is provided.",
+  "playerSpotlight": "REQUIRED — never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: if player data appears in the data block (lineup/squad/injury report/team news), name the single most analytically compelling player from that data and connect them to the specific gamestate. If the data block contains a NO PLAYER DATA notice, describe the decisive tactical unit or positional role instead — never invent or assume a player name from training knowledge, even if you are confident about the squad.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
   "keyInsights": [
     "Specific analytical point grounded in the data (max ~12 words)",
@@ -1013,7 +1089,7 @@ export function buildDataBlock(
       }
 
       // Derived standings arithmetic — pre-computed so the model never has to
-      const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName);
+      const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
       if (derivedFacts.length > 0) {
         lines.push(...derivedFacts);
         lines.push('');
@@ -1136,6 +1212,19 @@ export function buildDataBlock(
     lines.push('');
   }
 
+  // Player-data availability sentinel — must appear AFTER all lineup/squad/injury blocks
+  // so the model has a clear, final signal before it generates.
+  const hasPlayerData = teamLineup.length > 0 || oppLineup.length > 0 ||
+    teamSquad.length > 0 || oppSquad.length > 0 ||
+    teamInj.length > 0  || oppInj.length > 0;
+  if (hasPlayerData) {
+    lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or TEAM NEWS sections above. Any player name not in those sections is forbidden — even if you know who plays for the team from your training data.');
+    lines.push('');
+  } else {
+    lines.push('NO PLAYER DATA: No lineup, squad, or injury report is available for this fixture. Do NOT name any individual player in any field. The playerSpotlight field must describe a tactical unit, position group, or system — never a named individual. Inventing player names from training knowledge is a grounding violation.');
+    lines.push('');
+  }
+
   // Model tips (AFL Squiggle)
   if (context.tips) {
     const t = context.tips;
@@ -1157,11 +1246,15 @@ export function buildDataBlock(
     lines.push('BREVITY MODE — this preview appears in a league-wide fixture list alongside many other games. Be concise:');
     lines.push('• "context": ONE sentence, max 25 words. Essential narrative only — what is at stake.');
     lines.push('• "tacticalBattle": ONE sentence, max 20 words. The single decisive match-up.');
-    lines.push('• "playerSpotlight": REQUIRED. Player full name + one specific phrase about their gamestate impact, max 12 words total. Never empty.');
+    lines.push(`• "playerSpotlight": REQUIRED. ${hasPlayerData ? 'Player full name (from the player data above) + one specific phrase about their gamestate impact, max 12 words total. Never empty.' : 'Decisive tactical unit or role, max 12 words. NO player names — describe the system, not an individual.'}`);
+
     lines.push('• "verdict": ONE sentence, max 20 words. Most likely outcome and why.');
     lines.push('• "keyInsights": exactly TWO specific, grounded points, max 8 words each — no filler.');
   }
-  lines.push(`Generate the match preview using the data provided above. Do not invent statistics or historical records not given. For playerSpotlight you may draw on your training knowledge of current squads to name a specific player — this is the one field where squad knowledge supplements the data block.`);
+  lines.push(hasPlayerData
+    ? 'Generate the match preview using the data provided above. Do not invent statistics, historical records, or player names not in the sections above.'
+    : 'Generate the match preview using the data provided above. Do not invent statistics or historical records not given. IMPORTANT: no player data was provided — the playerSpotlight field must describe a tactical role or positional unit, never a named individual player.'
+  );
 
   return lines.join('\n');
 }

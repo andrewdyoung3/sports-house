@@ -22,6 +22,7 @@ import { appendFileSync } from 'fs';
 import type { UpcomingGame } from '@/types';
 import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
 import { TEAMS } from '@/lib/teams';
+import { acquireLock, releaseLock } from '@/lib/generation-lock';
 
 function log(msg: string) {
   const line = `[${new Date().toISOString()}] [warm-cache] ${msg}\n`;
@@ -44,8 +45,14 @@ export async function GET(req: NextRequest) {
   const dryRun = req.nextUrl.searchParams.get('dryRun') === 'true';
   const base   = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
 
+  if (!acquireLock()) {
+    log('generation already in progress — skipping this run');
+    return NextResponse.json({ ok: true, skipped: true, reason: 'lock held' });
+  }
+
   log(`start dryRun=${dryRun}`);
 
+  try {
   // ── Followed teams set ────────────────────────────────────────────────────────
   const followedIds = await getDistinctFollowedTeamIds();
   const hasF1Followers = followedIds.size > 0
@@ -179,4 +186,7 @@ export async function GET(req: NextRequest) {
     estimatedTimeSavedMinutes: timeSavedMinutes,
     total:              dryRun ? 0 : results.reduce((s, r) => s + r.warmed, 0),
   });
+  } finally {
+    releaseLock();
+  }
 }

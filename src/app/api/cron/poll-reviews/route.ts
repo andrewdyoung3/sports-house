@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { appendFileSync } from 'fs';
 import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
+import { acquireLock, releaseLock } from '@/lib/generation-lock';
 
 function log(msg: string) {
   const line = `[${new Date().toISOString()}] [poll-reviews] ${msg}\n`;
@@ -224,9 +225,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  if (!acquireLock()) {
+    log('generation already in progress — skipping this run');
+    return NextResponse.json({ ok: true, skipped: true, reason: 'lock held' });
+  }
+
   log('poll start');
   const t0 = Date.now();
 
+  try {
   // Gather all recently-finished games in parallel
   const [aflJobs, nrlJobs, eplJobs, sruJobs, followedIds] = await Promise.all([
     fetchRecentAFL(),
@@ -274,4 +281,7 @@ export async function GET(req: NextRequest) {
     ...counts,
     elapsedMs:      elapsed,
   });
+  } finally {
+    releaseLock();
+  }
 }
