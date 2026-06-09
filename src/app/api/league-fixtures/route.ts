@@ -16,6 +16,7 @@ import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
+import { unstable_cache } from 'next/cache';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ const NRL_TEAMS: Record<string, TeamEntry> = {
   'Wests Tigers': { id: 'nrl-tigers',    color: '#F47920', abbr: 'WTI' },
 };
 
-async function fetchNRLLeague(): Promise<UpcomingGame[]> {
+const fetchNRLLeague = unstable_cache(async (): Promise<UpcomingGame[]> => {
   const now = new Date();
   const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -109,7 +110,7 @@ async function fetchNRLLeague(): Promise<UpcomingGame[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -155,7 +156,7 @@ async function fetchNRLLeague(): Promise<UpcomingGame[]> {
       return acc;
     }, [])
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-}
+}, ['lf-nrl'], { revalidate: 3600 });
 
 // ─── EPL — ESPN (multiple competitions) ──────────────────────────────────────
 //
@@ -228,7 +229,7 @@ async function fetchEPLLeague(): Promise<UpcomingGame[]> {
 
       for (const url of urls) {
         try {
-          const res = await fetchTimeout(url, { next: { revalidate: 3600 } });
+          const res = await fetchTimeout(url, { cache: 'no-store' });
           if (!res.ok) continue;
           const data = await res.json();
           for (const e of (data.events ?? []) as any[]) {
@@ -342,7 +343,7 @@ const SRU_TEAMS: Record<string, TeamEntry & { logo: string }> = {
   'Moana Pasifika':          { id: 'sru-moana',       color: '#003087', abbr: 'MOA', logo: `${SRU_LOG}/289319.png` },
 };
 
-async function fetchSRULeague(): Promise<UpcomingGame[]> {
+const fetchSRULeague = unstable_cache(async (): Promise<UpcomingGame[]> => {
   const now = new Date();
   const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
@@ -350,7 +351,7 @@ async function fetchSRULeague(): Promise<UpcomingGame[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -396,7 +397,7 @@ async function fetchSRULeague(): Promise<UpcomingGame[]> {
       return acc;
     }, [])
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-}
+}, ['lf-sru'], { revalidate: 3600 });
 
 // ─── International Rugby — ESPN (three competition feeds) ─────────────────────
 
@@ -440,7 +441,7 @@ async function fetchRINTLeague(): Promise<UpcomingGame[]> {
     RINT_COMP_IDS.map(async (compId) => {
       const res = await fetchTimeout(
         `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
-        { next: { revalidate: 3600 } },
+        { cache: 'no-store' },
       );
       if (!res.ok) return [] as UpcomingGame[];
       const data  = await res.json();
@@ -613,7 +614,7 @@ async function fetchBBLLeague(): Promise<UpcomingGame[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 

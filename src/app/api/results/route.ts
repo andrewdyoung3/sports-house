@@ -14,6 +14,7 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
+import { unstable_cache } from 'next/cache';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -86,7 +87,7 @@ const NRL_ESPN_NAME: Record<string, string> = {
   'nrl-tigers':    'Wests Tigers',
 };
 
-async function fetchNRLResults(teamId: string): Promise<GameResult[]> {
+const fetchNRLResults = unstable_cache(async (teamId: string): Promise<GameResult[]> => {
   const teamName = NRL_ESPN_NAME[teamId];
   if (!teamName) return [];
 
@@ -98,7 +99,7 @@ async function fetchNRLResults(teamId: string): Promise<GameResult[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -138,7 +139,7 @@ async function fetchNRLResults(teamId: string): Promise<GameResult[]> {
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
-}
+}, ['res-nrl'], { revalidate: 3600 });
 
 // ─── State of Origin results ──────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ const SOO_RESULT_META: Record<string, { self: string; opponent: string; oppAbbr:
   },
 };
 
-async function fetchSOOResults(teamId: string): Promise<GameResult[]> {
+const fetchSOOResults = unstable_cache(async (teamId: string): Promise<GameResult[]> => {
   const meta = SOO_RESULT_META[teamId];
   if (!meta) return [];
 
@@ -165,7 +166,7 @@ async function fetchSOOResults(teamId: string): Promise<GameResult[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${start}-${end}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -205,7 +206,7 @@ async function fetchSOOResults(teamId: string): Promise<GameResult[]> {
       competition:     `State of Origin — Game ${gameNum}`,
     };
   }).reverse(); // most recent first
-}
+}, ['res-soo'], { revalidate: 3600 });
 
 // ─── EPL — ESPN public API ────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ async function fetchESPNResultsForSlug(
 ): Promise<GameResult[]> {
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -395,7 +396,7 @@ const SRU_OPP_LOGO: Record<string, string> = {
   'Moana Pasifika':           `${SRU_CDN}/289319.png`,
 };
 
-async function fetchSuperRugbyResults(teamId: string): Promise<GameResult[]> {
+const fetchSuperRugbyResults = unstable_cache(async (teamId: string): Promise<GameResult[]> => {
   const teamName = SRU_ESPN_NAME[teamId];
   if (!teamName) return [];
 
@@ -407,7 +408,7 @@ async function fetchSuperRugbyResults(teamId: string): Promise<GameResult[]> {
 
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -446,7 +447,7 @@ async function fetchSuperRugbyResults(teamId: string): Promise<GameResult[]> {
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
-}
+}, ['res-sru'], { revalidate: 3600 });
 
 // ─── International Rugby Union — ESPN public API ──────────────────────────────
 
@@ -496,7 +497,7 @@ async function fetchRintResultsComp(
 ): Promise<GameResult[]> {
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
@@ -781,7 +782,7 @@ async function fetchBBLResults(teamId: string): Promise<GameResult[]> {
   const range = espnDateRange(200, 0); // look 200 days back (full season)
   const res = await fetchTimeout(
     `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
-    { next: { revalidate: 3600 } },
+    { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
