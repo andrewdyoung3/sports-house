@@ -1216,7 +1216,12 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       )}
 
       {/* ── Main panel content — hidden on mobile when table tab is active ── */}
-      <div className={cn('space-y-5', hasTable && activeTab === 'table' ? 'hidden lg:block' : '')}>
+      {/* Two-column at lg: — left narrative, right data rail. On mobile, both divs stack
+          naturally as blocks; DOM order (narrative → data) matches current mobile flow. */}
+      <div className={cn('lg:grid lg:grid-cols-[1fr_264px] lg:items-start', hasTable && activeTab === 'table' ? 'hidden' : '')}>
+
+      {/* ── Left: narrative column ── */}
+      <div className="space-y-5 lg:min-w-0 lg:pr-5">
 
       {/* ── Collapse pill — drives the parent's EXISTING expand toggle (Phase B · Step 5) ── */}
       {onCollapse && (
@@ -1272,6 +1277,11 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           <p className="sh-detail-body">{aiPreview.tacticalBattle}</p>
         </div>
       )}
+
+      </div>{/* end left narrative col */}
+
+      {/* ── Right: data column (Form + Standings + Weather) ── */}
+      <div className="mt-5 lg:mt-0 lg:col-start-2 lg:row-start-1 sh-expand-rail lg:border-l lg:border-white/8 lg:pl-5">
 
       {/* ── Form + Standings / Key Factors + Weather ── */}
       {(() => {
@@ -1530,6 +1540,11 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         );
       })()}
 
+      </div>{/* end data col */}
+
+      {/* ── Left: narrative column (continued) ── */}
+      <div className="mt-5 lg:mt-0 space-y-5 lg:col-start-1 lg:pr-5">
+
       {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}
       {!compact && !aiLoading && aiPreview && (
         <div className="sh-detail-two">
@@ -1666,7 +1681,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         </button>
       </div>
 
-      </div>{/* end main content wrapper */}
+      </div>{/* end left narrative col (continued) */}
+      </div>{/* end outer grid */}
     </div>
   );
 }

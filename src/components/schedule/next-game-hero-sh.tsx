@@ -41,6 +41,7 @@ const LEAGUE_DISPLAY: Record<string, string> = {
   rugby_int:   'Test Rugby',
   bbl:         'Big Bash',
   cricket_int: "Int'l Cricket",
+  world_cup:   'FIFA World Cup',
 };
 
 /** How long until kickoff, as a short human string. Returns null for games 7+ days
@@ -94,6 +95,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShPr
   const home = game.isHome ? { props: focalProps, name: team.shortName } : { props: oppProps,   name: game.opponent };
 
   const competitionName = LEAGUE_DISPLAY[team.league] ?? game.competition ?? team.league.toUpperCase();
+  const isWorldCup = team.league === 'world_cup';
   const whenLabel = timeUntil(game.date, userTz);
   const timeLabel = formatTimeInZone(game.date, userTz);
   const dateLabel = new Intl.DateTimeFormat('en-AU', {
@@ -151,7 +153,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShPr
           {game.venue && (
             <span className="sh-meta-item">
               <MapPin size={15} />{game.venue}
-              <span className="sh-tag-away">{venueTag}</span>
+              {!isWorldCup && <span className="sh-tag-away">{venueTag}</span>}
             </span>
           )}
           {watch && (

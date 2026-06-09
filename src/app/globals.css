@@ -190,7 +190,7 @@
   /* text */
   --text:   #f4f2fa;
   --text-2: #bcb6cd;
-  --text-3: #8b85a0;
+  --text-3: #9b96b0;
 
   /* accent — FALLBACK brand violet. In Phase B the focal team's primary/secondary are
      set inline on the page wrapper (--accent, --accent-2, --on-accent); everything below
@@ -350,6 +350,11 @@
   background:
     linear-gradient(120deg, color-mix(in oklab, var(--accent) 10%, var(--surface-2)) 0%, var(--surface-2) 48%);
   box-shadow: var(--shadow-hero, none);
+}
+/* Left-to-right gradient scrim so hero text stays legible against bright watermarks. */
+.sh-hero::after {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(0,0,0,.20) 0%, transparent 62%);
 }
 .sh-hero-wm {
   position: absolute; right: 2%; top: 50%; transform: translateY(-54%);
@@ -598,6 +603,28 @@
 
 .sh-detail-body    { font-size: 13.5px; line-height: 1.65; color: var(--text-2); }
 .sh-detail-body-sm { font-size: 12.5px; line-height: 1.6;  color: var(--text-2); }
+@media (min-width: 768px) {
+  .sh-detail-body    { max-width: 65ch; }
+  .sh-detail-body-sm { max-width: 65ch; }
+}
+
+/* Right data rail: at lg:, .sh-detail-cols collapses to a single-column vertical stack.
+   The inline gridTemplateColumns style is overridden intentionally — no other clean way. */
+@media (min-width: 1024px) {
+  .sh-expand-rail .sh-detail-cols {
+    grid-template-columns: 1fr !important;
+    border-top: none;
+  }
+  .sh-expand-rail .sh-detail-cols > .sh-detail-section {
+    padding: 12px 0;
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .sh-expand-rail .sh-detail-cols > .sh-detail-section:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+}
 
 .sh-quick-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
 .sh-quick-bullet { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
