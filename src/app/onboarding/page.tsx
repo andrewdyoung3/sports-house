@@ -9,7 +9,7 @@ import { LEAGUES, filterTeams } from '@/lib/teams';
 // Leagues with real data built — NFL and MLB excluded (no fixture/results API yet)
 const BUILT_LEAGUE_IDS = new Set([
   'afl', 'nrl', 'epl', 'super_rugby', 'rugby_int',
-  'nba', 'f1', 'cricket_int', 'bbl',
+  'nba', 'f1', 'cricket_int', 'bbl', 'world_cup',
 ]);
 const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';

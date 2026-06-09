@@ -309,7 +309,7 @@ async function callOllama(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callOllama(prompt, compact, maxTokensOverride),
-  ['ai-preview-v38'],
+  ['ai-preview-v39'],
   { revalidate: 21600 }, // 6 hours
 );
 

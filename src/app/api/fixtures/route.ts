@@ -16,6 +16,8 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTeam } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
+import { unstable_cache } from 'next/cache';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 
 // 5-minute browser/CDN cache; server-side fetch cache handles upstream revalidation.
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
@@ -1194,9 +1196,97 @@ async function fetchCricketIntFixtures(teamId: string): Promise<UpcomingGame[]> 
     .slice(0, 10);
 }
 
+// ─── World Cup — ESPN public API (soccer/fifa.world) ─────────────────────────
+//
+// Single-competition (no fan-out). 35-day forward window keeps the payload well
+// under the Next.js 2 MB data-cache limit. Use cache:'no-store' + unstable_cache
+// to store only the small extracted UpcomingGame[].
+
+const WC_BROADCAST = { broadcast: ['SBS'], streaming: ['Paramount+'] };
+
+const fetchWorldCupFixtures = unstable_cache(
+  async (teamId: string): Promise<UpcomingGame[]> => {
+    const teamName = WC_ID_TO_ESPN_NAME[teamId];
+    if (!teamName) return [];
+
+    const now = new Date();
+    const end = new Date(now.getTime() + 35 * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+    const range = `${fmt(now)}-${fmt(end)}`;
+
+    const res = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${range}&limit=200`,
+      { cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
+
+    const events = ((data.events ?? []) as any[]).filter((e: any) => {
+      if (e.status?.type?.completed === true) return false;
+      if (new Date(e.date).getTime() < twoHoursAgo) return false;
+      const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+      return competitors.some((c: any) => c.team?.displayName === teamName);
+    });
+
+    return events
+      .map((e: any): UpcomingGame => {
+        const comp: any = e.competitions?.[0] ?? {};
+        const competitors: any[] = comp.competitors ?? [];
+        const ourComp = competitors.find((c: any) => c.team?.displayName === teamName);
+        const oppComp = competitors.find((c: any) => c.team?.displayName !== teamName);
+        const isHome = ourComp?.homeAway === 'home';
+
+        const oppName: string = oppComp?.team?.displayName ?? '';
+        const oppTBD = !oppName;
+        const oppAbbr = oppComp?.team?.abbreviation
+          ?? (oppTBD ? 'TBD' : oppName.slice(0, 3).toUpperCase());
+
+        // Combine all ESPN round-name sources for robust stage/group detection
+        const roundHints = [
+          e.name ?? '',
+          comp.notes?.[0]?.headline ?? '',
+          comp.type?.text ?? '',
+        ].join(' ');
+        const stage = espnRoundToStage(roundHints);
+        const group = espnRoundToGroup(roundHints);
+
+        const utcDate = new Date(e.date);
+        const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+
+        return {
+          id:              `wc-${e.id}`,
+          teamId,
+          opponent:        oppTBD ? 'TBD' : oppName,
+          opponentAbbr:    oppAbbr,
+          opponentColor:   '#6B7280',
+          isHome,
+          date:            utcDate.toISOString(),
+          time:            aestDisplay(aestDate),
+          venue:           comp.venue?.fullName ?? '',
+          broadcast:       WC_BROADCAST.broadcast,
+          streaming:       WC_BROADCAST.streaming,
+          opponentLogoUrl: (oppComp?.team?.logo as string | undefined),
+          opponentId:      WC_ESPN_NAME_TO_ID[oppName],
+          worldCupStage:   stage,
+          worldCupGroup:   group,
+          worldCupOpponentTBD:         oppTBD || undefined,
+          worldCupOpponentPlaceholder: oppTBD
+            ? (oppComp?.team?.name ?? oppComp?.team?.abbreviation ?? 'TBD')
+            : undefined,
+        };
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, 10);
+  },
+  ['fix-world-cup'],
+  { revalidate: 3600 },
+);
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup']);
 // Allowlist of valid teamId prefixes keeps arbitrary strings out of upstream URLs
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
@@ -1219,6 +1309,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'f1')          fixtures = await fetchF1Fixtures(teamId);
     else if (league === 'bbl')         fixtures = await fetchBBLFixtures(teamId);
     else if (league === 'cricket_int') fixtures = await fetchCricketIntFixtures(teamId);
+    else if (league === 'world_cup')   fixtures = await fetchWorldCupFixtures(teamId);
 
     return NextResponse.json(fixtures, { headers: CACHE_HEADERS });
   } catch (err) {

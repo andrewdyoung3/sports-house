@@ -181,9 +181,25 @@ async function fetchRINTNews(teamId: string): Promise<NewsItem[]> {
   return parseArticles(data.articles ?? [], teamId);
 }
 
+// ─── World Cup ────────────────────────────────────────────────────────────────
+//
+// ESPN's team-specific news endpoint requires a numeric team ID. Rather than
+// hard-coding IDs that may change, we fetch the competition-level WC news feed
+// (max 6 items). All WC teams share this feed since it covers the tournament.
+
+async function fetchWorldCupNews(teamId: string): Promise<NewsItem[]> {
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/news?limit=6',
+    { next: { revalidate: 1800 } },
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return parseArticles(data.articles ?? [], teamId);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
+const ALLOWED = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int', 'world_cup']);
 const TEAMID_RE = /^[a-z]+-[a-z0-9-]+$/;
 
 export async function GET(req: NextRequest) {
@@ -200,6 +216,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'epl')         news = await fetchEPLNews(teamId);
     else if (league === 'super_rugby') news = await fetchSRUNews(teamId);
     else if (league === 'rugby_int')   news = await fetchRINTNews(teamId);
+    else if (league === 'world_cup')   news = await fetchWorldCupNews(teamId);
     return NextResponse.json(news, { headers: CACHE_HEADERS });
   } catch (err) {
     console.error('[/api/news]', err);

@@ -152,8 +152,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v38: competition-context COMPETITION PROFILE + SEASON STATE injected into all prompts.
-const CACHE_KEY = (gameId: string) => `ai-preview-v38:${gameId}`;
+// v39: FIFA World Cup 2026 support — group table, advancement scenario, WC SPORT_CONTEXT.
+const CACHE_KEY = (gameId: string) => `ai-preview-v39:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -813,6 +813,122 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
   );
 }
 
+// ── World Cup group browser ───────────────────────────────────────────────────
+
+export const WC_GROUP_LETTERS = ['A','B','C','D','E','F','G','H','I','J','K','L'] as const;
+
+export interface WcGroupBrowserProps {
+  standings: StandingRow[];
+  /** Controlled active group. When omitted the component manages its own state. */
+  activeGroup?: string;
+  onGroupChange?: (g: string) => void;
+  followedTeamId: string;
+  /** The followed team's own group — used as the default selection and ring highlight. */
+  teamGroup?: string;
+  compact?: boolean;
+}
+
+export function WcGroupBrowser({
+  standings,
+  activeGroup: controlledGroup,
+  onGroupChange,
+  followedTeamId,
+  teamGroup,
+  compact = false,
+}: WcGroupBrowserProps) {
+  const [internalGroup, setInternalGroup] = useState<string>(teamGroup ?? 'A');
+
+  // When teamGroup becomes known (async load), snap the uncontrolled default to it.
+  useEffect(() => {
+    if (controlledGroup === undefined && teamGroup) setInternalGroup(teamGroup);
+  }, [teamGroup, controlledGroup]);
+
+  const activeGroup = controlledGroup ?? internalGroup;
+  const handleGroupChange = (g: string) => {
+    setInternalGroup(g);
+    onGroupChange?.(g);
+  };
+
+  // If group labels are absent (stale sessionStorage cache), derive from array index.
+  // ESPN returns groups A–L in order, 4 teams each.
+  const rowsWithGroup: StandingRow[] = standings.every(r => !r.group)
+    ? standings.map((r, i) => ({ ...r, group: WC_GROUP_LETTERS[Math.floor(i / 4)] as string }))
+    : standings;
+
+  const availableGroups = WC_GROUP_LETTERS.filter(g => rowsWithGroup.some(r => r.group === g));
+  const groups = availableGroups.length > 0 ? availableGroups : [...WC_GROUP_LETTERS];
+
+  const rows = rowsWithGroup.filter(r => r.group === activeGroup);
+
+  return (
+    <div className="space-y-2">
+      {/* Group selector pills */}
+      <div className="flex flex-wrap gap-1">
+        {groups.map(g => {
+          const isTeamGroup = g === teamGroup;
+          const isActive    = g === activeGroup;
+          return (
+            <button
+              key={g}
+              onClick={() => handleGroupChange(g)}
+              className={cn(
+                'px-2 py-0.5 rounded-md text-[11px] font-bold transition-colors',
+                isActive
+                  ? 'bg-white/20 text-white'
+                  : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70',
+                isTeamGroup && !isActive && 'ring-1 ring-white/25',
+              )}
+            >
+              {g}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 4-team mini table */}
+      {rows.length > 0 ? (
+        <div className="space-y-0.5">
+          {/* Header row */}
+          <div className="flex items-center text-[9px] font-semibold uppercase tracking-wider text-white/25 px-2 pb-0.5">
+            <span className="w-5 shrink-0">#</span>
+            <span className="flex-1">Team</span>
+            <span className="w-5 text-right">W</span>
+            <span className="w-5 text-right">D</span>
+            <span className="w-5 text-right">L</span>
+            <span className="w-8 text-right">GD</span>
+            <span className="w-8 text-right font-bold">Pts</span>
+          </div>
+          {rows.map((row) => {
+            const isMine = !!row.teamId && row.teamId === followedTeamId;
+            const gd = (row.goalsFor ?? 0) - (row.goalsAgainst ?? 0);
+            return (
+              <div
+                key={row.name}
+                className={cn(
+                  'flex items-center text-[11px] leading-none py-1.5 px-2 rounded-lg',
+                  isMine ? 'bg-white/8 text-white/90 font-semibold' : 'text-white/55',
+                )}
+              >
+                <span className="w-5 shrink-0 tabular-nums font-bold text-white/40">{row.position}</span>
+                <span className="flex-1 truncate">{row.name}</span>
+                <span className="w-5 tabular-nums text-right">{row.wins}</span>
+                <span className="w-5 tabular-nums text-right">{row.draws}</span>
+                <span className="w-5 tabular-nums text-right">{row.losses}</span>
+                <span className="w-8 tabular-nums text-right text-white/35">
+                  {gd >= 0 ? '+' : ''}{gd}
+                </span>
+                <span className="w-8 tabular-nums text-right font-bold text-white/80">{row.points ?? 0}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-[11px] text-white/25 italic px-2">Group {activeGroup} data unavailable</p>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 // Wrapper: routes F1 to its own panel before any hooks are called in the inner component.
@@ -848,7 +964,9 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   const [aiUpdating, setAiUpdating] = useState(false);
   const [weather,    setWeather]    = useState<WeatherData | null>(null);
   // Mobile tab — 'preview' | 'table'. Desktop always shows full content.
-  const [activeTab,  setActiveTab]  = useState<'preview' | 'table'>('preview');
+  const [activeTab,    setActiveTab]    = useState<'preview' | 'table'>('preview');
+  // World Cup group browser — active group letter (A–L).
+  const [activeWcGroup, setActiveWcGroup] = useState<string>(game.worldCupGroup ?? 'A');
 
   // Fetch weather independently — not tied to the panel-data cache so it always
   // runs even when results/standings are served from sessionStorage.
@@ -918,7 +1036,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
     }
 
     const resultsUrl  = `/api/results?league=${team.league}&teamId=${team.id}`;
-    const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}${game.competition ? `&competition=${encodeURIComponent(game.competition)}` : ''}`;
+    const wcParams = team.league === 'world_cup'
+      ? `${game.worldCupStage ? `&worldCupStage=${encodeURIComponent(game.worldCupStage)}` : ''}${game.worldCupGroup ? `&worldCupGroup=${encodeURIComponent(game.worldCupGroup)}` : ''}`
+      : '';
+    const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}${game.competition ? `&competition=${encodeURIComponent(game.competition)}` : ''}${wcParams}`;
     const standingsUrl = `/api/standings?league=${team.league}`;
     // Cup fixtures: always use the cross-league name lookup so that opponents from
     // lower divisions (Championship, League One, etc.) are found correctly.
@@ -1037,6 +1158,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   const hasNews = (context?.teamNews?.length ?? 0) > 0 || (context?.opponentNews?.length ?? 0) > 0;
   const hasTips = !!context?.tips;
 
+  const isWorldCup = team.league === 'world_cup';
   const hasTable = standings && standings.length > 0;
 
   return (
@@ -1044,7 +1166,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
       style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
     >
-      {/* ── Mobile tab bar — Preview / Table ── */}
+      {/* ── Mobile tab bar — Preview / Table (or Groups for WC) ── */}
       {hasTable && (
         <div className="flex lg:hidden gap-0 border-b border-white/8 -mx-4 px-4 mb-4">
           <button
@@ -1067,7 +1189,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                 : 'text-white/35 border-transparent hover:text-white/60',
             )}
           >
-            Table
+            {isWorldCup ? 'Groups' : 'Table'}
           </button>
         </div>
       )}
@@ -1075,11 +1197,21 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── Table tab (mobile only) ── */}
       {hasTable && activeTab === 'table' && (
         <div className="lg:hidden">
-          <LeagueTableSh
-            league={team.league as import('@/types').SportKey}
-            rows={standings!}
-            followedTeamIds={new Set([team.id])}
-          />
+          {isWorldCup ? (
+            <WcGroupBrowser
+              standings={standings!}
+              activeGroup={activeWcGroup}
+              onGroupChange={setActiveWcGroup}
+              followedTeamId={team.id}
+              teamGroup={game.worldCupGroup}
+            />
+          ) : (
+            <LeagueTableSh
+              league={team.league as import('@/types').SportKey}
+              rows={standings!}
+              followedTeamIds={new Set([team.id])}
+            />
+          )}
         </div>
       )}
 
@@ -1249,6 +1381,76 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                     {team.shortName} · {game.opponent}
                   </p>
                 </div>
+              )}
+            </>
+          ) : standings && standings.length > 0 && isWorldCup ? (
+            // ── World Cup: full group browser (desktop) ────────────────────
+            <>
+              <p className="sh-detail-head">
+                <Trophy className="h-3 w-3" />
+                Group Standings
+              </p>
+              <WcGroupBrowser
+                standings={standings}
+                activeGroup={activeWcGroup}
+                onGroupChange={setActiveWcGroup}
+                followedTeamId={team.id}
+                teamGroup={game.worldCupGroup}
+                compact
+              />
+              {context?.worldCup?.advancementScenario && activeWcGroup === (game.worldCupGroup ?? context.worldCup.group) && (
+                <p className="text-[10px] text-white/35 mt-2 leading-snug">
+                  {context.worldCup.advancementScenario}
+                </p>
+              )}
+              {game.worldCupOpponentTBD && (
+                <p className="text-[10px] text-amber-400/70 mt-1.5 leading-snug font-semibold">
+                  Opponent TBD — bracket not yet finalised
+                </p>
+              )}
+            </>
+          ) : context?.worldCup?.groupTable && context.worldCup.groupTable.length > 0 ? (
+            // ── World Cup group table fallback (before standings load) ─────
+            <>
+              <p className="sh-detail-head">
+                <Trophy className="h-3 w-3" />
+                {context.worldCup.stage === 'group'
+                  ? `Group ${context.worldCup.group ?? ''} Standings`
+                  : `Round: ${game.worldCupStage ?? context.worldCup.stage}`}
+              </p>
+              <div className="space-y-1 mt-0.5">
+                {context.worldCup.groupTable.map((row) => {
+                  const isTeam = row.teamName === team.shortName || row.teamName === game.opponent || row.teamId === team.id;
+                  return (
+                    <div
+                      key={row.teamName}
+                      className={[
+                        'flex items-center justify-between text-[11px] leading-none py-1 px-2 rounded-lg',
+                        isTeam ? 'bg-white/8 text-white/90' : 'text-white/50',
+                      ].join(' ')}
+                    >
+                      <span className="font-bold tabular-nums w-4 shrink-0">{row.position}.</span>
+                      <span className="flex-1 truncate mx-1.5 font-semibold">{row.teamName}</span>
+                      <span className="tabular-nums font-bold text-white/80">{row.points}pts</span>
+                      <span className="tabular-nums text-white/35 ml-2 w-10 text-right">
+                        {row.wins}W {row.draws}D {row.losses}L
+                      </span>
+                      <span className="tabular-nums text-white/35 ml-2 w-8 text-right">
+                        {row.goalDifference >= 0 ? '+' : ''}{row.goalDifference}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {context.worldCup.advancementScenario && (
+                <p className="text-[10px] text-white/35 mt-2 leading-snug">
+                  {context.worldCup.advancementScenario}
+                </p>
+              )}
+              {game.worldCupOpponentTBD && (
+                <p className="text-[10px] text-amber-400/70 mt-1.5 leading-snug font-semibold">
+                  Opponent TBD — bracket not yet finalised
+                </p>
               )}
             </>
           ) : hasStandings && !game.competition ? (

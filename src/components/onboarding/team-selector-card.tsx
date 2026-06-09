@@ -74,7 +74,7 @@ export function TeamSelectorCard({ team, selected, onToggle }: TeamSelectorCardP
         )}>
           {team.league === 'f1'
             ? (isF1ConstructorTeam(team.id) ? team.country : (team.division ?? team.city))
-            : team.league === 'cricket_int'
+            : (team.league === 'cricket_int' || team.league === 'world_cup')
             ? team.country
             : team.city
           }

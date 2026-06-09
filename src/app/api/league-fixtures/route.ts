@@ -16,6 +16,7 @@ import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
+import { WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 import { unstable_cache } from 'next/cache';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -777,9 +778,79 @@ async function fetchCricketIntLeague(): Promise<UpcomingGame[]> {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
+// ─── World Cup — ESPN public API (soccer/fifa.world) ─────────────────────────
+
+const WC_BROADCAST = { broadcast: ['SBS'], streaming: ['Paramount+'] };
+
+async function fetchWorldCupLeague(): Promise<UpcomingGame[]> {
+  const now = new Date();
+  const end = new Date(now.getTime() + 35 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(now)}-${fmt(end)}`;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${range}&limit=200`,
+    { cache: 'no-store' },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
+  const seen = new Set<string>();
+
+  return ((data.events ?? []) as any[])
+    .filter((e: any) => {
+      if (e.status?.type?.completed === true) return false;
+      if (new Date(e.date).getTime() < twoHoursAgo) return false;
+      return true;
+    })
+    .reduce<UpcomingGame[]>((acc, e: any) => {
+      if (seen.has(e.id)) return acc;
+      seen.add(e.id);
+
+      const comp: any = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const homeComp = competitors.find((c: any) => c.homeAway === 'home') ?? competitors[0];
+      const awayComp = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1];
+      if (!homeComp) return acc;
+
+      const homeName: string = homeComp.team?.displayName ?? '';
+      const awayName: string = awayComp?.team?.displayName ?? '';
+      const homeId = WC_ESPN_NAME_TO_ID[homeName];
+      if (!homeId) return acc;
+
+      const roundHints = [e.name ?? '', comp.notes?.[0]?.headline ?? '', comp.type?.text ?? ''].join(' ');
+      const stage = espnRoundToStage(roundHints);
+      const group = espnRoundToGroup(roundHints);
+
+      const utcDate  = new Date(e.date);
+      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+
+      acc.push({
+        id:              `wc-${e.id}`,
+        teamId:          homeId,
+        opponent:        awayName || 'TBD',
+        opponentAbbr:    awayComp?.team?.abbreviation ?? (awayName ? awayName.slice(0, 3).toUpperCase() : 'TBD'),
+        opponentColor:   '#6B7280',
+        isHome:          true,
+        date:            utcDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast:       WC_BROADCAST.broadcast,
+        streaming:       WC_BROADCAST.streaming,
+        opponentLogoUrl: awayComp?.team?.logo as string | undefined,
+        opponentId:      WC_ESPN_NAME_TO_ID[awayName],
+        worldCupStage:   stage,
+        worldCupGroup:   group,
+      });
+      return acc;
+    }, [])
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'bbl', 'cricket_int']);
+const ALLOWED = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'bbl', 'cricket_int', 'world_cup']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
@@ -798,6 +869,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'f1')          fixtures = await fetchF1League();
     else if (league === 'bbl')         fixtures = await fetchBBLLeague();
     else if (league === 'cricket_int') fixtures = await fetchCricketIntLeague();
+    else if (league === 'world_cup')   fixtures = await fetchWorldCupLeague();
     return NextResponse.json(fixtures, { headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' } });
   } catch (err) {
     console.error('[/api/league-fixtures]', err);

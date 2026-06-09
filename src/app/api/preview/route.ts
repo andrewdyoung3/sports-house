@@ -7,11 +7,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage, LeagueTableRow } from '@/types';
+import type { PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage, LeagueTableRow, WorldCupMatchContext, WorldCupGroupRow, WorldCupStage } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { fetchTimeout } from '@/lib/espn';
 import { SQUIGGLE_NAME } from '@/lib/afl';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, computeGroupAdvancementScenario } from '@/lib/world-cup';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -97,6 +98,23 @@ const MANAGER: Record<string, string> = {
   'rint-scotland':     'Gregor Townsend',
   'rint-wales':        'Mike Ruddock',
   'rint-argentina':    'Felipe Contepomi',
+  // FIFA World Cup 2026 — national team coaches (as of mid-2025)
+  'wc-usa':            'Mauricio Pochettino',
+  'wc-argentina':      'Lionel Scaloni',
+  'wc-france':         'Didier Deschamps',
+  'wc-germany':        'Julian Nagelsmann',
+  'wc-spain':          'Luis de la Fuente',
+  'wc-england':        'Thomas Tuchel',
+  'wc-netherlands':    'Ronald Koeman',
+  'wc-portugal':       'Roberto Martínez',
+  'wc-brazil':         'Dorival Júnior',
+  'wc-mexico':         'Javier Aguirre',
+  'wc-australia':      'Tony Popovic',
+  'wc-japan':          'Hajime Moriyasu',
+  'wc-morocco':        'Walid Regragui',
+  'wc-senegal':        'Aliou Cissé',
+  'wc-uruguay':        'Marcelo Bielsa',
+  'wc-colombia':       'Néstor Lorenzo',
 };
 
 /** Look up manager for a team ID, or by display name cross-referencing ESPN/Squiggle maps. */
@@ -1502,9 +1520,134 @@ async function fetchF1Preview(
   };
 }
 
+// ─── FIFA World Cup 2026 ──────────────────────────────────────────────────────
+
+async function fetchWorldCupPreview(
+  teamId: string,
+  opponentName: string,
+  worldCupStage?: WorldCupStage,
+  worldCupGroup?: string,
+): Promise<PreviewContext> {
+  const teamName = WC_ID_TO_ESPN_NAME[teamId];
+  if (!teamName) return {};
+
+  const standingsRes = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings',
+    { next: { revalidate: 3600 } },
+  ).catch(() => null);
+
+  let worldCup: WorldCupMatchContext | undefined;
+  let teamStanding: TeamStanding | undefined;
+  let opponentStanding: TeamStanding | undefined;
+
+  if (standingsRes?.ok) {
+    const data = await standingsRes.json().catch(() => null);
+    const groups: any[] = data?.children ?? [];
+
+    for (const group of groups) {
+      const entries: any[] = group.standings?.entries ?? [];
+      const ourEntry = entries.find((e: any) => e.team?.displayName === teamName);
+      if (!ourEntry) continue;
+
+      const getStat = (e: any, ...names: string[]): number => {
+        for (const name of names) {
+          const s = (e.stats ?? []).find((st: any) => st.name === name);
+          if (s !== undefined && s.value !== undefined) return Number(s.value);
+        }
+        return 0;
+      };
+
+      const groupTable: WorldCupGroupRow[] = entries.map((e: any, i: number) => {
+        const gf = getStat(e, 'pointsFor', 'goalsFor');
+        const ga = getStat(e, 'pointsAgainst', 'goalsAgainst');
+        return {
+          teamName:       e.team?.displayName ?? '',
+          teamId:         WC_ESPN_NAME_TO_ID[e.team?.displayName ?? ''],
+          position:       i + 1,
+          played:         getStat(e, 'gamesPlayed', 'played'),
+          wins:           getStat(e, 'wins'),
+          draws:          getStat(e, 'ties', 'draws'),
+          losses:         getStat(e, 'losses'),
+          goalsFor:       gf,
+          goalsAgainst:   ga,
+          goalDifference: gf - ga,
+          points:         getStat(e, 'points'),
+        };
+      });
+
+      const ourRow      = groupTable.find(r => r.teamName === teamName);
+      const oppRow      = groupTable.find(r => r.teamName === opponentName);
+      const stage       = worldCupStage ?? 'group';
+      const groupLetter = worldCupGroup ?? group.name?.replace(/^Group\s*/i, '') ?? '';
+
+      if (stage === 'group' && ourRow) {
+        const played         = ourRow.played;
+        const gamesRemaining = Math.max(0, 3 - played);
+        worldCup = {
+          stage:               'group',
+          group:               groupLetter,
+          groupTable,
+          gamesPlayed:         played,
+          gamesRemaining,
+          advancementScenario: computeGroupAdvancementScenario(
+            teamName, ourRow.points, played, gamesRemaining, ourRow.position,
+          ),
+        };
+      } else {
+        worldCup = {
+          stage,
+          group:               groupLetter,
+          opponentTBD:         opponentName === 'TBD',
+          opponentPlaceholder: opponentName === 'TBD' ? opponentName : undefined,
+        };
+      }
+
+      if (ourRow) {
+        teamStanding = {
+          name:         ourRow.teamName,
+          position:     ourRow.position,
+          wins:         ourRow.wins,
+          draws:        ourRow.draws,
+          losses:       ourRow.losses,
+          played:       ourRow.played,
+          points:       ourRow.points,
+          goalsFor:     ourRow.goalsFor,
+          goalsAgainst: ourRow.goalsAgainst,
+        };
+      }
+      if (oppRow) {
+        opponentStanding = {
+          name:         oppRow.teamName,
+          position:     oppRow.position,
+          wins:         oppRow.wins,
+          draws:        oppRow.draws,
+          losses:       oppRow.losses,
+          played:       oppRow.played,
+          points:       oppRow.points,
+          goalsFor:     oppRow.goalsFor,
+          goalsAgainst: oppRow.goalsAgainst,
+        };
+      }
+      break;
+    }
+  }
+
+  // Fallback: stage/group context only (standings unavailable)
+  if (!worldCup && (worldCupStage || worldCupGroup)) {
+    worldCup = {
+      stage:               worldCupStage ?? 'group',
+      group:               worldCupGroup,
+      opponentTBD:         opponentName === 'TBD',
+      opponentPlaceholder: opponentName === 'TBD' ? opponentName : undefined,
+    };
+  }
+
+  return { worldCup, teamStanding, opponentStanding };
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'world_cup']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
@@ -1534,12 +1677,17 @@ export async function GET(req: NextRequest) {
       const roundNumber = parseInt(req.nextUrl.searchParams.get('roundNumber') ?? '0') || undefined;
       ctx = await fetchF1Preview(teamId, raceName, circuitName, sessionType, roundNumber);
     }
+    else if (league === 'world_cup') {
+      const wcStage = (req.nextUrl.searchParams.get('worldCupStage') || undefined) as WorldCupStage | undefined;
+      const wcGroup = req.nextUrl.searchParams.get('worldCupGroup') || undefined;
+      ctx = await fetchWorldCupPreview(teamId, opponentName, wcStage, wcGroup);
+    }
 
     // Resolve opponent team ID from display name for the manager lookup.
     // We search ESPN_TEAM_NAME / NRL_ESPN_NAME / SQUIGGLE_NAME / SRU_ESPN_NAME / RINT_ESPN_NAME_P
     // by comparing the value against opponentName.
     const nameMaps: Record<string, string>[] = [
-      ESPN_TEAM_NAME, NRL_ESPN_NAME, SQUIGGLE_NAME, SRU_ESPN_NAME, RINT_ESPN_NAME_P,
+      ESPN_TEAM_NAME, NRL_ESPN_NAME, SQUIGGLE_NAME, SRU_ESPN_NAME, RINT_ESPN_NAME_P, WC_ID_TO_ESPN_NAME,
     ];
     let oppTeamId: string | undefined;
     for (const map of nameMaps) {

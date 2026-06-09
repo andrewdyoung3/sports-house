@@ -6,9 +6,10 @@
  * Pure prompt building: no network calls, no Anthropic SDK, not wired into runtime.
  */
 
-import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
+import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow, WorldCupGroupRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
+import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
 
 // ─── Team home-venue lookup ───────────────────────────────────────────────────
 // Built once at module load; maps teamId → registered home venue string.
@@ -66,6 +67,7 @@ const SPORT_CONTEXT: Record<string, string> = {
   epl: `English Premier League (association football). Use EPL-specific terminology: pressing triggers, high block/low block, inverted wingers, full-backs overlapping, false nine, set-piece delivery, high line, offside trap, the run-in, relegation scrap, top-four race, Europa spot. The table is called "the Table". Use "pitch" not "ground". Use "half" not "period".`,
   super_rugby: `Super Rugby Pacific (15-man rugby union code). Use rugby union terminology: scrum dominance, lineout, breakdown, ruck, maul, gainline, high ball, box kick, garryowen, carrying game, wide channels, jackal, the carrying game, phases. The table is called "the Table".`,
   rugby_int: `International Rugby Union Test match (15-man code) — the pinnacle of the game. Use rugby union terminology: set-piece, scrum, lineout, breakdown, maul, territorial kicking, box kick, garryowen, gainline, the contact area, Test rugby, the jersey, Test debut. This is a Test match — tone should reflect the magnitude. The table is called "the Table".`,
+  world_cup: `FIFA World Cup 2026 (international association football). Use football/soccer terminology: pressing, compactness, high line, transitions, set pieces, dead-ball situations, penalty shootout, extra time, group stage, knockout rounds, elimination, goal difference. The World Cup is the pinnacle of international football; each national team represents its entire nation — the stakes carry cultural as well as sporting weight. Write in the voice of a football analyst: discuss systems, pressing triggers, defensive shape, attacking patterns, wide-play vs central build-up. Use "pitch" not "ground" or "field". Use "half" not "period". Use "manager" or "head coach" for national team coaches.`,
   f1: `Formula 1 — 2026 season. This season operates under completely new technical regulations that have reset the competitive order. You MUST incorporate the following 2026-specific context into every preview:
 
 ACTIVE AERODYNAMICS (replaces DRS): Traditional DRS has been abolished. All cars run active aerodynamics that continuously transition between High Downforce mode (cornering) and Low Drag mode (straights). Unlike DRS — which was driver-activated in fixed zones — active aero operates algorithmically. Overtaking is less zone-predictable; opportunities depend more on raw pace differential and corner exit speed. On circuits where DRS was previously decisive (long straights, tight hairpins), the racing dynamics have changed significantly.
@@ -86,6 +88,7 @@ const LEAGUE_LABELS: Record<string, string> = {
   super_rugby: 'Super Rugby Pacific',
   rugby_int:   'International Rugby Union',
   f1:          'Formula 1',
+  world_cup:   'FIFA World Cup 2026',
 };
 
 /** Total regular-season rounds for each league — used to compute season phase. */
@@ -940,6 +943,20 @@ export function buildDataBlock(
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
   }
+  // World Cup: tournament stage label injected early for immediate context
+  if (league === 'world_cup' && context.worldCup) {
+    const { stage, group, opponentTBD, opponentPlaceholder } = context.worldCup;
+    lines.push(`TOURNAMENT STAGE: ${wcStageLabel(stage, group)}`);
+    if (stage !== 'group') {
+      lines.push(`ADVANCEMENT STAKES: ${wcKnockoutStake(stage)}`);
+    }
+    if (opponentTBD) {
+      lines.push(
+        `NOTE: Opponent not yet determined (bracket placeholder: ${opponentPlaceholder ?? 'TBD'}). ` +
+        `Do NOT fabricate an opponent name, predict head-to-head dynamics, or assume a likely opponent from training knowledge.`,
+      );
+    }
+  }
   // Competition stage (cup/European competitions only)
   if (context.competitionStage) {
     const { competitionStage: cs } = context;
@@ -1003,7 +1020,7 @@ export function buildDataBlock(
   // ── Season state (computed) ──────────────────────────────────────────────────
   const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
   const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
-  if (!isOffLeague && totalRounds && played !== undefined) {
+  if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
     const quarter   = Math.ceil(totalRounds / 4);
     const third     = Math.ceil(totalRounds / 3);
     const runHomeCutoff = Math.floor(totalRounds * 0.65);
@@ -1038,6 +1055,31 @@ export function buildDataBlock(
   }
   lines.push('');
 
+  // World Cup: group standings table + advancement scenario
+  if (league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
+    const wc = context.worldCup;
+    const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
+    lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — top 2 advance automatically; best 8 third-placed teams also advance):`);
+    for (const row of wcGroupTable) {
+      const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
+      const isTracked = row.teamName === teamName || row.teamName === opponentName;
+      const marker = isTracked ? ' ◄' : '';
+      lines.push(
+        `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
+        `${row.wins}W ${row.draws}D ${row.losses}L  ` +
+        `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
+      );
+    }
+    lines.push('');
+    if (wc.advancementScenario) {
+      lines.push(`ADVANCEMENT SCENARIO: ${wc.advancementScenario}`);
+    }
+    if (wc.gamesPlayed !== undefined) {
+      lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
+    }
+    lines.push('');
+  }
+
   // Cup/European competition group/league-phase standings (highest relevance)
   const cs = context.competitionStage;
   if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
@@ -1059,7 +1101,7 @@ export function buildDataBlock(
   // league table has zero bearing on the cup result; including it only invites the
   // model to misuse it. Exception: F1 driver championship standing is always relevant.
   const isKnockoutTie = !!cs && !cs.isGroupPhase;
-  const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie;
+  const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
   if (!suppressStandings) {
     const isF1Standing = league === 'f1';
 

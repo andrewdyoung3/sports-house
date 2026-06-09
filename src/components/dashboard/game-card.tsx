@@ -4,6 +4,7 @@ import type { UpcomingGame } from '@/types';
 import { Tv } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { formatGameDate, formatTimeInZone } from '@/lib/utils';
+import { wcStageLabel } from '@/lib/world-cup';
 
 interface GameCardProps {
   game: UpcomingGame;
@@ -39,11 +40,25 @@ export function GameCard({ game, teamColor, teamShortName, compLabel, userTz }: 
         </span>
       </div>
 
+      {/* World Cup stage badge */}
+      {game.worldCupStage && (
+        <div className="mb-1">
+          <span
+            className="sh-comptag"
+            style={{ '--c': 'rgba(255,255,255,0.45)' } as React.CSSProperties}
+          >
+            {wcStageLabel(game.worldCupStage, game.worldCupGroup)}
+          </span>
+        </div>
+      )}
+
       {/* Teams row */}
       <div className="sh-tile-teams">
         <span className="sh-tile-name">{teamShortName}</span>
         <span className="sh-tile-sep">{game.isHome ? 'vs' : '@'}</span>
-        <span className="sh-tile-name">{game.opponentAbbr}</span>
+        <span className="sh-tile-name">
+          {game.worldCupOpponentTBD ? (game.worldCupOpponentPlaceholder ?? 'TBD') : game.opponentAbbr}
+        </span>
       </div>
 
       {/* Foot: date·time + home/away */}

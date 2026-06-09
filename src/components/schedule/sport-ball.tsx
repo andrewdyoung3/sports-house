@@ -51,6 +51,7 @@ const LEAGUE_EMOJI: Record<string, string> = {
   f1:          '🏎',
   bbl:         '🏏',
   cricket_int: '🏏',
+  world_cup:   '🏆',
 };
 
 interface SportBallProps {

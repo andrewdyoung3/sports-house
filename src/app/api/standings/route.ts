@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { TeamStanding } from '@/types';
 import { F1_DRIVERS, F1_CONSTRUCTOR_TEAMS, ERGAST_ID_TO_TEAM_ID } from '@/lib/f1-data';
 import { fetchTimeout } from '@/lib/espn';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID } from '@/lib/world-cup';
 
 export type StandingRow = TeamStanding & { teamId?: string };
 
@@ -427,13 +428,76 @@ async function fetchBBLStandings(): Promise<StandingRow[]> {
   });
 }
 
+// ─── World Cup — ESPN public API (soccer/fifa.world) ─────────────────────────
+//
+// Returns the 4-team group standings for the followed team's group when teamId
+// is given, or all 48 teams across all 12 groups when omitted.
+
+async function fetchWorldCupStandings(teamId?: string): Promise<StandingRow[]> {
+  const res = await fetchTimeout(
+    'https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings',
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const groups: any[] = data.children ?? [];
+
+  const stat = (e: any, ...names: string[]) =>
+    names.reduce((v: number, n: string) =>
+      v || ((e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0), 0 as number);
+
+  const teamName = teamId ? WC_ID_TO_ESPN_NAME[teamId] : undefined;
+
+  const groupLabel = (g: any, idx: number): string => {
+    const nameStr: string = g.name ?? g.abbreviation ?? '';
+    const m = nameStr.match(/[Gg]roup\s+([A-La-l])\b/);
+    if (m) return m[1].toUpperCase();
+    return String.fromCharCode(65 + idx); // fallback: A, B, C…
+  };
+
+  const parseGroup = (entries: any[], grp: string): StandingRow[] =>
+    entries.map((e, i): StandingRow => {
+      const name = e.team?.displayName ?? '';
+      return {
+        name,
+        teamId:       WC_ESPN_NAME_TO_ID[name],
+        position:     i + 1,
+        played:       stat(e, 'gamesPlayed', 'played'),
+        wins:         stat(e, 'wins'),
+        draws:        stat(e, 'ties', 'draws'),
+        losses:       stat(e, 'losses'),
+        points:       stat(e, 'points'),
+        goalsFor:     stat(e, 'pointsFor', 'goalsFor'),
+        goalsAgainst: stat(e, 'pointsAgainst', 'goalsAgainst'),
+        group:        grp,
+      };
+    });
+
+  // If teamId given, return only that team's 4-team group
+  if (teamName) {
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      const entries: any[] = g.standings?.entries ?? [];
+      if (entries.some((e: any) => e.team?.displayName === teamName)) {
+        return parseGroup(entries, groupLabel(g, i));
+      }
+    }
+    return [];
+  }
+
+  // No teamId — return all 48 entries with their group label
+  return groups.flatMap((g, i) => parseGroup(g.standings?.entries ?? [], groupLabel(g, i)));
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'bbl']);
+const ALLOWED = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'world_cup']);
 
 export async function GET(req: NextRequest) {
   const league = req.nextUrl.searchParams.get('league') ?? '';
   const type   = req.nextUrl.searchParams.get('type') ?? 'drivers';
+  const teamId = req.nextUrl.searchParams.get('teamId') ?? undefined;
   if (!ALLOWED.has(league)) {
     return NextResponse.json({ error: 'Invalid league' }, { status: 400 });
   }
@@ -448,6 +512,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'f1' && type === 'constructors') rows = await fetchF1ConstructorStandings();
     else if (league === 'f1')          rows = await fetchF1Standings();
     else if (league === 'bbl')         rows = await fetchBBLStandings();
+    else if (league === 'world_cup')   rows = await fetchWorldCupStandings(teamId);
 
     return NextResponse.json(rows, { headers: CACHE_HEADERS });
   } catch (err) {

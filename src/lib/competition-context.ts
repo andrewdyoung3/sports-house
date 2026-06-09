@@ -62,6 +62,11 @@ export const COMPETITION_PROFILES: Record<string, CompetitionProfile> = {
     profile:
       `International cricket is played across three formats: Test matches (5 days, 2 innings per side — the game's highest form; results can be wins, losses, or draws), One Day Internationals (50 overs per side, one innings each), and T20 Internationals (20 overs per side). Series are typically 2–5 matches; series winners are decided by match wins within that series. NO single global points table for one-off bilateral series — the ICC World Test Championship (WTC) aggregates Test results, but bilateral ODI/T20 series are standalone. ICC knockout tournaments (World Cup, Champions Trophy) have group-stage and knockout phases. NO relegation from international cricket — teams' Test status is governed by ICC membership.`,
   },
+  world_cup: {
+    name: 'FIFA World Cup 2026',
+    profile:
+      `48-team tournament hosted across the United States, Canada, and Mexico. GROUP STAGE: 12 groups (A–L) of 4 teams each; every team plays 3 group games. Top 2 from each group advance automatically. The 8 best third-placed teams (ranked by points, then goal difference, then goals scored, then head-to-head) also advance — making 32 qualifiers in total. Points: 3 for a win, 1 for a draw, 0 for a loss. KNOCKOUT STAGE: Round of 32 → Round of 16 → Quarter-finals → Semi-finals → Third-place match → Final. Every knockout game is single-leg and decisive — 90 minutes; if level after 90, 30 minutes of extra time; if still level, penalty shootout decides. No away-goals rule, no second legs. Losing a knockout game ends the team's World Cup immediately. The final is at MetLife Stadium, New Jersey. NO relegation — this is a standalone tournament. The World Cup is the pinnacle of international football; every group game carries full consequence from the opening minute.`,
+  },
 };
 
 /** Returns the competition profile for a league, or null if not configured. */
