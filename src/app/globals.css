@@ -420,7 +420,7 @@
 .sh-hero-expand:hover { color: var(--text); background: color-mix(in oklab, var(--bg) 10%, transparent); }
 
 /* ── Consolidated filters ── */
-.sh-filters { padding: 14px 16px; margin-bottom: 26px; }
+.sh-filters { padding: 12px 14px; margin-bottom: 20px; }
 .sh-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .sh-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .sh-chip {
@@ -441,7 +441,7 @@
 }
 .sh-comp-select .sh-icon:first-child { color: var(--accent); }
 .sh-comp-select .sh-icon:last-child { color: var(--text-3); }
-.sh-filter-divider { height: 1px; background: var(--border); margin: 13px 0; }
+.sh-filter-divider { height: 1px; background: var(--border); margin: 10px 0; }
 .sh-segmented {
   display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px;
   background: var(--surface); border: 1px solid var(--border);

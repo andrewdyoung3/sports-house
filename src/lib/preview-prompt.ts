@@ -937,7 +937,14 @@ export function buildDataBlock(
   const lines: string[] = [];
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
-  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome);
+  // World Cup: only the three host nations (USA, Canada, Mexico) have home advantage.
+  // ESPN assigns home/away for scheduling but that designation is meaningless for all
+  // other nations — every non-host game is played on neutral ground.
+  const WC_HOST_IDS = new Set(['wc-usa', 'wc-canada', 'wc-mexico']);
+  const effectiveIsHome = (league === 'world_cup' && !WC_HOST_IDS.has(teamId ?? '') && !WC_HOST_IDS.has(opponentId ?? ''))
+    ? undefined
+    : isHome;
+  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, effectiveIsHome);
   if (venueLine) lines.push(venueLine);
   lines.push(`COMPETITION: ${competition ?? leagueLabel}`);
   if (isOffLeague) {
@@ -1059,25 +1066,40 @@ export function buildDataBlock(
   if (league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
     const wc = context.worldCup;
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
-    lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — top 2 advance automatically; best 8 third-placed teams also advance):`);
-    for (const row of wcGroupTable) {
-      const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
-      const isTracked = row.teamName === teamName || row.teamName === opponentName;
-      const marker = isTracked ? ' ◄' : '';
-      lines.push(
-        `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
-        `${row.wins}W ${row.draws}D ${row.losses}L  ` +
-        `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
-      );
+    const groupNotStarted = wcGroupTable.every(r => r.played === 0);
+
+    if (groupNotStarted) {
+      // Suppress the all-zeros table — it carries no information and misleads the model.
+      // Instead inject the group composition so the model knows who else they face.
+      lines.push(`GROUP ${wc.group ?? ''} COMPOSITION (group stage not yet begun):`);
+      for (const row of wcGroupTable) {
+        const isTracked = row.teamName === teamName || row.teamName === opponentName;
+        lines.push(`  ${row.position}. ${row.teamName}${isTracked ? ' ◄' : ''}`);
+      }
+      lines.push('');
+      lines.push(`ADVANCEMENT NOTE: Top 2 from Group ${wc.group ?? ''} advance automatically; the best 8 third-placed teams across all 12 groups also advance.`);
+      lines.push('DO NOT comment on the standings or points tally — no games have been played yet. Focus on the match itself: tactics, form, key players, and what each team needs to do to win.');
+    } else {
+      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — top 2 advance automatically; best 8 third-placed teams also advance):`);
+      for (const row of wcGroupTable) {
+        const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
+        const isTracked = row.teamName === teamName || row.teamName === opponentName;
+        const marker = isTracked ? ' ◄' : '';
+        lines.push(
+          `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
+          `${row.wins}W ${row.draws}D ${row.losses}L  ` +
+          `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
+        );
+      }
+      lines.push('');
+      if (wc.advancementScenario) {
+        lines.push(`ADVANCEMENT SCENARIO: ${wc.advancementScenario}`);
+      }
+      if (wc.gamesPlayed !== undefined) {
+        lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
+      }
+      lines.push('');
     }
-    lines.push('');
-    if (wc.advancementScenario) {
-      lines.push(`ADVANCEMENT SCENARIO: ${wc.advancementScenario}`);
-    }
-    if (wc.gamesPlayed !== undefined) {
-      lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
-    }
-    lines.push('');
   }
 
   // Cup/European competition group/league-phase standings (highest relevance)

@@ -309,13 +309,13 @@ async function callOllama(prompt: string, compact = false, maxTokensOverride?: n
 const getCachedPreview = unstable_cache(
   async (_cacheKey: string, prompt: string, compact: boolean, maxTokensOverride?: number): Promise<AIPreview> =>
     callOllama(prompt, compact, maxTokensOverride),
-  ['ai-preview-v39'],
+  ['ai-preview-v43'],
   { revalidate: 21600 }, // 6 hours
 );
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1']);
+const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'bbl', 'cricket_int']);
 const TEAMID_RE        = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 const FINGERPRINT_RE   = /^[a-zA-Z0-9_\-:]{1,128}$/;
 // Reject control characters and obvious prompt-injection newlines; allow Unicode letters for international names
@@ -329,10 +329,16 @@ export async function POST(req: NextRequest) {
   const isCron = cronSecret && cronSecret === process.env.CRON_SECRET;
   if (!isCron) {
     const sb = getSupabaseServer();
-    const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
-    if (!user) {
+    if (!sb) {
+      aiLog('auth-fail: supabase not configured');
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+    const { data: { user }, error: authError } = await sb.auth.getUser();
+    if (!user) {
+      aiLog(`auth-fail: no user — ${authError?.message ?? 'null user'}`);
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    aiLog(`auth-ok: uid=${user.id.slice(0, 8)}`);
   }
 
   try {

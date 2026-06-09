@@ -36,7 +36,7 @@ export function Navbar() {
     // header over scrolling content needs its own bg/blur (unlike the design's in-flow,
     // transparent `.sh-header`). `.sh-theme` adds no backdrop-filter, so the auth modal
     // (portaled to <body>) and the absolute account dropdown remain un-trapped.
-    <nav className="sh-theme fixed top-0 left-0 right-0 z-50 h-14 bg-black/25 backdrop-blur-xl border-b border-white/8">
+    <nav className="sh-theme fixed top-0 left-0 right-0 z-50 h-14 bg-black/30 backdrop-blur-xl" style={{ boxShadow: '0 1px 0 rgba(255,255,255,0.05), 0 4px 16px rgba(0,0,0,0.3)' }}>
       {/* 3-column IN-FLOW grid (1fr · auto · 1fr): equal side columns force the centre
           nav to true viewport-centre and make overlap impossible at any width. */}
       <div className="max-w-7xl mx-auto px-4 sm:px-[30px] h-full grid grid-cols-[1fr_auto_1fr] items-center">

@@ -115,6 +115,13 @@ const MANAGER: Record<string, string> = {
   'wc-senegal':        'Aliou Cissé',
   'wc-uruguay':        'Marcelo Bielsa',
   'wc-colombia':       'Néstor Lorenzo',
+  'wc-sweden':         'Jon Dahl Tomasson',
+  'wc-norway':         'Ståle Solbakken',
+  'wc-croatia':        'Zlatko Dalić',
+  'wc-belgium':        'Domenico Tedesco',
+  'wc-austria':        'Ralf Rangnick',
+  'wc-turkey':         'Vincenzo Montella',
+  'wc-scotland':       'Steve Clarke',
 };
 
 /** Look up manager for a team ID, or by display name cross-referencing ESPN/Squiggle maps. */

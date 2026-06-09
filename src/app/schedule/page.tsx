@@ -778,11 +778,17 @@ function LeagueFilterPill({
   leagueId: string; active: boolean; onClick: () => void;
 }) {
   const meta = LEAGUE_BADGE[leagueId];
+  const isWC = leagueId === 'world_cup';
+  const wcInactiveStyle = isWC && !active ? {
+    borderColor: 'rgba(200,146,42,0.55)',
+    boxShadow: '0 0 10px rgba(200,146,42,0.22), inset 0 0 6px rgba(200,146,42,0.06)',
+    color: 'rgba(224,170,60,0.95)',
+  } : undefined;
   return (
     <button
       onClick={onClick}
       className={'sh-chip' + (active ? ' is-active' : '')}
-      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : undefined}
+      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : wcInactiveStyle}
     >
       <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
@@ -1289,7 +1295,6 @@ export default function SchedulePage() {
 
               {/* My teams */}
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">My Teams</p>
                 <div className="sh-chips">
                   <TeamFilterPill
                     label="All"
@@ -1315,7 +1320,6 @@ export default function SchedulePage() {
 
               {/* Browse competition (pills) */}
               <div>
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/25 mb-1.5">Browse Competition</p>
                 <div className="sh-chips">
                   {BROWSABLE_LEAGUES.filter(l => l.id === 'world_cup' || teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill

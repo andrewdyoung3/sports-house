@@ -124,7 +124,7 @@ export function AccountMenu() {
         className="sh-nav-myteams"
       >
         <LogIn className="h-4 w-4" />
-        <span className="hidden md:block">Sign in to sync across devices</span>
+        <span className="hidden sm:block">Sign in</span>
       </button>
       <AuthModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </>

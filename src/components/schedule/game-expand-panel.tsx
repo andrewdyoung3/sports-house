@@ -153,7 +153,7 @@ function buildFingerprint(
 }
 
 // v39: FIFA World Cup 2026 support — group table, advancement scenario, WC SPORT_CONTEXT.
-const CACHE_KEY = (gameId: string) => `ai-preview-v39:${gameId}`;
+const CACHE_KEY = (gameId: string) => `ai-preview-v43:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -1129,8 +1129,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           newsFingerprint: cached ? fingerprint : undefined,
         }),
       })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
+        .then(r => { if (!r.ok) console.error(`[ai-preview] HTTP ${r.status} for ${team.league}/${team.id}`); return r.ok ? r.json() : null; })
+        .catch((e) => { console.error('[ai-preview] fetch error', e); return null; })
         .then((aiData: AIPreview | null) => {
           if (aiData) {
             setAiPreview(aiData);

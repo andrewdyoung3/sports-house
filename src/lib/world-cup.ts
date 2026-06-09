@@ -173,6 +173,9 @@ export function computeGroupAdvancementScenario(
   gamesRemaining: number,
   rankInGroup: number,
 ): string {
+  // Tournament hasn't started — suppress scenario text entirely.
+  if (played === 0) return '';
+
   if (gamesRemaining === 0) {
     // Group stage is done
     if (rankInGroup <= 2) {
@@ -217,86 +220,83 @@ function ordinal(n: number): string {
  * All 48 confirmed 2026 WC participants are listed.
  */
 export const WC_ESPN_NAME_TO_ID: Record<string, string> = {
-  // Group-stage hosts
-  'United States':    'wc-usa',
-  'USA':              'wc-usa',
-  'Canada':           'wc-canada',
-  'Mexico':           'wc-mexico',
+  // CONCACAF hosts
+  'United States':          'wc-usa',
+  'USA':                    'wc-usa',
+  'Canada':                 'wc-canada',
+  'Mexico':                 'wc-mexico',
 
-  // CONMEBOL
-  'Argentina':        'wc-argentina',
-  'Brazil':           'wc-brazil',
-  'Colombia':         'wc-colombia',
-  'Ecuador':          'wc-ecuador',
-  'Uruguay':          'wc-uruguay',
-  'Venezuela':        'wc-venezuela',
-  'Chile':            'wc-chile',
-  'Paraguay':         'wc-paraguay',
+  // CONMEBOL (6)
+  'Argentina':              'wc-argentina',
+  'Brazil':                 'wc-brazil',
+  'Colombia':               'wc-colombia',
+  'Ecuador':                'wc-ecuador',
+  'Uruguay':                'wc-uruguay',
+  'Paraguay':               'wc-paraguay',
 
-  // CONCACAF (non-host)
-  'Panama':           'wc-panama',
-  'Jamaica':          'wc-jamaica',
-  'Honduras':         'wc-honduras',
-  'Costa Rica':       'wc-costarica',
-  'El Salvador':      'wc-elsalvador',
+  // CONCACAF non-hosts (3)
+  'Panama':                 'wc-panama',
+  'Curaçao':                'wc-curacao',
+  'Curacao':                'wc-curacao',
+  'Haiti':                  'wc-haiti',
 
-  // UEFA
-  'Germany':          'wc-germany',
-  'Spain':            'wc-spain',
-  'France':           'wc-france',
-  'England':          'wc-england',
-  'Portugal':         'wc-portugal',
-  'Netherlands':      'wc-netherlands',
-  'Belgium':          'wc-belgium',
-  'Italy':            'wc-italy',
-  'Croatia':          'wc-croatia',
-  'Switzerland':      'wc-switzerland',
-  'Denmark':          'wc-denmark',
-  'Poland':           'wc-poland',
-  'Austria':          'wc-austria',
-  'Turkey':           'wc-turkey',
-  'Türkiye':          'wc-turkey',
-  'Ukraine':          'wc-ukraine',
-  'Serbia':           'wc-serbia',
-  'Scotland':         'wc-scotland',
-  'Albania':          'wc-albania',
+  // UEFA (16)
+  'France':                 'wc-france',
+  'Spain':                  'wc-spain',
+  'England':                'wc-england',
+  'Germany':                'wc-germany',
+  'Portugal':               'wc-portugal',
+  'Netherlands':            'wc-netherlands',
+  'Belgium':                'wc-belgium',
+  'Croatia':                'wc-croatia',
+  'Switzerland':            'wc-switzerland',
+  'Austria':                'wc-austria',
+  'Sweden':                 'wc-sweden',
+  'Norway':                 'wc-norway',
+  'Scotland':               'wc-scotland',
+  'Turkey':                 'wc-turkey',
+  'Türkiye':                'wc-turkey',
+  'Czech Republic':         'wc-czechia',
+  'Czechia':                'wc-czechia',
+  'Bosnia & Herzegovina':   'wc-bosnia',
+  'Bosnia and Herzegovina': 'wc-bosnia',
 
-  // CAF (Africa)
-  'Morocco':          'wc-morocco',
-  'Nigeria':          'wc-nigeria',
-  'Senegal':          'wc-senegal',
-  'Algeria':          'wc-algeria',
-  'Egypt':            'wc-egypt',
-  'Cameroon':         'wc-cameroon',
-  'South Africa':     'wc-southafrica',
-  'DR Congo':         'wc-drcongo',
-  'Congo DR':         'wc-drcongo',
-  'Côte d\'Ivoire':   'wc-ivorycoast',
-  'Ivory Coast':      'wc-ivorycoast',
-  'Mali':             'wc-mali',
-  'Ghana':            'wc-ghana',
+  // CAF — Africa (10)
+  'Morocco':                'wc-morocco',
+  'Senegal':                'wc-senegal',
+  'Algeria':                'wc-algeria',
+  'Egypt':                  'wc-egypt',
+  'Tunisia':                'wc-tunisia',
+  'South Africa':           'wc-southafrica',
+  'DR Congo':               'wc-drcongo',
+  'Congo DR':               'wc-drcongo',
+  'Côte d\'Ivoire':         'wc-ivorycoast',
+  'Ivory Coast':            'wc-ivorycoast',
+  'Ghana':                  'wc-ghana',
+  'Cape Verde':             'wc-capeverde',
+  'Cabo Verde':             'wc-capeverde',
 
-  // AFC (Asia)
-  'Japan':            'wc-japan',
-  'South Korea':      'wc-southkorea',
-  'Korea Republic':   'wc-southkorea',
-  'Saudi Arabia':     'wc-saudiarabia',
-  'IR Iran':          'wc-iran',
-  'Iran':             'wc-iran',
-  'Australia':        'wc-australia',
-  'Jordan':           'wc-jordan',
-  'Uzbekistan':       'wc-uzbekistan',
-  'Iraq':             'wc-iraq',
-  'Qatar':            'wc-qatar',
+  // AFC — Asia (9)
+  'Japan':                  'wc-japan',
+  'IR Iran':                'wc-iran',
+  'Iran':                   'wc-iran',
+  'South Korea':            'wc-southkorea',
+  'Korea Republic':         'wc-southkorea',
+  'Australia':              'wc-australia',
+  'Qatar':                  'wc-qatar',
+  'Saudi Arabia':           'wc-saudiarabia',
+  'Uzbekistan':             'wc-uzbekistan',
+  'Jordan':                 'wc-jordan',
+  'Iraq':                   'wc-iraq',
 
-  // OFC
-  'New Zealand':      'wc-newzealand',
+  // OFC — Oceania (1)
+  'New Zealand':            'wc-newzealand',
 };
 
 /** Reverse map: our wc-* id → ESPN displayName (primary name). */
 export const WC_ID_TO_ESPN_NAME: Record<string, string> = Object.fromEntries(
   // Use the longer/more canonical name when there are multiple entries for same id
   Object.entries(WC_ESPN_NAME_TO_ID)
-    .filter(([espnName]) => !['USA', 'Türkiye', 'Korea Republic', 'Congo DR', 'Ivory Coast', 'IR Iran', 'Iran'].includes(espnName))
+    .filter(([espnName]) => !['USA', 'Türkiye', 'Korea Republic', 'Congo DR', 'Ivory Coast', 'IR Iran', 'Iran', 'Curacao', 'Czechia', 'Bosnia and Herzegovina', 'Cabo Verde'].includes(espnName))
     .map(([espnName, id]) => [id, espnName]),
 );
