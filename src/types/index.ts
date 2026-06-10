@@ -269,6 +269,12 @@ export interface PreviewContext {
    *  Populated from ESPN injury reports (NRL, EPL, Super Rugby). */
   teamInjuryReport?: Array<{ name: string; status: string }>;
   opponentInjuryReport?: Array<{ name: string; status: string }>;
+  /** Key performers from the most recent completed game — name + formatted stat line.
+   *  Used for basketball (NBA) where player stats are the primary narrative hook. */
+  teamKeyPlayers?: Array<{ name: string; stats: string }>;
+  opponentKeyPlayers?: Array<{ name: string; stats: string }>;
+  /** Label for the game these key-player stats came from, e.g. "NBA Finals - Game 3". */
+  keyPlayersGameLabel?: string;
   /** For two-legged knockout ties: score from the first leg (team's perspective). */
   firstLegResult?: { teamScore: number; opponentScore: number };
   /** For English cup fixtures: the division the opponent currently plays in (e.g. "Championship", "League One") — only set when they are not in the top flight. */

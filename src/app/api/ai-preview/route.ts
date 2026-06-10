@@ -315,7 +315,7 @@ const getCachedPreview = unstable_cache(
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'bbl', 'cricket_int']);
+const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'bbl', 'cricket_int', 'nba']);
 const TEAMID_RE        = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 const FINGERPRINT_RE   = /^[a-zA-Z0-9_\-:]{1,128}$/;
 // Reject control characters and obvious prompt-injection newlines; allow Unicode letters for international names

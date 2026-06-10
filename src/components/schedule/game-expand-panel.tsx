@@ -31,7 +31,7 @@ interface GameExpandPanelProps {
   onCollapse?: () => void;
 }
 
-const STANDINGS_ONLY_LEAGUES = new Set(['nba', 'nhl']);
+const STANDINGS_ONLY_LEAGUES = new Set(['nhl']);
 /** Outdoor sports where weather affects play. */
 const OUTDOOR_SPORTS       = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
 
@@ -52,7 +52,7 @@ interface PanelData {
 }
 
 const PANEL_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — matches API Cache-Control
-const PANEL_SESSION_KEY  = 'panel-data-cache-v3';
+const PANEL_SESSION_KEY  = 'panel-data-cache-v4';
 
 /** Seed the in-memory map from sessionStorage (lazy — only parsed on first access). */
 function loadPanelSessionCache(): Map<string, PanelData> {
@@ -153,7 +153,7 @@ function buildFingerprint(
 }
 
 // v39: FIFA World Cup 2026 support — group table, advancement scenario, WC SPORT_CONTEXT.
-const CACHE_KEY = (gameId: string) => `ai-preview-v43:${gameId}`;
+const CACHE_KEY = (gameId: string) => `ai-preview-v44:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
@@ -1041,10 +1041,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       : '';
     const previewUrl  = `/api/preview?league=${team.league}&teamId=${team.id}&opponentName=${encodeURIComponent(game.opponent)}&gameId=${encodeURIComponent(game.id)}${game.competition ? `&competition=${encodeURIComponent(game.competition)}` : ''}${wcParams}`;
     const standingsUrl = `/api/standings?league=${team.league}`;
-    // Cup fixtures: always use the cross-league name lookup so that opponents from
-    // lower divisions (Championship, League One, etc.) are found correctly.
-    // Regular league fixtures: use the fast league-specific teamId path when available.
-    const oppUrl = (!game.competition && game.opponentId)
+    // Known opponent (opponentId set) → always use the fast league+teamId path, even for
+    // playoff/cup games where competition is set. Cross-league name lookup is only for EPL
+    // cup fixtures where the opponent is from a lower division (opponentId absent).
+    const oppUrl = game.opponentId
       ? `/api/results?league=${team.league}&teamId=${game.opponentId}`
       : game.opponent
         ? `/api/results?teamName=${encodeURIComponent(game.opponent)}`
@@ -1215,13 +1215,9 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         </div>
       )}
 
-      {/* ── Main panel content — hidden on mobile when table tab is active ── */}
-      {/* Two-column at lg: — left narrative, right data rail. On mobile, both divs stack
-          naturally as blocks; DOM order (narrative → data) matches current mobile flow. */}
-      <div className={cn('lg:grid lg:grid-cols-[1fr_264px] lg:items-start', hasTable && activeTab === 'table' ? 'hidden' : '')}>
-
-      {/* ── Left: narrative column ── */}
-      <div className="space-y-5 lg:min-w-0 lg:pr-5">
+      {/* ── Main content — single centred column, hidden on mobile when table tab active ── */}
+      <div className={cn(hasTable && activeTab === 'table' ? 'hidden' : '')}>
+      <div className="max-w-[65ch] mx-auto space-y-5">
 
       {/* ── Collapse pill — drives the parent's EXISTING expand toggle (Phase B · Step 5) ── */}
       {onCollapse && (
@@ -1278,12 +1274,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         </div>
       )}
 
-      </div>{/* end left narrative col */}
-
-      {/* ── Right: data column (Form + Standings + Weather) ── */}
-      <div className="mt-5 lg:mt-0 lg:col-start-2 lg:row-start-1 sh-expand-rail lg:border-l lg:border-white/8 lg:pl-5">
-
-      {/* ── Form + Standings / Key Factors + Weather ── */}
+      {/* ── Form + Standings + Weather grid (below narrative) ── */}
       {(() => {
         const isCricket = team.league === 'cricket_int' || team.league === 'bbl';
         const twoMonthsBefore = new Date(new Date(game.date).getTime() - 60 * 24 * 60 * 60 * 1000);
@@ -1295,7 +1286,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         // Weather is never dropped to satisfy the mockup's two-col; it stays the 3rd cell.
         const colCount = (showForm ? 1 : 0) + 1 + (weather ? 1 : 0);
         return (
-      <div className="sh-detail-cols" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
+      <div className="sh-detail-cols sh-widget-row" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
 
         {/* Recent form — both teams */}
         {showForm && (
@@ -1540,10 +1531,6 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         );
       })()}
 
-      </div>{/* end data col */}
-
-      {/* ── Left: narrative column (continued) ── */}
-      <div className="mt-5 lg:mt-0 space-y-5 lg:col-start-1 lg:pr-5">
 
       {/* ── Player Spotlight + Verdict (AI only, full mode) ── */}
       {!compact && !aiLoading && aiPreview && (
@@ -1681,8 +1668,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         </button>
       </div>
 
-      </div>{/* end left narrative col (continued) */}
-      </div>{/* end outer grid */}
+      </div>{/* end centred column */}
+      </div>{/* end visibility wrapper */}
     </div>
   );
 }

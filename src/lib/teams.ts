@@ -20,7 +20,7 @@ export const LEAGUES: League[] = [
 ];
 
 /** Leagues backed by real data APIs (fixtures/results/news). All others use deterministic mock data. */
-export const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup']);
+export const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup', 'nba']);
 
 // ─── All Teams ────────────────────────────────────────────────────────────────
 

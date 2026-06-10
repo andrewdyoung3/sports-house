@@ -902,6 +902,8 @@ export default function SchedulePage() {
   // Expanded card state
   const [expandedId,      setExpandedId]      = useState<string | null>(null);
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
+  // Track whether the hero expand panel is open (used to hide the WC sidebar standings duplicate)
+  const [heroExpanded,    setHeroExpanded]    = useState(false);
 
   // Past results for calendar (fetched on load, filtered to last 2 months)
   const [pastResults, setPastResults] = useState<(import('@/types').GameResult & { team: Team })[]>([]);
@@ -1251,6 +1253,9 @@ export default function SchedulePage() {
       ?? [...allGames, ...(activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [])].find(g => g.id === expandedId)?.team.league
   ) as SportKey | undefined;
   const standingsBadge = standingsTableLeague ? LEAGUE_BADGE[standingsTableLeague] : undefined;
+  // Task 2: hide the WC group-standings sidebar widget when the in-preview group table is already
+  // visible (hero expanded or a schedule row expanded). Other leagues are never affected.
+  const hideWcSidebarStandings = standingsTableLeague === 'world_cup' && (heroExpanded || expandedId !== null);
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -1274,7 +1279,7 @@ export default function SchedulePage() {
       {!activeLoading && heroGame && (
         heroGame.team.league === 'f1'
           ? <NextGameHero   game={heroGame} userTz={userTz} />
-          : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} />
+          : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />
       )}
 
       {/* ── Two-column layout: schedule list + sidebar ── */}
@@ -1470,8 +1475,9 @@ export default function SchedulePage() {
             />
           )}
 
-          {/* League standings / WC groups — shown in league-browse mode, when a team is selected, or when a card is expanded */}
-          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null) && (
+          {/* League standings / WC groups — shown in league-browse mode, when a team is selected, or when a card is expanded.
+              WC group standings are hidden when any expand panel is open (the in-preview group table is already visible). */}
+          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null) && !hideWcSidebarStandings && (
             standingsTableLeague === 'world_cup' ? (
               <div className="sh-card sh-standings">
                 <div className="sh-card-head">

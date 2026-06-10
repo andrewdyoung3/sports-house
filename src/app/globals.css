@@ -608,21 +608,14 @@
   .sh-detail-body-sm { max-width: 65ch; }
 }
 
-/* Right data rail: at lg:, .sh-detail-cols collapses to a single-column vertical stack.
-   The inline gridTemplateColumns style is overridden intentionally — no other clean way. */
-@media (min-width: 1024px) {
-  .sh-expand-rail .sh-detail-cols {
-    grid-template-columns: 1fr !important;
-    border-top: none;
-  }
-  .sh-expand-rail .sh-detail-cols > .sh-detail-section {
-    padding: 12px 0;
-    border-left: none !important;
+/* Widget row (Form + Standings + optional Weather): single-column stack on mobile,
+   multi-column grid on md+. The inline gridTemplateColumns drives the column count;
+   this rule overrides it to 1fr on small screens and fixes the border separators. */
+@media (max-width: 767px) {
+  .sh-widget-row { grid-template-columns: 1fr !important; }
+  .sh-widget-row > .sh-detail-section + .sh-detail-section {
+    border-left: none;
     border-top: 1px solid var(--border);
-  }
-  .sh-expand-rail .sh-detail-cols > .sh-detail-section:first-of-type {
-    border-top: none;
-    padding-top: 0;
   }
 }
 

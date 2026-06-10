@@ -1036,9 +1036,143 @@ const fetchWorldCupResults = unstable_cache(
   { revalidate: 3600 },
 );
 
+// ─── NBA — ESPN scoreboard ────────────────────────────────────────────────────
+
+const NBA_ESPN_NAME_RESULTS: Record<string, string> = {
+  'nba-celtics':      'Boston Celtics',
+  'nba-nets':         'Brooklyn Nets',
+  'nba-knicks':       'New York Knicks',
+  'nba-76ers':        'Philadelphia 76ers',
+  'nba-raptors':      'Toronto Raptors',
+  'nba-bulls':        'Chicago Bulls',
+  'nba-cavaliers':    'Cleveland Cavaliers',
+  'nba-pistons':      'Detroit Pistons',
+  'nba-pacers':       'Indiana Pacers',
+  'nba-bucks':        'Milwaukee Bucks',
+  'nba-hawks':        'Atlanta Hawks',
+  'nba-hornets':      'Charlotte Hornets',
+  'nba-heat':         'Miami Heat',
+  'nba-magic':        'Orlando Magic',
+  'nba-wizards':      'Washington Wizards',
+  'nba-nuggets':      'Denver Nuggets',
+  'nba-timberwolves': 'Minnesota Timberwolves',
+  'nba-thunder':      'Oklahoma City Thunder',
+  'nba-blazers':      'Portland Trail Blazers',
+  'nba-jazz':         'Utah Jazz',
+  'nba-warriors':     'Golden State Warriors',
+  'nba-clippers':     'Los Angeles Clippers',
+  'nba-lakers':       'Los Angeles Lakers',
+  'nba-suns':         'Phoenix Suns',
+  'nba-kings':        'Sacramento Kings',
+  'nba-mavericks':    'Dallas Mavericks',
+  'nba-rockets':      'Houston Rockets',
+  'nba-grizzlies':    'Memphis Grizzlies',
+  'nba-pelicans':     'New Orleans Pelicans',
+  'nba-spurs':        'San Antonio Spurs',
+};
+
+const NBA_OPP_TEAM_RESULTS: Record<string, { abbr: string; color: string }> = {
+  'Boston Celtics':         { abbr: 'BOS', color: '#007A33' },
+  'Brooklyn Nets':          { abbr: 'BKN', color: '#000000' },
+  'New York Knicks':        { abbr: 'NYK', color: '#006BB6' },
+  'Philadelphia 76ers':     { abbr: 'PHI', color: '#006BB6' },
+  'Toronto Raptors':        { abbr: 'TOR', color: '#CE1141' },
+  'Chicago Bulls':          { abbr: 'CHI', color: '#CE1141' },
+  'Cleveland Cavaliers':    { abbr: 'CLE', color: '#860038' },
+  'Detroit Pistons':        { abbr: 'DET', color: '#C8102E' },
+  'Indiana Pacers':         { abbr: 'IND', color: '#002D62' },
+  'Milwaukee Bucks':        { abbr: 'MIL', color: '#00471B' },
+  'Atlanta Hawks':          { abbr: 'ATL', color: '#E03A3E' },
+  'Charlotte Hornets':      { abbr: 'CHA', color: '#1D1160' },
+  'Miami Heat':             { abbr: 'MIA', color: '#98002E' },
+  'Orlando Magic':          { abbr: 'ORL', color: '#0077C0' },
+  'Washington Wizards':     { abbr: 'WAS', color: '#002B5C' },
+  'Denver Nuggets':         { abbr: 'DEN', color: '#0E2240' },
+  'Minnesota Timberwolves': { abbr: 'MIN', color: '#0C2340' },
+  'Oklahoma City Thunder':  { abbr: 'OKC', color: '#007AC1' },
+  'Portland Trail Blazers': { abbr: 'POR', color: '#E03A3E' },
+  'Utah Jazz':              { abbr: 'UTA', color: '#002B5C' },
+  'Golden State Warriors':  { abbr: 'GSW', color: '#1D428A' },
+  'Los Angeles Clippers':   { abbr: 'LAC', color: '#C8102E' },
+  'Los Angeles Lakers':     { abbr: 'LAL', color: '#552583' },
+  'Phoenix Suns':           { abbr: 'PHX', color: '#1D1160' },
+  'Sacramento Kings':       { abbr: 'SAC', color: '#5A2D81' },
+  'Dallas Mavericks':       { abbr: 'DAL', color: '#00538C' },
+  'Houston Rockets':        { abbr: 'HOU', color: '#CE1141' },
+  'Memphis Grizzlies':      { abbr: 'MEM', color: '#5D76A9' },
+  'New Orleans Pelicans':   { abbr: 'NOP', color: '#0C2340' },
+  'San Antonio Spurs':      { abbr: 'SAS', color: '#C4CED4' },
+};
+
+async function fetchNBAResults(teamId: string): Promise<GameResult[]> {
+  const teamName = NBA_ESPN_NAME_RESULTS[teamId];
+  if (!teamName) return [];
+
+  // 30-day window keeps the event count well under 100 while covering the full
+  // playoff run (conference finals + Finals). Also fetch the undated current
+  // scoreboard so a game that finished today is never missed.
+  const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(start)}-${fmt(new Date())}`;
+
+  const urls = [
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${range}&limit=100`,
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`,
+  ];
+
+  const eventMap = new Map<string, any>();
+  await Promise.allSettled(
+    urls.map(url =>
+      fetchTimeout(url, { next: { revalidate: 300 } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          for (const e of (data.events ?? []) as any[]) {
+            if (!eventMap.has(e.id)) eventMap.set(e.id, e);
+          }
+        })
+        .catch(() => {}),
+    ),
+  );
+
+  const data = { events: Array.from(eventMap.values()) };
+
+  const completed = ((data.events ?? []) as any[])
+    .filter((e: any) =>
+      e.status?.type?.completed === true &&
+      (e.competitions?.[0]?.competitors ?? []).some((c: any) => c.team?.displayName === teamName),
+    )
+    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5);
+
+  return completed.map((e: any): GameResult => {
+    const comp:        any   = e.competitions?.[0] ?? {};
+    const competitors: any[] = comp.competitors ?? [];
+    const ourComp  = competitors.find((c: any) => c.team?.displayName === teamName);
+    const oppComp  = competitors.find((c: any) => c.team?.displayName !== teamName);
+    const isHome   = ourComp?.homeAway === 'home';
+    const oppName  = oppComp?.team?.displayName ?? 'Unknown';
+    const opp      = NBA_OPP_TEAM_RESULTS[oppName] ?? unknownTeam(oppName);
+    const teamScore = Number(ourComp?.score ?? 0);
+    const oppScore  = Number(oppComp?.score  ?? 0);
+
+    return {
+      opponent:        oppName,
+      opponentAbbr:    opp.abbr,
+      opponentLogoUrl: (oppComp?.team?.logo as string | undefined),
+      isHome,
+      isWin:           teamScore > oppScore,
+      teamScore,
+      opponentScore:   oppScore,
+      date:            new Date(e.date).toISOString(),
+      competition:     (comp.notes?.[0]?.headline as string | undefined),
+    };
+  });
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup', 'nba']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
@@ -1077,6 +1211,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'bbl')         results = await fetchBBLResults(teamId);
     else if (league === 'cricket_int') results = await fetchCricketIntResults(teamId);
     else if (league === 'world_cup')   results = await fetchWorldCupResults(teamId);
+    else if (league === 'nba')         results = await fetchNBAResults(teamId);
 
     return NextResponse.json(results, { headers: CACHE_HEADERS });
   } catch (err) {

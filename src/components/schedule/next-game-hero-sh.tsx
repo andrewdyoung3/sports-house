@@ -27,6 +27,8 @@ interface NextGameHeroShProps {
   game: ScheduleEntry;
   userTz: string;
   leagueLogoUrl?: string;
+  /** Called whenever the in-hero expand panel opens or closes. */
+  onExpandChange?: (open: boolean) => void;
 }
 
 // Human-readable competition names (non-F1; F1 never reaches this hero).
@@ -67,7 +69,7 @@ function timeUntil(isoDate: string, userTz: string): string | null {
   return null;
 }
 
-export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShProps) {
+export function NextGameHeroSh({ game, userTz, leagueLogoUrl, onExpandChange }: NextGameHeroShProps) {
   const { team } = game;
 
   // Step 6 · 2A — the hero can now expand to the SAME GameExpandPanel the feed uses.
@@ -75,6 +77,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShPr
   // grouped feed (see `if (game === heroGame) continue;`), so this game never mounts
   // a second panel elsewhere — no shared-state needed.
   const [open, setOpen] = useState(false);
+  const handleToggle = () => setOpen(o => { const next = !o; onExpandChange?.(next); return next; });
 
   // Focal team paints the hero; opponent is the flat fields on UpcomingGame.
   const focalProps = {
@@ -172,7 +175,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl }: NextGameHeroShPr
       <button
         type="button"
         className="sh-hero-expand"
-        onClick={() => setOpen((o) => !o)}
+        onClick={handleToggle}
         aria-expanded={open}
       >
         Match details

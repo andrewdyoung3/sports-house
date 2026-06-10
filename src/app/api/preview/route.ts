@@ -1200,6 +1200,40 @@ async function fetchSRUPreview(
 
 // ─── NBA — ESPN ───────────────────────────────────────────────────────────────
 
+// ESPN numeric team IDs for the news + injury endpoints
+const NBA_ESPN_ID: Record<string, string> = {
+  'nba-hawks':        '1',
+  'nba-celtics':      '2',
+  'nba-nets':         '17',
+  'nba-hornets':      '30',
+  'nba-bulls':        '4',
+  'nba-cavaliers':    '5',
+  'nba-mavericks':    '6',
+  'nba-nuggets':      '7',
+  'nba-pistons':      '8',
+  'nba-warriors':     '9',
+  'nba-rockets':      '10',
+  'nba-pacers':       '11',
+  'nba-clippers':     '12',
+  'nba-lakers':       '13',
+  'nba-grizzlies':    '29',
+  'nba-heat':         '14',
+  'nba-bucks':        '15',
+  'nba-timberwolves': '16',
+  'nba-pelicans':     '3',
+  'nba-knicks':       '18',
+  'nba-thunder':      '25',
+  'nba-magic':        '19',
+  'nba-76ers':        '20',
+  'nba-suns':         '21',
+  'nba-blazers':      '22',
+  'nba-kings':        '23',
+  'nba-spurs':        '24',
+  'nba-raptors':      '28',
+  'nba-jazz':         '26',
+  'nba-wizards':      '27',
+};
+
 const NBA_ESPN_NAME: Record<string, string> = {
   'nba-celtics':      'Boston Celtics',
   'nba-nets':         'Brooklyn Nets',
@@ -1258,21 +1292,163 @@ function parseNBAStandings(entries: any[], displayName: string): TeamStanding | 
   };
 }
 
-async function fetchNBAPreview(teamId: string, opponentName: string): Promise<PreviewContext> {
-  const teamName = NBA_ESPN_NAME[teamId];
-  if (!teamName) return {};
-  const res = await fetchTimeout(
-    'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings',
-    { next: { revalidate: 3600 } },
+/** Extract top-N players by points from an ESPN boxscore players array. */
+function extractNBALeaders(
+  boxscorePlayers: any[],
+  teamDisplayName: string,
+  topN = 5,
+): Array<{ name: string; stats: string }> {
+  const teamEntry = boxscorePlayers.find(
+    (t: any) => t.team?.displayName === teamDisplayName,
   );
-  if (!res.ok) return {};
-  const data    = await res.json();
-  const entries: any[] =
-    data.children?.[0]?.standings?.entries ??
-    data.standings?.entries ?? [];
+  if (!teamEntry) return [];
+  const statGrp: any = (teamEntry.statistics ?? [])[0];
+  if (!statGrp) return [];
+  const headers: string[] = statGrp.names ?? statGrp.keys ?? [];
+  const ptsIdx = headers.findIndex((h: string) => h === 'PTS');
+  const rebIdx = headers.findIndex((h: string) => h === 'REB');
+  const astIdx = headers.findIndex((h: string) => h === 'AST');
+  if (ptsIdx < 0) return [];
+
+  return ((statGrp.athletes ?? []) as any[])
+    .filter((a: any) => Number(a.stats?.[ptsIdx] ?? 0) > 0 || a.stats?.[0] !== '0')
+    .sort((a: any, b: any) => Number(b.stats?.[ptsIdx] ?? 0) - Number(a.stats?.[ptsIdx] ?? 0))
+    .slice(0, topN)
+    .map((a: any) => {
+      const pts = a.stats?.[ptsIdx] ?? '0';
+      const reb = rebIdx >= 0 ? a.stats?.[rebIdx] ?? '0' : null;
+      const ast = astIdx >= 0 ? a.stats?.[astIdx] ?? '0' : null;
+      const statStr = [
+        `${pts} pts`,
+        reb !== null ? `${reb} reb` : null,
+        ast !== null ? `${ast} ast` : null,
+      ].filter(Boolean).join('/');
+      return { name: a.athlete?.displayName ?? '', stats: statStr };
+    })
+    .filter(p => p.name);
+}
+
+async function fetchNBAPreview(teamId: string, opponentName: string): Promise<PreviewContext> {
+  const teamName   = NBA_ESPN_NAME[teamId];
+  const espnTeamId = NBA_ESPN_ID[teamId];
+  if (!teamName) return {};
+
+  // Resolve opponent ESPN ID for parallel fetches
+  const oppTeamKey = Object.entries(NBA_ESPN_NAME).find(([, v]) => v === opponentName)?.[0];
+  const oppEspnId  = oppTeamKey ? NBA_ESPN_ID[oppTeamKey] : undefined;
+
+  // Most recent completed game: fetch scoreboard (last 14 days) to find event IDs
+  const fmt  = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const now  = new Date();
+  const past = new Date(now.getTime() - 14 * 86400000);
+  const scoreboard = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${fmt(past)}-${fmt(now)}&limit=50`,
+    { next: { revalidate: 300 } },
+  ).then(r => r.ok ? r.json() : null).catch(() => null);
+
+  // Find the most recent completed game involving the team and/or opponent
+  const completedEvents: any[] = ((scoreboard?.events ?? []) as any[])
+    .filter((e: any) => {
+      if (e.status?.type?.completed !== true) return false;
+      const comps: any[] = e.competitions?.[0]?.competitors ?? [];
+      return comps.some((c: any) => c.team?.displayName === teamName || c.team?.displayName === opponentName);
+    })
+    .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Prefer a game featuring BOTH teams (series game), fallback to either team's last game
+  const seriesGame   = completedEvents.find((e: any) => {
+    const names = (e.competitions?.[0]?.competitors ?? []).map((c: any) => c.team?.displayName);
+    return names.includes(teamName) && names.includes(opponentName);
+  });
+  const lastTeamGame = completedEvents.find((e: any) =>
+    (e.competitions?.[0]?.competitors ?? []).some((c: any) => c.team?.displayName === teamName),
+  );
+  const recentEvent = seriesGame ?? lastTeamGame;
+
+  const [standingsRes, teamNewsRes, oppNewsRes, teamInjuryRes, oppInjuryRes, boxscoreRes] = await Promise.allSettled([
+    fetchTimeout(
+      'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings',
+      { next: { revalidate: 3600 } },
+    ),
+    espnTeamId
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${espnTeamId}/news?limit=4`,
+          { next: { revalidate: 1800 } },
+        )
+      : Promise.resolve(null),
+    oppEspnId
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/${oppEspnId}/news?limit=4`,
+          { next: { revalidate: 1800 } },
+        )
+      : Promise.resolve(null),
+    espnTeamId ? fetchESPNInjuries('basketball/nba', espnTeamId)  : Promise.resolve([]),
+    oppEspnId  ? fetchESPNInjuries('basketball/nba', oppEspnId)   : Promise.resolve([]),
+    recentEvent
+      ? fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=${recentEvent.id}`,
+          { next: { revalidate: 3600 } },
+        )
+      : Promise.resolve(null),
+  ]);
+
+  // Standings
+  let teamStanding: TeamStanding | undefined;
+  let opponentStanding: TeamStanding | undefined;
+  if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
+    const data = await standingsRes.value.json();
+    const entries: any[] = data.children?.[0]?.standings?.entries ?? data.standings?.entries ?? [];
+    teamStanding     = parseNBAStandings(entries, teamName);
+    opponentStanding = parseNBAStandings(entries, opponentName);
+  }
+
+  // News
+  const teamNews: NewsHeadline[] = [];
+  const opponentNews: NewsHeadline[] = [];
+  if (teamNewsRes.status === 'fulfilled' && teamNewsRes.value?.ok) {
+    const data = await teamNewsRes.value.json();
+    for (const a of (data.articles ?? []) as any[]) {
+      teamNews.push({ headline: a.headline, description: a.description, published: a.published });
+    }
+  }
+  if (oppNewsRes.status === 'fulfilled' && oppNewsRes.value?.ok) {
+    const data = await oppNewsRes.value.json();
+    for (const a of (data.articles ?? []) as any[]) {
+      opponentNews.push({ headline: a.headline, description: a.description, published: a.published });
+    }
+  }
+
+  // Injuries
+  const teamInjuries = teamInjuryRes.status === 'fulfilled' ? teamInjuryRes.value : [];
+  const oppInjuries  = oppInjuryRes.status  === 'fulfilled' ? oppInjuryRes.value  : [];
+
+  // Key players from the most recent game's boxscore
+  let teamKeyPlayers: Array<{ name: string; stats: string }> | undefined;
+  let opponentKeyPlayers: Array<{ name: string; stats: string }> | undefined;
+  let keyPlayersGameLabel: string | undefined;
+  if (boxscoreRes.status === 'fulfilled' && boxscoreRes.value?.ok) {
+    const summary = await boxscoreRes.value.json();
+    const bsPlayers: any[] = summary.boxscore?.players ?? [];
+    const tLeaders = extractNBALeaders(bsPlayers, teamName);
+    const oLeaders = extractNBALeaders(bsPlayers, opponentName);
+    if (tLeaders.length > 0 || oLeaders.length > 0) {
+      teamKeyPlayers     = tLeaders.length > 0 ? tLeaders : undefined;
+      opponentKeyPlayers = oLeaders.length > 0 ? oLeaders : undefined;
+      keyPlayersGameLabel = (recentEvent?.competitions?.[0]?.notes?.[0]?.headline as string | undefined)
+        ?? recentEvent?.name;
+    }
+  }
+
   return {
-    teamStanding:     parseNBAStandings(entries, teamName),
-    opponentStanding: parseNBAStandings(entries, opponentName),
+    teamStanding,
+    opponentStanding,
+    teamNews:              teamNews.length     > 0 ? teamNews     : undefined,
+    opponentNews:          opponentNews.length > 0 ? opponentNews : undefined,
+    teamInjuryReport:      teamInjuries.length > 0 ? teamInjuries : undefined,
+    opponentInjuryReport:  oppInjuries.length  > 0 ? oppInjuries  : undefined,
+    teamKeyPlayers,
+    opponentKeyPlayers,
+    keyPlayersGameLabel,
   };
 }
 

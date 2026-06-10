@@ -500,7 +500,112 @@ async function fetchRINTLeague(): Promise<UpcomingGame[]> {
   return unique.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
-// NBA / NHL — no real fixture API implemented yet; return empty so the browse
+// ─── NBA — ESPN scoreboard ────────────────────────────────────────────────────
+
+const NBA_TEAMS_LF: Record<string, TeamEntry> = {
+  'Boston Celtics':         { id: 'nba-celtics',      color: '#007A33', abbr: 'BOS' },
+  'Brooklyn Nets':          { id: 'nba-nets',         color: '#000000', abbr: 'BKN' },
+  'New York Knicks':        { id: 'nba-knicks',       color: '#006BB6', abbr: 'NYK' },
+  'Philadelphia 76ers':     { id: 'nba-76ers',        color: '#006BB6', abbr: 'PHI' },
+  'Toronto Raptors':        { id: 'nba-raptors',      color: '#CE1141', abbr: 'TOR' },
+  'Chicago Bulls':          { id: 'nba-bulls',        color: '#CE1141', abbr: 'CHI' },
+  'Cleveland Cavaliers':    { id: 'nba-cavaliers',    color: '#860038', abbr: 'CLE' },
+  'Detroit Pistons':        { id: 'nba-pistons',      color: '#C8102E', abbr: 'DET' },
+  'Indiana Pacers':         { id: 'nba-pacers',       color: '#002D62', abbr: 'IND' },
+  'Milwaukee Bucks':        { id: 'nba-bucks',        color: '#00471B', abbr: 'MIL' },
+  'Atlanta Hawks':          { id: 'nba-hawks',        color: '#E03A3E', abbr: 'ATL' },
+  'Charlotte Hornets':      { id: 'nba-hornets',      color: '#1D1160', abbr: 'CHA' },
+  'Miami Heat':             { id: 'nba-heat',         color: '#98002E', abbr: 'MIA' },
+  'Orlando Magic':          { id: 'nba-magic',        color: '#0077C0', abbr: 'ORL' },
+  'Washington Wizards':     { id: 'nba-wizards',      color: '#002B5C', abbr: 'WAS' },
+  'Denver Nuggets':         { id: 'nba-nuggets',      color: '#0E2240', abbr: 'DEN' },
+  'Minnesota Timberwolves': { id: 'nba-timberwolves', color: '#0C2340', abbr: 'MIN' },
+  'Oklahoma City Thunder':  { id: 'nba-thunder',      color: '#007AC1', abbr: 'OKC' },
+  'Portland Trail Blazers': { id: 'nba-blazers',      color: '#E03A3E', abbr: 'POR' },
+  'Utah Jazz':              { id: 'nba-jazz',         color: '#002B5C', abbr: 'UTA' },
+  'Golden State Warriors':  { id: 'nba-warriors',     color: '#1D428A', abbr: 'GSW' },
+  'Los Angeles Clippers':   { id: 'nba-clippers',     color: '#C8102E', abbr: 'LAC' },
+  'Los Angeles Lakers':     { id: 'nba-lakers',       color: '#552583', abbr: 'LAL' },
+  'Phoenix Suns':           { id: 'nba-suns',         color: '#1D1160', abbr: 'PHX' },
+  'Sacramento Kings':       { id: 'nba-kings',        color: '#5A2D81', abbr: 'SAC' },
+  'Dallas Mavericks':       { id: 'nba-mavericks',    color: '#00538C', abbr: 'DAL' },
+  'Houston Rockets':        { id: 'nba-rockets',      color: '#CE1141', abbr: 'HOU' },
+  'Memphis Grizzlies':      { id: 'nba-grizzlies',    color: '#5D76A9', abbr: 'MEM' },
+  'New Orleans Pelicans':   { id: 'nba-pelicans',     color: '#0C2340', abbr: 'NOP' },
+  'San Antonio Spurs':      { id: 'nba-spurs',        color: '#C4CED4', abbr: 'SAS' },
+};
+
+const fetchNBALeague = unstable_cache(async (): Promise<UpcomingGame[]> => {
+  const now = new Date();
+  const end = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(now)}-${fmt(end)}`;
+
+  // Fetch dated window + current scoreboard to catch active series games
+  const urls = [
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${range}&limit=100`,
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`,
+  ];
+
+  const eventMap = new Map<string, any>();
+  await Promise.allSettled(
+    urls.map(url =>
+      fetchTimeout(url, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          for (const e of (data.events ?? []) as any[]) {
+            if (!eventMap.has(e.id)) eventMap.set(e.id, e);
+          }
+        })
+        .catch(() => {}),
+    ),
+  );
+
+  const seen = new Set<string>();
+  return Array.from(eventMap.values())
+    .filter((e: any) => e.status?.type?.completed !== true)
+    .reduce<UpcomingGame[]>((acc, e) => {
+      const id = `nba-${e.id}`;
+      if (seen.has(id)) return acc;
+      seen.add(id);
+
+      const comp:  any   = e.competitions?.[0] ?? {};
+      const comps: any[] = comp.competitors ?? [];
+      const homeComp = comps.find((c: any) => c.homeAway === 'home');
+      const awayComp = comps.find((c: any) => c.homeAway === 'away');
+      const homeName = homeComp?.team?.displayName ?? '';
+      const awayName = awayComp?.team?.displayName ?? '';
+      const home = NBA_TEAMS_LF[homeName];
+      if (!home) return acc;
+      const away = NBA_TEAMS_LF[awayName];
+
+      const utcDate  = new Date(e.date);
+      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+
+      acc.push({
+        id,
+        teamId:          home.id,
+        opponent:        awayName,
+        opponentAbbr:    away?.abbr  ?? initials(awayName),
+        opponentColor:   away?.color ?? '#6B7280',
+        opponentLogoUrl: (awayComp?.team?.logo as string | undefined)
+          ?? (away ? TEAM_LOGOS[away.id] : undefined),
+        isHome:          true,
+        date:            utcDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast:       ['ESPN', 'ABC'],
+        streaming:       ['NBA League Pass', 'Kayo Sports'],
+        competition:     (comp.notes?.[0]?.headline as string | undefined),
+        opponentId:      away?.id,
+      });
+      return acc;
+    }, [])
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}, ['lf-nba'], { revalidate: 300 });
+
+// NHL — no real fixture API implemented yet; return empty so the browse
 // tab shows "No upcoming fixtures" rather than fabricated data.
 
 // ─── F1 — Jolpi Ergast race calendar ──────────────────────────────────────────
@@ -864,7 +969,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'nrl')         fixtures = await fetchNRLLeague();
     else if (league === 'super_rugby') fixtures = await fetchSRULeague();
     else if (league === 'rugby_int')   fixtures = await fetchRINTLeague();
-    else if (league === 'nba')         fixtures = []; // no real NBA fixture API yet
+    else if (league === 'nba')         fixtures = await fetchNBALeague();
     else if (league === 'nhl')         fixtures = []; // no real NHL fixture API yet
     else if (league === 'f1')          fixtures = await fetchF1League();
     else if (league === 'bbl')         fixtures = await fetchBBLLeague();

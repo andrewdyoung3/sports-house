@@ -1284,9 +1284,153 @@ const fetchWorldCupFixtures = unstable_cache(
   { revalidate: 3600 },
 );
 
+// ─── NBA — ESPN scoreboard ────────────────────────────────────────────────────
+
+const NBA_ESPN_NAME: Record<string, string> = {
+  'nba-celtics':      'Boston Celtics',
+  'nba-nets':         'Brooklyn Nets',
+  'nba-knicks':       'New York Knicks',
+  'nba-76ers':        'Philadelphia 76ers',
+  'nba-raptors':      'Toronto Raptors',
+  'nba-bulls':        'Chicago Bulls',
+  'nba-cavaliers':    'Cleveland Cavaliers',
+  'nba-pistons':      'Detroit Pistons',
+  'nba-pacers':       'Indiana Pacers',
+  'nba-bucks':        'Milwaukee Bucks',
+  'nba-hawks':        'Atlanta Hawks',
+  'nba-hornets':      'Charlotte Hornets',
+  'nba-heat':         'Miami Heat',
+  'nba-magic':        'Orlando Magic',
+  'nba-wizards':      'Washington Wizards',
+  'nba-nuggets':      'Denver Nuggets',
+  'nba-timberwolves': 'Minnesota Timberwolves',
+  'nba-thunder':      'Oklahoma City Thunder',
+  'nba-blazers':      'Portland Trail Blazers',
+  'nba-jazz':         'Utah Jazz',
+  'nba-warriors':     'Golden State Warriors',
+  'nba-clippers':     'Los Angeles Clippers',
+  'nba-lakers':       'Los Angeles Lakers',
+  'nba-suns':         'Phoenix Suns',
+  'nba-kings':        'Sacramento Kings',
+  'nba-mavericks':    'Dallas Mavericks',
+  'nba-rockets':      'Houston Rockets',
+  'nba-grizzlies':    'Memphis Grizzlies',
+  'nba-pelicans':     'New Orleans Pelicans',
+  'nba-spurs':        'San Antonio Spurs',
+};
+
+const NBA_OPP_TEAM: Record<string, { abbr: string; color: string }> = {
+  'Boston Celtics':         { abbr: 'BOS', color: '#007A33' },
+  'Brooklyn Nets':          { abbr: 'BKN', color: '#000000' },
+  'New York Knicks':        { abbr: 'NYK', color: '#006BB6' },
+  'Philadelphia 76ers':     { abbr: 'PHI', color: '#006BB6' },
+  'Toronto Raptors':        { abbr: 'TOR', color: '#CE1141' },
+  'Chicago Bulls':          { abbr: 'CHI', color: '#CE1141' },
+  'Cleveland Cavaliers':    { abbr: 'CLE', color: '#860038' },
+  'Detroit Pistons':        { abbr: 'DET', color: '#C8102E' },
+  'Indiana Pacers':         { abbr: 'IND', color: '#002D62' },
+  'Milwaukee Bucks':        { abbr: 'MIL', color: '#00471B' },
+  'Atlanta Hawks':          { abbr: 'ATL', color: '#E03A3E' },
+  'Charlotte Hornets':      { abbr: 'CHA', color: '#1D1160' },
+  'Miami Heat':             { abbr: 'MIA', color: '#98002E' },
+  'Orlando Magic':          { abbr: 'ORL', color: '#0077C0' },
+  'Washington Wizards':     { abbr: 'WAS', color: '#002B5C' },
+  'Denver Nuggets':         { abbr: 'DEN', color: '#0E2240' },
+  'Minnesota Timberwolves': { abbr: 'MIN', color: '#0C2340' },
+  'Oklahoma City Thunder':  { abbr: 'OKC', color: '#007AC1' },
+  'Portland Trail Blazers': { abbr: 'POR', color: '#E03A3E' },
+  'Utah Jazz':              { abbr: 'UTA', color: '#002B5C' },
+  'Golden State Warriors':  { abbr: 'GSW', color: '#1D428A' },
+  'Los Angeles Clippers':   { abbr: 'LAC', color: '#C8102E' },
+  'Los Angeles Lakers':     { abbr: 'LAL', color: '#552583' },
+  'Phoenix Suns':           { abbr: 'PHX', color: '#1D1160' },
+  'Sacramento Kings':       { abbr: 'SAC', color: '#5A2D81' },
+  'Dallas Mavericks':       { abbr: 'DAL', color: '#00538C' },
+  'Houston Rockets':        { abbr: 'HOU', color: '#CE1141' },
+  'Memphis Grizzlies':      { abbr: 'MEM', color: '#5D76A9' },
+  'New Orleans Pelicans':   { abbr: 'NOP', color: '#0C2340' },
+  'San Antonio Spurs':      { abbr: 'SAS', color: '#C4CED4' },
+};
+
+const NBA_DISP_TO_ID: Record<string, string> = Object.fromEntries(
+  Object.entries(NBA_ESPN_NAME).map(([id, name]) => [name, id]),
+);
+
+async function fetchNBAFixtures(teamId: string): Promise<UpcomingGame[]> {
+  const teamName = NBA_ESPN_NAME[teamId];
+  if (!teamName) return [];
+
+  const now = new Date();
+  const end = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range = `${fmt(now)}-${fmt(end)}`;
+  const twoHoursAgo = now.getTime() - 2 * 3600 * 1000;
+
+  // Fetch dated window + undated current scoreboard — catches live/today series games
+  const urls = [
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${range}&limit=100`,
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`,
+  ];
+
+  const eventMap = new Map<string, any>();
+  await Promise.allSettled(
+    urls.map(url =>
+      fetchTimeout(url, { next: { revalidate: 300 } })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data) return;
+          for (const e of (data.events ?? []) as any[]) {
+            if (!eventMap.has(e.id)) eventMap.set(e.id, e);
+          }
+        })
+        .catch(() => {}),
+    ),
+  );
+
+  const events = Array.from(eventMap.values()).filter((e: any) => {
+    if (e.status?.type?.completed === true) return false;
+    if (new Date(e.date).getTime() < twoHoursAgo) return false;
+    const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
+    return competitors.some((c: any) => c.team?.displayName === teamName);
+  });
+
+  return events
+    .map((e: any): UpcomingGame => {
+      const comp:        any   = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const ourComp = competitors.find((c: any) => c.team?.displayName === teamName);
+      const oppComp = competitors.find((c: any) => c.team?.displayName !== teamName);
+      const isHome  = ourComp?.homeAway === 'home';
+      const oppName = oppComp?.team?.displayName ?? 'Unknown';
+      const opp     = NBA_OPP_TEAM[oppName] ?? unknownTeam(oppName);
+
+      const utcDate  = new Date(e.date);
+      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+
+      return {
+        id:              `nba-${e.id}`,
+        teamId,
+        opponent:        oppName,
+        opponentAbbr:    opp.abbr,
+        opponentColor:   opp.color,
+        isHome,
+        date:            utcDate.toISOString(),
+        time:            aestDisplay(aestDate),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast:       ['ESPN', 'ABC'],
+        streaming:       ['NBA League Pass', 'Kayo Sports'],
+        competition:     (comp.notes?.[0]?.headline as string | undefined),
+        opponentLogoUrl: (oppComp?.team?.logo as string | undefined),
+        opponentId:      NBA_DISP_TO_ID[oppName],
+      };
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, 10);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup', 'nba']);
 // Allowlist of valid teamId prefixes keeps arbitrary strings out of upstream URLs
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
@@ -1310,6 +1454,7 @@ export async function GET(req: NextRequest) {
     else if (league === 'bbl')         fixtures = await fetchBBLFixtures(teamId);
     else if (league === 'cricket_int') fixtures = await fetchCricketIntFixtures(teamId);
     else if (league === 'world_cup')   fixtures = await fetchWorldCupFixtures(teamId);
+    else if (league === 'nba')         fixtures = await fetchNBAFixtures(teamId);
 
     return NextResponse.json(fixtures, { headers: CACHE_HEADERS });
   } catch (err) {

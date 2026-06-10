@@ -950,6 +950,29 @@ export function buildDataBlock(
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
   }
+
+  // Playoff/cup series: compute series score from completed results so the AI
+  // never has to count from raw form (and can't hallucinate it).
+  // Triggered when the competition label looks like "X - Game N".
+  if (competition && /\s[-–]\s*game\s+\d+/i.test(competition)) {
+    const seriesPrefix = competition.replace(/\s*[-–]\s*game\s+\d+.*/i, '').trim();
+    const inSeries = teamResults.filter(r =>
+      r.opponent === opponentName &&
+      r.competition &&
+      r.competition.toLowerCase().startsWith(seriesPrefix.toLowerCase()),
+    );
+    if (inSeries.length > 0) {
+      const wins   = inSeries.filter(r => r.isWin).length;
+      const losses = inSeries.filter(r => !r.isWin).length;
+      const total  = wins + losses;
+      const scoreLine = wins === losses
+        ? `Series tied ${wins}–${losses}`
+        : wins > losses
+          ? `${teamName} lead ${wins}–${losses}`
+          : `${opponentName} lead ${losses}–${wins}`;
+      lines.push(`SERIES SCORE (before this game, based on ${total} completed game${total !== 1 ? 's' : ''}): ${scoreLine}`);
+    }
+  }
   // World Cup: tournament stage label injected early for immediate context
   if (league === 'world_cup' && context.worldCup) {
     const { stage, group, opponentTBD, opponentPlaceholder } = context.worldCup;
@@ -1276,11 +1299,25 @@ export function buildDataBlock(
     lines.push('');
   }
 
+  // Key players from the most recent game (basketball / any sport that supplies them)
+  const teamKP = context.teamKeyPlayers ?? [];
+  const oppKP  = context.opponentKeyPlayers ?? [];
+  if (teamKP.length > 0 || oppKP.length > 0) {
+    const gameLabel = context.keyPlayersGameLabel ? ` (${context.keyPlayersGameLabel})` : '';
+    lines.push(`KEY PERFORMERS — most recent game${gameLabel}:`);
+    if (teamKP.length > 0)
+      lines.push(`  ${teamName}: ${teamKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+    if (oppKP.length > 0)
+      lines.push(`  ${opponentName}: ${oppKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+    lines.push('');
+  }
+
   // Player-data availability sentinel — must appear AFTER all lineup/squad/injury blocks
   // so the model has a clear, final signal before it generates.
   const hasPlayerData = teamLineup.length > 0 || oppLineup.length > 0 ||
     teamSquad.length > 0 || oppSquad.length > 0 ||
-    teamInj.length > 0  || oppInj.length > 0;
+    teamInj.length > 0  || oppInj.length > 0 ||
+    teamKP.length > 0   || oppKP.length > 0;
   if (hasPlayerData) {
     lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or TEAM NEWS sections above. Any player name not in those sections is forbidden — even if you know who plays for the team from your training data.');
     lines.push('');
