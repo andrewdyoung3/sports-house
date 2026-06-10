@@ -1280,16 +1280,23 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         const twoMonthsBefore = new Date(new Date(game.date).getTime() - 60 * 24 * 60 * 60 * 1000);
         const formResults    = isCricket ? results.filter(r => new Date(r.date) >= twoMonthsBefore)    : results;
         const formOppResults = isCricket ? oppResults.filter(r => new Date(r.date) >= twoMonthsBefore) : oppResults;
-        // For cricket: hide form section once loaded if no games fall within 2 months of the fixture
-        const showForm = !isCricket || loading || formResults.length > 0 || formOppResults.length > 0;
-        // 2 OR 3 cells — Form (when present) + Ladder/Standings + Weather (when present).
-        // Weather is never dropped to satisfy the mockup's two-col; it stays the 3rd cell.
-        const colCount = (showForm ? 1 : 0) + 1 + (weather ? 1 : 0);
+        // Show form while loading (skeleton) or when results exist for either team
+        const showFormSection = loading || formResults.length > 0 || formOppResults.length > 0;
+        // Show secondary widget while panel data loads, when non-KF data exists, while AI
+        // is generating (Key Factors may arrive), or when keyInsights actually arrived
+        const hasNonKFData = !!context?.competitionStage
+          || (standings != null && standings.length > 0 && isWorldCup)
+          || ((context?.worldCup?.groupTable?.length ?? 0) > 0)
+          || (hasStandings && !game.competition);
+        const showSecondary = loading || hasNonKFData || aiLoading
+          || (aiPreview?.keyInsights?.length ?? 0) > 0;
+        const colCount = (showFormSection ? 1 : 0) + (showSecondary ? 1 : 0) + (weather ? 1 : 0);
+        if (colCount === 0) return null;
         return (
       <div className="sh-detail-cols sh-widget-row" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
 
         {/* Recent form — both teams */}
-        {showForm && (
+        {showFormSection && (
         <div className="sh-detail-section">
           <p className="sh-detail-head">
             <Trophy className="h-3 w-3" />
@@ -1297,9 +1304,17 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           </p>
 
           {loading ? (
-            <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Loading results…
+            <div className="space-y-3 animate-pulse">
+              {[0, 1].map(i => (
+                <div key={i} className="space-y-1.5">
+                  <div className="h-2.5 w-14 rounded-full bg-white/10" />
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3, 4].map(j => (
+                      <div key={j} className="h-4 w-5 rounded bg-white/10" />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -1325,18 +1340,17 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         )}
 
         {/* Standings / Cup Stage / Key Factors */}
+        {showSecondary && (
         <div className="sh-detail-section">
           {loading ? (
-            <>
-              <p className="sh-detail-head">
-                <BarChart2 className="h-3 w-3" />
-                {game.competition ?? 'Ladder'}
-              </p>
-              <div className="flex items-center gap-1.5 text-white/25 text-[11px]">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
+            <div className="space-y-2 animate-pulse">
+              <div className="h-2.5 w-20 rounded-full bg-white/10" />
+              <div className="space-y-1.5">
+                <div className="h-2 w-full rounded-full bg-white/10" />
+                <div className="h-2 w-4/5 rounded-full bg-white/10" />
+                <div className="h-2 w-3/5 rounded-full bg-white/10" />
               </div>
-            </>
+            </div>
           ) : context?.competitionStage ? (
             // ── Cup / European competition ─────────────────────────────────
             <>
@@ -1478,31 +1492,38 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                 )}
               </div>
             </>
+          ) : aiLoading ? (
+            // ── Key Factors — AI still generating, wait before showing anything ──
+            <div className="space-y-2 animate-pulse">
+              <div className="h-2.5 w-20 rounded-full bg-white/10" />
+              <div className="space-y-1.5">
+                <div className="h-2 w-full rounded-full bg-white/10" />
+                <div className="h-2 w-4/5 rounded-full bg-white/10" />
+                <div className="h-2 w-3/5 rounded-full bg-white/10" />
+              </div>
+            </div>
           ) : (
-            // ── Key Factors fallback ───────────────────────────────────────
+            // ── Key Factors — only reached when keyInsights are present ────
             <>
               <p className="sh-detail-head">
                 <TrendingUp className="h-3 w-3" />
                 Key Factors
               </p>
-              {aiPreview?.keyInsights && aiPreview.keyInsights.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {aiPreview.keyInsights.map((ins, i) => (
-                    <li key={i} className="text-[11px] text-white/55 flex items-start gap-1.5 leading-tight">
-                      <span
-                        className="w-1.5 h-1.5 rounded-full mt-1 shrink-0"
-                        style={{ backgroundColor: team.primaryColor }}
-                      />
-                      {ins}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-[11px] text-white/25 italic">Data unavailable</p>
-              )}
+              <ul className="space-y-1.5">
+                {aiPreview?.keyInsights?.map((ins, i) => (
+                  <li key={i} className="text-[11px] text-white/55 flex items-start gap-1.5 leading-tight">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full mt-1 shrink-0"
+                      style={{ backgroundColor: team.primaryColor }}
+                    />
+                    {ins}
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </div>
+        )}
 
         {/* Local Weather Forecast — kept as the 3rd cell when present (never dropped) */}
         {weather && (

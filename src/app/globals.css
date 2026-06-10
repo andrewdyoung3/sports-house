@@ -619,6 +619,39 @@
   }
 }
 
+/* ── Mobile layout fixes: fixture rows and next-game hero ──────────────────────
+   All base (.sh-*) desktop values are UNCHANGED — only these max-width:767px
+   overrides apply on mobile. Desktop is byte-for-byte identical.
+   ────────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Fixture row — stack matchup on its own line, time+venue below.
+     justify-content:space-between is overridden to flex-start so there's no
+     phantom spacing when the column has no fixed height. */
+  .sh-fix-main {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 4px;
+  }
+  /* Smaller kickoff time so the time row is compact */
+  .sh-fix-kick { font-size: 17px; }
+  /* Scale down the text watermark so it doesn't loom over the stacked content */
+  .sh-fix-wm { font-size: 72px; letter-spacing: -3px; }
+  /* Logo watermark inside the wrapper: a little smaller and more transparent */
+  .sh-theme .sh-fix-wm > img { height: 44px; opacity: 0.07; }
+
+  /* Hero — allow the two team clusters to wrap when they don't fit one line.
+     The away-team block + "@" fit together on line 1; the home-team block wraps
+     to line 2. Short-name matches still stay on a single line. */
+  .sh-hero-match { flex-wrap: wrap; gap: 10px; }
+  /* Scale the name down so each team block fits comfortably in the hero width */
+  .sh-hero-team-name { font-size: 22px; letter-spacing: -0.4px; }
+  /* Soften the logo watermark so the smaller title stays legible */
+  .sh-hero-wm-logo { opacity: 0.13; }
+  /* Scale down the text-fallback watermark */
+  .sh-hero-wm { font-size: 100px; }
+}
+
 .sh-quick-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
 .sh-quick-bullet { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--text-2); }
 .sh-quick-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--comp, var(--accent)); flex-shrink: 0; margin-top: 6px; }
