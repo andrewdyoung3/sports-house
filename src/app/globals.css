@@ -390,7 +390,7 @@
   background: linear-gradient(120deg, var(--accent), var(--accent-2));
   box-shadow: 0 2px 10px color-mix(in oklab, var(--accent) 40%, transparent);
 }
-.sh-hero-match { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+.sh-hero-match { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; flex-wrap: wrap; }
 .sh-hero-team { display: inline-flex; align-items: center; gap: 11px; }
 .sh-hero-team-name { font-family: var(--font-head); font-weight: 800; font-size: 34px; letter-spacing: -0.8px; color: var(--text); }
 .sh-hero-at { font-size: 17px; color: var(--text-3); font-weight: 600; }

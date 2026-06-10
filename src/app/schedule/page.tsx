@@ -1273,23 +1273,23 @@ export default function SchedulePage() {
 
       <div className="sh-theme" style={focalAccent}>
 
-      {/* ── Next Game Hero ── */}
-      {/* F1 (non-versus) keeps the existing hero; two-team fixtures get the new
-          focal-team-themed .sh-* hero (Phase B · Step 1). */}
-      {!activeLoading && heroGame && (
-        heroGame.team.league === 'f1'
-          ? <NextGameHero   game={heroGame} userTz={userTz} />
-          : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />
-      )}
-
-      {/* ── Two-column layout: schedule list + sidebar ── */}
+      {/* ── Two-column layout: hero + filters + schedule (left) + sidebar (right) ── */}
       <div className="lg:grid lg:grid-cols-[1fr_270px] lg:gap-6 lg:items-start">
 
-        {/* ── Left column: filters + schedule ── */}
+        {/* ── Left column: hero + filters + schedule ── */}
         {/* min-w-0: let the 1fr grid track shrink below its content's intrinsic width so the
             My-Teams / competition pill rows below scroll within overflow-x-auto instead of
             stretching the whole page when many teams are followed. */}
         <div className="min-w-0">
+          {/* ── Next Game Hero ── */}
+          {/* F1 (non-versus) keeps the existing hero; two-team fixtures get the new
+              focal-team-themed .sh-* hero (Phase B · Step 1). */}
+          {!activeLoading && heroGame && (
+            heroGame.team.league === 'f1'
+              ? <NextGameHero   game={heroGame} userTz={userTz} />
+              : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />
+          )}
+
           {/* Filters — Phase B · Step 2: reskinned to the design vocabulary
               (.sh-filters.sh-card / .sh-chips > .sh-chip / .sh-segmented > .sh-seg).
               The 3-group information architecture is preserved (Decision i: competition
