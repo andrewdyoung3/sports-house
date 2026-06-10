@@ -1,10 +1,14 @@
 #!/bin/bash
-# Warm the AI preview cache for today's upcoming fixtures.
+# Warm the AI preview cache for upcoming fixtures.
+# Ollama is only reachable on the local Mac — this MUST run locally, never on Vercel.
+# After each generation, previews are upserted to Supabase so the deployed app can serve them.
+#
 # Add to crontab with: crontab -e
-# Example — run at 6am and 12pm daily:
-#   0 6,12 * * * /Users/andreasjenkins/Documents/SportHouse/scripts/warm-cache.sh >> /tmp/sporthouse-cron.log 2>&1
+# Recommended interval — every 10 minutes (new follows are covered within one window):
+#   */10 * * * * /Users/andreasjenkins/Documents/SportHouse/scripts/warm-cache.sh >> /tmp/sporthouse-cron.log 2>&1
 
-SITE_URL="${NEXT_PUBLIC_SITE_URL:-http://localhost:3001}"
+# Always target the local dev server — NEVER substitute a Vercel/production URL here.
+SITE_URL="http://localhost:3001"
 CRON_SECRET="${CRON_SECRET:-5b0a25f861799befc0643643236debd3}"
 LOCKFILE="/tmp/sporthouse-ai.lock"
 LOG="/tmp/sporthouse-ai.log"

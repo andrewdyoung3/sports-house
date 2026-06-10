@@ -22,6 +22,7 @@ import type { PreviewContext, GameResult, AIPreview, WeatherData } from '@/types
 import { SYSTEM_PROMPT, buildDataBlock, buildUpdatePrompt, collectPlayerWhitelist } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 function aiLog(msg: string) {
   const line = `[${new Date().toISOString()}] [ai-preview] ${msg}\n`;
@@ -313,6 +314,36 @@ const getCachedPreview = unstable_cache(
   { revalidate: 21600 }, // 6 hours
 );
 
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+
+function isValidPreview(v: unknown): v is AIPreview {
+  if (!v || typeof v !== 'object') return false;
+  const p = v as Record<string, unknown>;
+  return (
+    typeof p.context          === 'string' && p.context.length > 0 &&
+    typeof p.tacticalBattle   === 'string' && p.tacticalBattle.length > 0 &&
+    typeof p.playerSpotlight  === 'string' && p.playerSpotlight.length > 0 &&
+    typeof p.verdict          === 'string' && p.verdict.length > 0 &&
+    Array.isArray(p.keyInsights) && (p.keyInsights as unknown[]).length > 0
+  );
+}
+
+async function upsertPreview(
+  gameId: string,
+  payload: AIPreview,
+  model: string,
+  newsFingerprint: string | null,
+): Promise<void> {
+  const admin = getSupabaseAdmin();
+  if (!admin) { aiLog('upsert-skip: admin client not configured'); return; }
+  const { error } = await admin.from('game_previews').upsert(
+    { game_id: gameId, payload, model, news_fingerprint: newsFingerprint, updated_at: new Date().toISOString() },
+    { onConflict: 'game_id' },
+  );
+  if (error) aiLog(`upsert-fail gameId=${gameId} err=${error.message}`);
+  else        aiLog(`upsert-ok   gameId=${gameId} model=${model}`);
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 const ALLOWED_LEAGUES  = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'bbl', 'cricket_int', 'nba']);
@@ -327,6 +358,8 @@ export async function POST(req: NextRequest) {
   // All other callers require a valid Supabase session (anonymous included).
   const cronSecret = req.headers.get('x-cron-secret');
   const isCron = cronSecret && cronSecret === process.env.CRON_SECRET;
+
+  // ── Session path (deployed app / user): read Supabase, never call Ollama ────
   if (!isCron) {
     const sb = getSupabaseServer();
     if (!sb) {
@@ -339,7 +372,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
     aiLog(`auth-ok: uid=${user.id.slice(0, 8)}`);
+
+    try {
+      const body   = await req.json() as { gameId?: string };
+      const gameId = (body.gameId ?? '').trim();
+      if (!gameId || gameId.length > 80 || NO_NEWLINES_RE.test(gameId)) {
+        return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
+      }
+      const { data, error: dbError } = await sb
+        .from('game_previews')
+        .select('payload')
+        .eq('game_id', gameId)
+        .maybeSingle();
+      if (!dbError && data?.payload) {
+        aiLog(`supabase-hit gameId=${gameId}`);
+        return NextResponse.json(data.payload as AIPreview);
+      }
+      aiLog(`supabase-miss gameId=${gameId}`);
+      return NextResponse.json({ preparing: true });
+    } catch {
+      return NextResponse.json({ preparing: true });
+    }
   }
+
+  // ── Cron path (local Mac / warm-cache): generate with Ollama + upsert ───────
 
   try {
     const body = await req.json() as {
@@ -420,6 +476,13 @@ export async function POST(req: NextRequest) {
     const preview = benchmarkModelOverride && isCron
       ? await callOllama(prompt, isCompact, maxTokensOverride, benchmarkModelOverride)
       : await getCachedPreview(cacheKey, prompt, isCompact, maxTokensOverride);
+
+    // Persist to Supabase so the deployed app can serve pre-generated previews.
+    // Skip for benchmark runs (don't pollute the store with eval outputs).
+    if (!benchmarkModelOverride && isValidPreview(preview)) {
+      await upsertPreview(gameId, preview, AI_MODEL, newsFingerprint ?? null);
+    }
+
     return NextResponse.json(preview);
   } catch (err) {
     console.error('[/api/ai-preview]', err);
