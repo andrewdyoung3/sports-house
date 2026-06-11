@@ -15,3 +15,7 @@ alter table public.game_previews enable row level security;
 drop policy if exists "game_previews_select_public" on public.game_previews;
 create policy "game_previews_select_public" on public.game_previews
   for select using (true);
+
+-- Grant table-level SELECT to anon and authenticated roles.
+-- RLS using(true) gates the policy, but the role still needs a GRANT to reach the table.
+grant select on public.game_previews to anon, authenticated;

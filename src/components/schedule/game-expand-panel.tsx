@@ -496,7 +496,10 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
             }),
           });
 
-          const preview: AIPreview | null = aiRes.ok ? await aiRes.json() : null;
+          const rawData = aiRes.ok ? await aiRes.json() : null;
+          // Only accept responses with actual content — { preparing: true } is a
+          // Supabase miss signal. Treat it as null; don't set aiError (not a failure).
+          const preview: AIPreview | null = rawData?.context ? rawData as AIPreview : null;
           if (preview) {
             setAiPreview(preview);
             try {
@@ -506,7 +509,9 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
                 qualifyingFingerprint: qFingerprint,
               } satisfies F1Cache));
             } catch { /* storage full */ }
-          } else if (!cachedEntry) {
+          } else if (!rawData && !cachedEntry) {
+            // Only show error for genuine failures (non-ok response / network error),
+            // not for a preparing miss (rawData truthy but no context).
             setAiError(true);
           }
         } catch {
@@ -1132,7 +1137,9 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         .then(r => { if (!r.ok) console.error(`[ai-preview] HTTP ${r.status} for ${team.league}/${team.id}`); return r.ok ? r.json() : null; })
         .catch((e) => { console.error('[ai-preview] fetch error', e); return null; })
         .then((aiData: AIPreview | null) => {
-          if (aiData) {
+          // Only accept a response with actual content — { preparing: true } is a
+          // Supabase miss signal, not a valid preview. Don't cache it.
+          if (aiData?.context) {
             setAiPreview(aiData);
             savePreviewCache(game.id, {
               preview:         aiData,
@@ -1237,7 +1244,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       )}
 
       {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
-      {aiEnabled && !aiLoading && (
+      {aiEnabled && !aiLoading && aiPreview?.context && (
         <div>
           <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
           {aiUpdating && (
@@ -1246,11 +1253,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
               Refreshing with latest news…
             </p>
           )}
-          {aiPreview?.context ? (
-            <p className="sh-detail-body">{aiPreview.context}</p>
-          ) : (
-            <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
-          )}
+          <p className="sh-detail-body">{aiPreview.context}</p>
         </div>
       )}
 
