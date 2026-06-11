@@ -601,7 +601,7 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
             <AILoadingCard color={team.primaryColor} />
           ) : aiError ? (
             <p className="text-[11px] text-white/25 italic">Preview unavailable</p>
-          ) : aiPreview ? (
+          ) : aiPreview?.context ? (
             <>
               {/* context → Match Preview */}
               {aiPreview.context && (
@@ -674,7 +674,9 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
                 </div>
               )}
             </>
-          ) : null}
+          ) : (
+            <p className="text-[11px] text-white/30 italic">Preview being prepared…</p>
+          )}
         </>
       )}
 
@@ -1110,7 +1112,13 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       // If no cache: aiLoading is already true → show skeleton.
 
       // Guarantee an auth session (mint anon if needed) before the gated AI fetch.
-      await ensureSession();
+      // Race with a 5 s timeout: if Supabase auth is unreachable the spinner must not
+      // hang forever — proceed without a session (route will return 401 → aiData null →
+      // finally fires → setAiLoading(false)).
+      await Promise.race([
+        ensureSession(),
+        new Promise<void>(resolve => setTimeout(resolve, 5000)),
+      ]);
       fetch('/api/ai-preview', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1244,17 +1252,21 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       )}
 
       {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
-      {aiEnabled && !aiLoading && aiPreview?.context && (
-        <div>
-          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
-          {aiUpdating && (
-            <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mb-1.5">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              Refreshing with latest news…
-            </p>
-          )}
-          <p className="sh-detail-body">{aiPreview.context}</p>
-        </div>
+      {aiEnabled && !aiLoading && (
+        aiPreview?.context ? (
+          <div>
+            <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
+            {aiUpdating && (
+              <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mb-1.5">
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                Refreshing with latest news…
+              </p>
+            )}
+            <p className="sh-detail-body">{aiPreview.context}</p>
+          </div>
+        ) : (
+          <p className="text-[11px] text-white/30 italic">Preview being prepared…</p>
+        )
       )}
 
       {/* ── Quick Take (AI only) ── */}
