@@ -10,16 +10,32 @@
 # Always target the local dev server — NEVER substitute a Vercel/production URL here.
 SITE_URL="http://localhost:3001"
 CRON_SECRET="${CRON_SECRET:-5b0a25f861799befc0643643236debd3}"
-LOCKFILE="/tmp/sporthouse-ai.lock"
+LOCKDIR="/tmp/sporthouse-ai.lock.d"
 LOG="/tmp/sporthouse-ai.log"
+LOCK_MAX_AGE_SECS=3600   # 60 min — treat as stale if a previous run crashed
 
-# Acquire lock — exit immediately if another AI job is running.
-# poll-reviews.sh uses the same lock so they never overlap.
-exec 9>"$LOCKFILE"
-if ! flock -n 9; then
+# Stale-lock safety: if the dir exists but its timestamp is too old, remove it.
+if [ -d "$LOCKDIR" ]; then
+  if [ -f "$LOCKDIR/ts" ]; then
+    lock_age=$(( $(date +%s) - $(cat "$LOCKDIR/ts") ))
+    if [ "$lock_age" -gt "$LOCK_MAX_AGE_SECS" ]; then
+      echo "[$(date '+%Y-%m-%dT%H:%M:%S')] [warm-cache] stale lock (${lock_age}s old) — removing" | tee -a "$LOG"
+      rm -rf "$LOCKDIR"
+    fi
+  else
+    rm -rf "$LOCKDIR"   # no timestamp — treat as stale
+  fi
+fi
+
+# Acquire lock atomically via mkdir (macOS + Linux, no external dependencies).
+# poll-reviews.sh uses the same LOCKDIR so the two scripts never overlap.
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
   echo "[$(date '+%Y-%m-%dT%H:%M:%S')] [warm-cache] skipped — another AI job holds the lock" | tee -a "$LOG"
   exit 0
 fi
+echo "$(date +%s)" > "$LOCKDIR/ts"
+# Release the lock on any exit (success, error, or interrupt).
+trap 'rm -rf "$LOCKDIR"' EXIT
 
 echo "[$(date '+%Y-%m-%dT%H:%M:%S')] [warm-cache] start" | tee -a "$LOG"
 
