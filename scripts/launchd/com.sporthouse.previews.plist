@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent — generates AI match previews every 10 minutes via Ollama.
+
+  REQUIREMENTS:
+    - The Mac must stay on and Ollama must be running.
+    - .env.local must exist at the project root with SUPABASE_SERVICE_ROLE_KEY,
+      NEXT_PUBLIC_SUPABASE_URL, OLLAMA_HOST, and CRON_SECRET set.
+    - Node.js and npm must be on PATH (the shell profile is sourced to find them).
+
+  INSTALL:
+    1. Copy this file to ~/Library/LaunchAgents/:
+         cp scripts/launchd/com.sporthouse.previews.plist ~/Library/LaunchAgents/
+
+    2. Load it (runs immediately, then every 10 min):
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.previews.plist
+
+  VERIFY:
+    launchctl list | grep sporthouse
+    # Should show: -  0  com.sporthouse.previews
+    # (0 = last exit code, blank PID = not currently running)
+
+    tail -f /tmp/sporthouse-previews.log   # launch output
+    tail -f /tmp/sporthouse-ai.log         # generation detail
+
+  UNLOAD:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.previews.plist
+
+  TROUBLESHOOT:
+    If node/npm are not found: update PATH below to match your installation.
+    Common paths:
+      Homebrew ARM  : /opt/homebrew/bin
+      Homebrew Intel: /usr/local/bin
+      nvm           : /Users/andreasjenkins/.nvm/versions/node/vX.Y.Z/bin
+    Run `which node` in your terminal to find the correct path.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sporthouse.previews</string>
+
+  <!-- Source shell profile so node/npm are on PATH regardless of install method. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>source ~/.zprofile 2>/dev/null; source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run warm</string>
+  </array>
+
+  <!-- Fire every 10 minutes. -->
+  <key>StartInterval</key>
+  <integer>600</integer>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/andreasjenkins/Documents/SportHouse</string>
+
+  <!-- Run once immediately on load, then on the interval. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Both stdout and stderr land in the same log file for easy tailing. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/sporthouse-previews.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sporthouse-previews.log</string>
+
+  <!-- Restart after a crash, but don't hammer — wait 60 s. -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+</dict>
+</plist>
