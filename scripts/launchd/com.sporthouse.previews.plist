@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  LaunchAgent — generates AI match previews every 10 minutes via Ollama.
+  LaunchAgent — generates AI match previews every hour via Ollama.
 
   REQUIREMENTS:
     - The Mac must stay on and Ollama must be running.
@@ -48,9 +48,9 @@
     <string>source ~/.zprofile 2>/dev/null; source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run warm</string>
   </array>
 
-  <!-- Fire every 10 minutes. -->
+  <!-- Fire every hour. -->
   <key>StartInterval</key>
-  <integer>600</integer>
+  <integer>3600</integer>
 
   <key>WorkingDirectory</key>
   <string>/Users/andreasjenkins/Documents/SportHouse</string>

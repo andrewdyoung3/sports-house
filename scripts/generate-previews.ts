@@ -12,8 +12,10 @@
  * Overlap protection: uses the same file-based lock as generation-lock.ts so
  * concurrent cron firings skip cleanly.
  *
- * Freshness skip: fixtures with an existing Supabase row updated within the
- * last 24 h are skipped — later runs are cheap (only new/stale fixtures generate).
+ * Freshness skip: previews are regenerated only when stale. Staleness threshold
+ * tightens as kickoff nears so late team news / lineups are captured:
+ *   > 48 h to kickoff  → skip if row is < 24 h old  (once per day)
+ *   ≤ 48 h to kickoff  → skip if row is < 6 h old   (4× per day in final run-up)
  */
 
 import { readFileSync } from 'fs';
@@ -49,10 +51,12 @@ try {
 const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup'] as const;
 
 // How far ahead to look for upcoming fixtures.
-const LOOKAHEAD_MS = 24 * 60 * 60 * 1000;
+const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
 
-// Skip if existing Supabase row is younger than this.
-const FRESHNESS_MS = 24 * 60 * 60 * 1000;
+// Freshness thresholds — tighten as kickoff approaches.
+const FAR_THRESHOLD_MS  = 24 * 60 * 60 * 1000; // > 48 h to kickoff: daily refresh
+const NEAR_THRESHOLD_MS =  6 * 60 * 60 * 1000; // ≤ 48 h to kickoff: 6-hourly refresh
+const NEAR_WINDOW_MS    = 48 * 60 * 60 * 1000; // boundary between the two regimes
 
 const LOG_FILE = '/tmp/sporthouse-ai.log';
 
@@ -76,7 +80,7 @@ async function isOllamaReachable(): Promise<boolean> {
   }
 }
 
-async function isFreshPreview(gameId: string): Promise<boolean> {
+async function isFreshPreview(gameId: string, kickoffMs: number): Promise<boolean> {
   const admin = getSupabaseAdmin();
   if (!admin) return false;
   try {
@@ -85,8 +89,11 @@ async function isFreshPreview(gameId: string): Promise<boolean> {
       .select('updated_at')
       .eq('game_id', gameId)
       .maybeSingle();
-    if (!data?.updated_at) return false;
-    return Date.now() - new Date(data.updated_at).getTime() < FRESHNESS_MS;
+    if (!data?.updated_at) return false; // no row → generate
+    const rowAgeMs      = Date.now() - new Date(data.updated_at).getTime();
+    const msTillKickoff = kickoffMs - Date.now();
+    const threshold     = msTillKickoff <= NEAR_WINDOW_MS ? NEAR_THRESHOLD_MS : FAR_THRESHOLD_MS;
+    return rowAgeMs < threshold;
   } catch {
     return false;
   }
@@ -127,8 +134,8 @@ async function main() {
         continue;
       }
 
-      const now     = Date.now();
-      const cutoff  = now + LOOKAHEAD_MS;
+      const now    = Date.now();
+      const cutoff = now + LOOKAHEAD_MS;
 
       const upcoming = fixtures.filter(f => {
         const t = new Date(f.date).getTime();
@@ -149,7 +156,7 @@ async function main() {
       for (const fixture of toGenerate) {
         attempted++;
 
-        if (await isFreshPreview(fixture.id)) {
+        if (await isFreshPreview(fixture.id, new Date(fixture.date).getTime())) {
           log(`  skip-fresh gameId=${fixture.id}`);
           skipped++;
           continue;
