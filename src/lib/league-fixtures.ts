@@ -838,14 +838,22 @@ const CRICKET_INT_LEAGUE_TEAMS: Record<string, TeamEntry & { abbr: string }> = {
 
 const CRICKET_INT_GENERIC_SERIES = [8037];
 
+// Each team's series IDs, organised by format where separate ESPN series exist
+// per format. IDs verified against ESPN cricket scoreboard API June 2026.
+// Event-level deduplication in fetchCricketIntFixtures handles any series that
+// share events (e.g. tour-wrapper + format-specific IDs).
 const CRICKET_INT_TEAM_SERIES: Partial<Record<string, number[]>> = {
   'int-aus': [
     24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
     24322,    // Australia in Bangladesh T20I Series 2026 (Jun 17)
-    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13) — format-specific
-    24231,    // Bangladesh tour of Australia 2026 (Aug 13) — tour wrapper
-    1530201,  // Australia tour of Zimbabwe 2026 (3 ODIs, Sep)
-    24203,    // Australia tour of South Africa 2026/27 (3 ODIs + 1 Test, Sep-Oct)
+    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13)
+    24302,    // Australia in Zimbabwe ODI Series 2026 (Sep 15)
+    24202,    // Australia in South Africa ODI Series 2026/27 (Sep 24)
+    24201,    // Australia in South Africa Test Series 2026/27 (Oct 9)
+    24272,    // England in Australia ODI Series 2026/27 (Nov 13)
+    24271,    // England in Australia T20I Series 2026/27 (Nov 21)
+    24269,    // Trans-Tasman Trophy 2026/27 — NZ in Australia (Dec 9)
+    24280,    // Border-Gavaskar Trophy 2026/27 — Australia in India (Jan 21)
   ],
   'int-ban': [
     24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
@@ -854,32 +862,80 @@ const CRICKET_INT_TEAM_SERIES: Partial<Record<string, number[]>> = {
     24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
     24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
     24230,    // Bangladesh in Australia Test Series 2026 (Aug 13)
+    24200,    // Bangladesh in South Africa Test Series 2026/27 (Nov 15)
   ],
   'int-ind': [
+    24226,    // Afghanistan in India Test Match 2026 (Jun 6)
+    24225,    // Afghanistan in India ODI Series 2026 (Jun 13)
+    24257,    // India in Ireland T20I Series 2026 (Jun 26)
     24300,    // India in Zimbabwe T20I Series 2026 (Jul 23)
+    24288,    // West Indies in India ODI Series 2026/27 (Sep 27)
+    24287,    // West Indies in India T20I Series 2026/27 (Oct 6)
+    24468,    // India in New Zealand T20I Series 2026/27 (Oct 22)
+    24467,    // India in New Zealand ODI Series 2026/27 (Nov 4)
+    24466,    // India in New Zealand Test Series 2026/27 (Nov 18)
+    24285,    // Sri Lanka in India ODI Series 2026/27 (Dec 13)
+    24284,    // Sri Lanka in India T20I Series 2026/27 (Dec 22)
+    24282,    // Zimbabwe in India ODI Series 2026/27 (Jan 3)
+    24280,    // Border-Gavaskar Trophy 2026/27 — Australia in India (Jan 21)
   ],
   'int-pak': [
     24378,    // Australia in Pakistan ODI Series 2026 (Jun 4)
-    24436,    // Pakistan tour of West Indies 2026 (Jul 18, Test)
+    24435,    // Pakistan in West Indies Test Series 2026 (Jul 25)
   ],
   'int-nz': [
     24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
+    24468,    // India in New Zealand T20I Series 2026/27 (Oct 22)
+    24467,    // India in New Zealand ODI Series 2026/27 (Nov 4)
+    24466,    // India in New Zealand Test Series 2026/27 (Nov 18)
+    24269,    // Trans-Tasman Trophy 2026/27 — NZ in Australia (Dec 9)
+    24461,    // Sri Lanka in New Zealand ODI Series 2026/27 (Jan 15)
+    24460,    // Sri Lanka in New Zealand T20I Series 2026/27 (Jan 26)
+    24459,    // Sri Lanka in New Zealand Test Series 2026/27 (Feb 3)
   ],
   'int-sl': [
     24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
     24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
+    24285,    // Sri Lanka in India ODI Series 2026/27 (Dec 13)
+    24284,    // Sri Lanka in India T20I Series 2026/27 (Dec 22)
+    24461,    // Sri Lanka in New Zealand ODI Series 2026/27 (Jan 15)
+    24460,    // Sri Lanka in New Zealand T20I Series 2026/27 (Jan 26)
+    24459,    // Sri Lanka in New Zealand Test Series 2026/27 (Feb 3)
   ],
   'int-wi': [
     24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
     24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
     24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
-    24436,    // Pakistan tour of West Indies 2026 (Jul 18, Test)
+    24435,    // Pakistan in West Indies Test Series 2026 (Jul 25)
+    24288,    // West Indies in India ODI Series 2026/27 (Sep 27)
+    24287,    // West Indies in India T20I Series 2026/27 (Oct 6)
   ],
   'int-zim': [
     24419,    // Bangladesh in Zimbabwe Test Match 2026 (Jun 28)
     24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
     24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
-    1530201,  // Australia tour of Zimbabwe 2026 (3 ODIs, Sep)
+    24300,    // India in Zimbabwe T20I Series 2026 (Jul 23)
+    24302,    // Australia in Zimbabwe ODI Series 2026 (Sep 15)
+    24282,    // Zimbabwe in India ODI Series 2026/27 (Jan 3)
+  ],
+  'int-sa': [
+    24202,    // Australia in South Africa ODI Series 2026/27 (Sep 24)
+    24201,    // Australia in South Africa Test Series 2026/27 (Oct 9)
+    24200,    // Bangladesh in South Africa Test Series 2026/27 (Nov 15)
+  ],
+  'int-eng': [
+    24272,    // England in Australia ODI Series 2026/27 (Nov 13)
+    24271,    // England in Australia T20I Series 2026/27 (Nov 21)
+    24264,    // 150th Anniversary Test Match 2026/27 — AUS vs ENG (Mar 2027)
+  ],
+  'int-ire': [
+    24257,    // India in Ireland T20I Series 2026 (Jun 26)
+    24262,    // Afghanistan in Ireland ODI Series 2026 (Aug 5)
+  ],
+  'int-afg': [
+    24226,    // Afghanistan in India Test Match 2026 (Jun 6)
+    24225,    // Afghanistan in India ODI Series 2026 (Jun 13)
+    24262,    // Afghanistan in Ireland ODI Series 2026 (Aug 5)
   ],
 };
 
