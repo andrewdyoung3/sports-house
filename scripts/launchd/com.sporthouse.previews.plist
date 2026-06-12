@@ -7,45 +7,50 @@
     - The Mac must stay on and Ollama must be running.
     - .env.local must exist at the project root with SUPABASE_SERVICE_ROLE_KEY,
       NEXT_PUBLIC_SUPABASE_URL, OLLAMA_HOST, and CRON_SECRET set.
-    - Node.js and npm must be on PATH (the shell profile is sourced to find them).
+    - Node.js is managed via nvm; the ProgramArguments loads it directly from
+      ~/.nvm/nvm.sh so PATH is correct even in launchd's minimal environment.
 
   INSTALL:
     1. Copy this file to ~/Library/LaunchAgents/:
          cp scripts/launchd/com.sporthouse.previews.plist ~/Library/LaunchAgents/
 
-    2. Load it (runs immediately, then every 10 min):
+    2. If previously loaded, unload first:
+         launchctl bootout gui/$(id -u)/com.sporthouse.previews 2>/dev/null
+
+    3. Load it (runs immediately via RunAtLoad, then every hour):
          launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.previews.plist
 
   VERIFY:
     launchctl list | grep sporthouse
-    # Should show: -  0  com.sporthouse.previews
-    # (0 = last exit code, blank PID = not currently running)
+    # Should show: -  0  com.sporthouse.previews  (0 = clean exit)
 
-    tail -f /tmp/sporthouse-previews.log   # launch output
-    tail -f /tmp/sporthouse-ai.log         # generation detail
+    tail -f /tmp/sporthouse-previews.log   # launch output + summary line
+    tail -f /tmp/sporthouse-ai.log         # per-generation detail
 
   UNLOAD:
-    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.previews.plist
+    launchctl bootout gui/$(id -u)/com.sporthouse.previews
 
   TROUBLESHOOT:
-    If node/npm are not found: update PATH below to match your installation.
-    Common paths:
-      Homebrew ARM  : /opt/homebrew/bin
-      Homebrew Intel: /usr/local/bin
-      nvm           : /Users/andreasjenkins/.nvm/versions/node/vX.Y.Z/bin
-    Run `which node` in your terminal to find the correct path.
+    LastExitCode 127 = npm/node not found.
+      Run: source ~/.nvm/nvm.sh && which npm
+      If that fails, update the NVM_DIR path in ProgramArguments below to match
+      the output of: echo $NVM_DIR
 -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>com.sporthouse.previews</string>
 
-  <!-- Source shell profile so node/npm are on PATH regardless of install method. -->
+  <!--
+    Load nvm directly (not via .zprofile/.zshrc — those are for interactive
+    shells; launchd gets a minimal bash environment with no shell profile).
+    Falls back to the known absolute nvm node path if nvm.sh is missing.
+  -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>source ~/.zprofile 2>/dev/null; source ~/.profile 2>/dev/null; source ~/.bashrc 2>/dev/null; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run warm</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh" || export PATH="/Users/andreasjenkins/.nvm/versions/node/v20.20.2/bin:$PATH"; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run warm</string>
   </array>
 
   <!-- Fire every hour. -->

@@ -121,6 +121,8 @@ export interface UpcomingGame {
   worldCupOpponentTBD?: boolean;
   /** World Cup only — placeholder label for TBD opponent */
   worldCupOpponentPlaceholder?: string;
+  /** Set by fetchLeagueFixtures when lookbackDays > 0 — true for recently-completed games */
+  completed?: boolean;
 }
 
 // ─── Results ──────────────────────────────────────────────────────────────────

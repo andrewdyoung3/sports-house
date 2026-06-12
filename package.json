@@ -8,7 +8,10 @@
     "start": "next start -p 3001",
     "lint": "next lint",
     "clear-cache": "rimraf .next/cache/fetch-cache && echo \"Server cache cleared. Also open DevTools → Application → Local Storage and delete all ai-preview-* keys to clear browser cache.\"",
-    "warm": "tsx scripts/generate-previews.ts"
+    "warm": "tsx scripts/generate-previews.ts",
+    "warm:force": "tsx scripts/generate-previews.ts --force",
+    "poll": "tsx scripts/poll-jobs.ts",
+    "coverage": "tsx scripts/coverage-report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -26,12 +29,14 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.0.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.30",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.22.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "ws": "^8.21.0"
   }
 }

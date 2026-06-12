@@ -5,7 +5,11 @@
  * individual fetchers with `unstable_cache`) and `scripts/generate-previews.ts`
  * (which calls them directly, no caching needed).
  *
- * Pure async functions: no Next.js imports, no caching, no route types.
+ * lookbackDays (default 0)
+ *   When > 0, the fetchers also return recently-completed fixtures so the
+ *   standalone generator can determine each team's prior fixture for the
+ *   settle-buffer gate. Completed fixtures are marked with `completed: true`.
+ *   The route always calls with the default (0 = upcoming only).
  */
 
 import type { UpcomingGame } from '@/types';
@@ -28,7 +32,7 @@ interface TeamEntry { id: string; color: string; abbr: string }
 
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
 
-export async function fetchAFLFixtures(): Promise<UpcomingGame[]> {
+export async function fetchAFLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
   const year = new Date().getFullYear();
   const res  = await fetchTimeout(
     `https://api.squiggle.com.au/?q=games;year=${year}`,
@@ -37,11 +41,17 @@ export async function fetchAFLFixtures(): Promise<UpcomingGame[]> {
   if (!res.ok) return [];
 
   const { games = [] } = await res.json();
-  const now  = Date.now();
-  const seen = new Set<string>();
+  const now        = Date.now();
+  const lookbackMs = lookbackDays * 86400_000;
+  const seen       = new Set<string>();
 
   return (games as any[])
-    .filter(g => g.complete < 100 && g.unixtime * 1000 > now)
+    .filter(g => {
+      const t         = g.unixtime * 1000;
+      const isComplete = Number(g.complete) >= 100;
+      if (isComplete) return lookbackDays > 0 && t > now - lookbackMs;
+      return t > now; // upcoming
+    })
     .reduce<UpcomingGame[]>((acc, g) => {
       const id = `afl-${g.id}`;
       if (seen.has(id)) return acc;
@@ -51,9 +61,10 @@ export async function fetchAFLFixtures(): Promise<UpcomingGame[]> {
       const away = AFL_TEAMS[g.ateam];
       if (!home) return acc;
 
-      const tz   = (g.tz as string) ?? '+10:00';
-      const d    = new Date(g.date.replace(' ', 'T') + tz);
-      const time = g.timestr ? `${g.timestr} AEST` : aestDisplay(d);
+      const tz         = (g.tz as string) ?? '+10:00';
+      const d          = new Date(g.date.replace(' ', 'T') + tz);
+      const time       = g.timestr ? `${g.timestr} AEST` : aestDisplay(d);
+      const isComplete = Number(g.complete) >= 100;
 
       acc.push({
         id,
@@ -69,6 +80,7 @@ export async function fetchAFLFixtures(): Promise<UpcomingGame[]> {
         broadcast:       ['Seven Network', 'Fox Footy'],
         streaming:       ['Kayo Sports'],
         opponentId:      away?.id,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -97,23 +109,30 @@ const NRL_TEAMS: Record<string, TeamEntry> = {
   'Wests Tigers': { id: 'nrl-tigers',    color: '#F47920', abbr: 'WTI' },
 };
 
-export async function fetchNRLFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowDate    = new Date();
+  const lookbackMs = lookbackDays * 86400_000;
+  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
+  const end        = new Date(nowDate.getTime() + 90 * 86400_000);
+  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
   const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
+    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
-  const data = await res.json();
-  const seen = new Set<string>();
+  const data     = await res.json();
+  const nowMs    = nowDate.getTime();
+  const cutoff   = nowMs - lookbackMs;
+  const seen     = new Set<string>();
 
   return ((data.events ?? []) as any[])
-    .filter(e => e.status?.type?.completed !== true)
+    .filter(e => {
+      const isComplete = e.status?.type?.completed === true;
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+      return true;
+    })
     .reduce<UpcomingGame[]>((acc, e) => {
       const id = `nrl-${e.id}`;
       if (seen.has(id)) return acc;
@@ -132,6 +151,7 @@ export async function fetchNRLFixtures(): Promise<UpcomingGame[]> {
       const utcDate  = new Date(e.date);
       const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
       const espnLogo = awayComp?.team?.logos?.[0]?.href as string | undefined;
+      const isComplete = e.status?.type?.completed === true;
 
       acc.push({
         id,
@@ -147,6 +167,7 @@ export async function fetchNRLFixtures(): Promise<UpcomingGame[]> {
         broadcast:       ['Nine Network', 'Fox Sports'],
         streaming:       ['Kayo Sports'],
         opponentId:      away?.id,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -194,18 +215,20 @@ const EPL_RIGHTS: Record<string, { broadcast: string[]; streaming: string[] }> =
   'uefa.europa':    { broadcast: ['Stan Sport'], streaming: ['Stan Sport'] },
 };
 
-export async function fetchEPLFixtures(): Promise<UpcomingGame[]> {
-  const now   = new Date();
-  const end   = new Date(now.getTime() + 150 * 24 * 60 * 60 * 1000);
-  const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowMs      = Date.now();
+  const lookbackMs = lookbackDays * 86400_000;
+  const eventCutoff = nowMs - lookbackMs; // oldest event timestamp to include
 
-  const now2 = Date.now();
-  const twoHoursAgo = now2 - 2 * 3600 * 1000;
+  const nowDate = new Date(nowMs);
+  const end     = new Date(nowMs + 150 * 86400_000);
+  const start   = lookbackDays > 0 ? new Date(nowMs - lookbackMs) : nowDate;
+  const fmt     = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const range   = `${fmt(start)}-${fmt(end)}`;
 
   const settled = await Promise.allSettled(
     EPL_COMPS.map(async ({ slug, label }) => {
-      const isUEFA = slug.startsWith('uefa.');
+      const isUEFA   = slug.startsWith('uefa.');
       const eventMap = new Map<string, any>();
 
       const urls: string[] = [
@@ -230,8 +253,16 @@ export async function fetchEPLFixtures(): Promise<UpcomingGame[]> {
       const rights = EPL_RIGHTS[slug] ?? { broadcast: ['Stan Sport'], streaming: ['Stan Sport'] };
 
       return Array.from(eventMap.values()).reduce<UpcomingGame[]>((acc, e) => {
-        if (e.status?.type?.completed === true) return acc;
-        if (new Date(e.date).getTime() < twoHoursAgo) return acc;
+        const isComplete = e.status?.type?.completed === true;
+        const eventTime  = new Date(e.date).getTime();
+        if (isComplete) {
+          // Include completed only within lookback window
+          if (!lookbackDays || eventTime < eventCutoff) return acc;
+        } else {
+          // Exclude upcoming events older than our cutoff (avoids very old in-progress stubs)
+          if (eventTime < eventCutoff) return acc;
+        }
+
         const comp:  any   = e.competitions?.[0] ?? {};
         const comps: any[] = comp.competitors ?? [];
         const homeComp = comps.find((c: any) => c.homeAway === 'home');
@@ -247,9 +278,9 @@ export async function fetchEPLFixtures(): Promise<UpcomingGame[]> {
         const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
 
         if (homeEPL) {
-          const oppEPL    = awayEPL;
-          const oppLogo   = (awayComp?.team?.logo as string | undefined)
-                         ?? (oppEPL ? TEAM_LOGOS[oppEPL.id] : undefined);
+          const oppEPL  = awayEPL;
+          const oppLogo = (awayComp?.team?.logo as string | undefined)
+                       ?? (oppEPL ? TEAM_LOGOS[oppEPL.id] : undefined);
           acc.push({
             id:              `soccer-${slug}-${e.id}`,
             teamId:          homeEPL.id,
@@ -265,6 +296,7 @@ export async function fetchEPLFixtures(): Promise<UpcomingGame[]> {
             streaming:       rights.streaming,
             competition:     label === 'Premier League' ? undefined : label,
             opponentId:      oppEPL?.id,
+            completed:       isComplete || undefined,
           });
         } else {
           const homeAsEPL = EPL_TEAMS[homeName];
@@ -285,6 +317,7 @@ export async function fetchEPLFixtures(): Promise<UpcomingGame[]> {
             streaming:       rights.streaming,
             competition:     label === 'Premier League' ? undefined : label,
             opponentId:      undefined,
+            completed:       isComplete || undefined,
           });
         }
         return acc;
@@ -326,23 +359,30 @@ const SRU_TEAMS: Record<string, TeamEntry & { logo: string }> = {
   'Moana Pasifika':          { id: 'sru-moana',       color: '#003087', abbr: 'MOA', logo: `${SRU_LOG}/289319.png` },
 };
 
-export async function fetchSRUFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchSRUFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowDate    = new Date();
+  const lookbackMs = lookbackDays * 86400_000;
+  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
+  const end        = new Date(nowDate.getTime() + 90 * 86400_000);
+  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
   const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
+    `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
-  const data = await res.json();
-  const seen = new Set<string>();
+  const data     = await res.json();
+  const nowMs    = nowDate.getTime();
+  const cutoff   = nowMs - lookbackMs;
+  const seen     = new Set<string>();
 
   return ((data.events ?? []) as any[])
-    .filter(e => e.status?.type?.completed !== true)
+    .filter(e => {
+      const isComplete = e.status?.type?.completed === true;
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+      return true;
+    })
     .reduce<UpcomingGame[]>((acc, e) => {
       const id = `sru-${e.id}`;
       if (seen.has(id)) return acc;
@@ -358,9 +398,10 @@ export async function fetchSRUFixtures(): Promise<UpcomingGame[]> {
       if (!home) return acc;
       const away = SRU_TEAMS[awayName];
 
-      const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-      const espnLogo = (awayComp?.team?.logos?.[0]?.href ?? awayComp?.team?.logo) as string | undefined;
+      const utcDate    = new Date(e.date);
+      const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const espnLogo   = (awayComp?.team?.logos?.[0]?.href ?? awayComp?.team?.logo) as string | undefined;
+      const isComplete = e.status?.type?.completed === true;
 
       acc.push({
         id,
@@ -376,6 +417,7 @@ export async function fetchSRUFixtures(): Promise<UpcomingGame[]> {
         broadcast:       ['Stan Sport'],
         streaming:       ['Stan Sport'],
         opponentId:      away?.id,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -414,16 +456,19 @@ const RINT_COMP_LABELS: Record<string, string | undefined> = {
   '289234': undefined,
 };
 
-export async function fetchRINTFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchRINTFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowDate    = new Date();
+  const lookbackMs = lookbackDays * 86400_000;
+  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
+  const end        = new Date(nowDate.getTime() + 180 * 86400_000);
+  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const nowMs      = nowDate.getTime();
+  const cutoff     = nowMs - lookbackMs;
 
   const settled = await Promise.allSettled(
     RINT_COMP_IDS.map(async (compId) => {
       const res = await fetchTimeout(
-        `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
+        `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
         { cache: 'no-store' },
       );
       if (!res.ok) return [] as UpcomingGame[];
@@ -431,7 +476,11 @@ export async function fetchRINTFixtures(): Promise<UpcomingGame[]> {
       const label = RINT_COMP_LABELS[compId];
 
       return ((data.events ?? []) as any[])
-        .filter((e: any) => e.status?.type?.completed !== true)
+        .filter((e: any) => {
+          const isComplete = e.status?.type?.completed === true;
+          if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+          return true;
+        })
         .reduce<UpcomingGame[]>((acc, e) => {
           const comp:  any   = e.competitions?.[0] ?? {};
           const comps: any[] = comp.competitors ?? [];
@@ -443,12 +492,13 @@ export async function fetchRINTFixtures(): Promise<UpcomingGame[]> {
           const away = RINT_TEAMS[awayName];
           if (!home || !home.id) return acc;
 
-          const utcDate  = new Date(e.date);
-          const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-          const espnLogo = (awayComp?.team?.logos?.[0]?.href ?? awayComp?.team?.logo) as string | undefined;
-          const broadcast = home.id === 'rint-wallabies'
+          const utcDate    = new Date(e.date);
+          const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+          const espnLogo   = (awayComp?.team?.logos?.[0]?.href ?? awayComp?.team?.logo) as string | undefined;
+          const broadcast  = home.id === 'rint-wallabies'
             ? ['Nine Network', 'Stan Sport']
             : ['Stan Sport'];
+          const isComplete = e.status?.type?.completed === true;
 
           acc.push({
             id:              `rint-${e.id}`,
@@ -465,6 +515,7 @@ export async function fetchRINTFixtures(): Promise<UpcomingGame[]> {
             streaming:       ['Stan Sport'],
             competition:     label,
             opponentId:      away?.id || undefined,
+            completed:       isComplete || undefined,
           });
           return acc;
         }, []);
@@ -516,18 +567,22 @@ const NBA_TEAMS_LF: Record<string, TeamEntry> = {
   'San Antonio Spurs':      { id: 'nba-spurs',        color: '#C4CED4', abbr: 'SAS' },
 };
 
-export async function fetchNBAFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchNBAFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowDate    = new Date();
+  const lookbackMs = lookbackDays * 86400_000;
+  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
+  const end        = new Date(nowDate.getTime() + 60 * 86400_000);
+  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
   const urls = [
-    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${range}&limit=100`,
+    `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=100`,
     `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard`,
   ];
 
+  const nowMs  = nowDate.getTime();
+  const cutoff = nowMs - lookbackMs;
   const eventMap = new Map<string, any>();
+
   await Promise.allSettled(
     urls.map(url =>
       fetchTimeout(url, { cache: 'no-store' })
@@ -544,7 +599,11 @@ export async function fetchNBAFixtures(): Promise<UpcomingGame[]> {
 
   const seen = new Set<string>();
   return Array.from(eventMap.values())
-    .filter((e: any) => e.status?.type?.completed !== true)
+    .filter((e: any) => {
+      const isComplete = e.status?.type?.completed === true;
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+      return true;
+    })
     .reduce<UpcomingGame[]>((acc, e) => {
       const id = `nba-${e.id}`;
       if (seen.has(id)) return acc;
@@ -558,7 +617,8 @@ export async function fetchNBAFixtures(): Promise<UpcomingGame[]> {
       const awayName = awayComp?.team?.displayName ?? '';
       const home = NBA_TEAMS_LF[homeName];
       if (!home) return acc;
-      const away = NBA_TEAMS_LF[awayName];
+      const away       = NBA_TEAMS_LF[awayName];
+      const isComplete = e.status?.type?.completed === true;
 
       const utcDate  = new Date(e.date);
       const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
@@ -579,6 +639,7 @@ export async function fetchNBAFixtures(): Promise<UpcomingGame[]> {
         streaming:       ['NBA League Pass', 'Kayo Sports'],
         competition:     (comp.notes?.[0]?.headline as string | undefined),
         opponentId:      away?.id,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -595,16 +656,16 @@ interface F1SessionDef {
 }
 
 const F1_SESSIONS: F1SessionDef[] = [
-  { key: 'fp1',        label: 'Practice 1',        abbr: 'FP1',  dateField: 'FirstPractice'     },
-  { key: 'fp2',        label: 'Practice 2',        abbr: 'FP2',  dateField: 'SecondPractice'    },
-  { key: 'fp3',        label: 'Practice 3',        abbr: 'FP3',  dateField: 'ThirdPractice'     },
-  { key: 'sprintq',    label: 'Sprint Qualifying',  abbr: 'SQ',   dateField: 'SprintQualifying'  },
-  { key: 'sprint',     label: 'Sprint',             abbr: 'SPR',  dateField: 'Sprint'            },
-  { key: 'qualifying', label: 'Qualifying',         abbr: 'QUAL', dateField: 'Qualifying'        },
-  { key: 'race',       label: 'Race',               abbr: 'RACE'                                 },
+  { key: 'fp1',        label: 'Practice 1',        abbr: 'FP1',  dateField: 'FirstPractice'    },
+  { key: 'fp2',        label: 'Practice 2',        abbr: 'FP2',  dateField: 'SecondPractice'   },
+  { key: 'fp3',        label: 'Practice 3',        abbr: 'FP3',  dateField: 'ThirdPractice'    },
+  { key: 'sprintq',    label: 'Sprint Qualifying',  abbr: 'SQ',   dateField: 'SprintQualifying' },
+  { key: 'sprint',     label: 'Sprint',             abbr: 'SPR',  dateField: 'Sprint'           },
+  { key: 'qualifying', label: 'Qualifying',         abbr: 'QUAL', dateField: 'Qualifying'       },
+  { key: 'race',       label: 'Race',               abbr: 'RACE'                                },
 ];
 
-export async function fetchF1Fixtures(): Promise<UpcomingGame[]> {
+export async function fetchF1Fixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
   const tryUrls = [
     'https://api.jolpi.ca/ergast/f1/current.json',
     'https://api.jolpi.ca/ergast/f1/2025.json',
@@ -622,8 +683,10 @@ export async function fetchF1Fixtures(): Promise<UpcomingGame[]> {
   }
   if (races.length === 0) return [];
 
-  const now          = Date.now();
-  const twoHoursAgo  = now - 2 * 3600 * 1000;
+  const now        = Date.now();
+  const lookbackMs = lookbackDays * 86400_000;
+  // With lookback: include sessions from lookbackDays ago. Without: same 2h trailing buffer.
+  const cutoff     = lookbackDays > 0 ? now - lookbackMs : now - 2 * 3600_000;
   const fixtures: UpcomingGame[] = [];
 
   for (const race of races) {
@@ -645,7 +708,10 @@ export async function fetchF1Fixtures(): Promise<UpcomingGame[]> {
       }
 
       if (isNaN(sessionDate.getTime())) continue;
-      if (sessionDate.getTime() <= twoHoursAgo) continue;
+      const sessionMs  = sessionDate.getTime();
+      if (sessionMs <= cutoff) continue; // too old even for lookback window
+
+      const isCompleted = sessionMs < now;
 
       fixtures.push({
         id:              `f1-${race.round}-${session.key}`,
@@ -662,6 +728,7 @@ export async function fetchF1Fixtures(): Promise<UpcomingGame[]> {
         streaming:       ['Kayo Sports'],
         competition:     session.label,
         opponentId:      circuitId,
+        completed:       isCompleted || undefined,
       });
     }
   }
@@ -682,25 +749,30 @@ const BBL_LEAGUE_TEAMS: Record<string, TeamEntry> = {
   'Sydney Thunder':      { id: 'bbl-thunder',    color: '#8dc63f', abbr: 'ST'  },
 };
 
-export async function fetchBBLFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 150 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchBBLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowDate    = new Date();
+  const lookbackMs = lookbackDays * 86400_000;
+  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
+  const end        = new Date(nowDate.getTime() + 150 * 86400_000);
+  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
   const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
+    `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
-  const data = await res.json();
-  const seen = new Set<string>();
+  const data     = await res.json();
+  const nowMs    = nowDate.getTime();
+  const cutoff   = nowMs - lookbackMs;
+  const seen     = new Set<string>();
 
   return ((data.events ?? []) as any[])
     .filter((e: any) => {
-      const state = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state;
-      return state !== 'post';
+      const state      = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state;
+      const isComplete = state === 'post';
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+      return true;
     })
     .reduce<UpcomingGame[]>((acc, e: any) => {
       const id = `bbl-${e.id}`;
@@ -718,9 +790,11 @@ export async function fetchBBLFixtures(): Promise<UpcomingGame[]> {
       if (!home) return acc;
       const away = BBL_LEAGUE_TEAMS[awayName];
 
-      const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-      const fmt2 = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+      const utcDate    = new Date(e.date);
+      const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const fmt2       = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+      const state      = comp.status?.type?.state ?? e.status?.type?.state;
+      const isComplete = state === 'post';
 
       acc.push({
         id,
@@ -737,6 +811,7 @@ export async function fetchBBLFixtures(): Promise<UpcomingGame[]> {
         streaming:       ['Kayo Sports', '7plus'],
         opponentId:      away?.id,
         cricketFormat:   fmt2,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -777,7 +852,10 @@ const CRICKET_INT_LEAGUE_SERIES: number[] = Array.from(
   ]),
 );
 
-export async function fetchCricketIntFixtures(): Promise<UpcomingGame[]> {
+export async function fetchCricketIntFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowMs    = Date.now();
+  const cutoff   = nowMs - lookbackDays * 86400_000;
+
   const settled = await Promise.allSettled(
     CRICKET_INT_LEAGUE_SERIES.map(async (seriesId) => {
       const res = await fetchTimeout(
@@ -798,11 +876,13 @@ export async function fetchCricketIntFixtures(): Promise<UpcomingGame[]> {
   const seen = new Set<string>();
   return allEvents
     .filter((e: any) => {
-      const id = String(e.id ?? '');
+      const id    = String(e.id ?? '');
       if (seen.has(id)) return false;
       seen.add(id);
-      const state = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state ?? '';
-      return state !== 'post';
+      const state      = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state ?? '';
+      const isComplete = state === 'post';
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
+      return true;
     })
     .map((e: any): UpcomingGame | null => {
       const comp:  any   = e.competitions?.[0] ?? {};
@@ -817,9 +897,11 @@ export async function fetchCricketIntFixtures(): Promise<UpcomingGame[]> {
       if (!home) return null;
       const away = CRICKET_INT_LEAGUE_TEAMS[awayName];
 
-      const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-      const fmt = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+      const state      = comp.status?.type?.state ?? e.status?.type?.state ?? '';
+      const isComplete = state === 'post';
+      const utcDate    = new Date(e.date);
+      const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const fmt        = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
       const seriesName = e.name ?? comp.description ?? '';
 
       return {
@@ -839,6 +921,7 @@ export async function fetchCricketIntFixtures(): Promise<UpcomingGame[]> {
         cricketFormat:   fmt,
         matchDays:       fmt === 'test' ? 5 : undefined,
         competition:     seriesName || undefined,
+        completed:       isComplete || undefined,
       };
     })
     .filter((g): g is UpcomingGame => g !== null)
@@ -849,33 +932,36 @@ export async function fetchCricketIntFixtures(): Promise<UpcomingGame[]> {
 
 const WC_BROADCAST = { broadcast: ['SBS'], streaming: ['Paramount+'] };
 
-export async function fetchWorldCupFixtures(): Promise<UpcomingGame[]> {
-  const now = new Date();
-  const end = new Date(now.getTime() + 35 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const range = `${fmt(now)}-${fmt(end)}`;
+export async function fetchWorldCupFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  const nowMs      = Date.now();
+  const lookbackMs = lookbackDays * 86400_000;
+  const cutoff     = nowMs - lookbackMs;
+
+  const nowDate = new Date(nowMs);
+  const end     = new Date(nowMs + 35 * 86400_000);
+  const start   = lookbackDays > 0 ? new Date(nowMs - lookbackMs) : nowDate;
+  const fmt     = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
   const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${range}&limit=200`,
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
   if (!res.ok) return [];
 
   const data = await res.json();
-  const twoHoursAgo = Date.now() - 2 * 3600 * 1000;
   const seen = new Set<string>();
 
   return ((data.events ?? []) as any[])
     .filter((e: any) => {
-      if (e.status?.type?.completed === true) return false;
-      if (new Date(e.date).getTime() < twoHoursAgo) return false;
+      const isComplete = e.status?.type?.completed === true;
+      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
       return true;
     })
     .reduce<UpcomingGame[]>((acc, e: any) => {
       if (seen.has(e.id)) return acc;
       seen.add(e.id);
 
-      const comp: any = e.competitions?.[0] ?? {};
+      const comp: any        = e.competitions?.[0] ?? {};
       const competitors: any[] = comp.competitors ?? [];
       const homeComp = competitors.find((c: any) => c.homeAway === 'home') ?? competitors[0];
       const awayComp = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1];
@@ -887,8 +973,9 @@ export async function fetchWorldCupFixtures(): Promise<UpcomingGame[]> {
       if (!homeId) return acc;
 
       const roundHints = [e.name ?? '', comp.notes?.[0]?.headline ?? '', comp.type?.text ?? ''].join(' ');
-      const stage = espnRoundToStage(roundHints);
-      const group = espnRoundToGroup(roundHints);
+      const stage      = espnRoundToStage(roundHints);
+      const group      = espnRoundToGroup(roundHints);
+      const isComplete = e.status?.type?.completed === true;
 
       const utcDate  = new Date(e.date);
       const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
@@ -909,6 +996,7 @@ export async function fetchWorldCupFixtures(): Promise<UpcomingGame[]> {
         opponentId:      WC_ESPN_NAME_TO_ID[awayName],
         worldCupStage:   stage,
         worldCupGroup:   group,
+        completed:       isComplete || undefined,
       });
       return acc;
     }, [])
@@ -917,17 +1005,21 @@ export async function fetchWorldCupFixtures(): Promise<UpcomingGame[]> {
 
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
-/** Single entry point used by the standalone generator script. */
-export async function fetchLeagueFixtures(league: string): Promise<UpcomingGame[]> {
-  if      (league === 'afl')         return fetchAFLFixtures();
-  else if (league === 'nrl')         return fetchNRLFixtures();
-  else if (league === 'epl')         return fetchEPLFixtures();
-  else if (league === 'super_rugby') return fetchSRUFixtures();
-  else if (league === 'rugby_int')   return fetchRINTFixtures();
-  else if (league === 'f1')          return fetchF1Fixtures();
-  else if (league === 'bbl')         return fetchBBLFixtures();
-  else if (league === 'cricket_int') return fetchCricketIntFixtures();
-  else if (league === 'world_cup')   return fetchWorldCupFixtures();
-  else if (league === 'nba')         return fetchNBAFixtures();
+/**
+ * Single entry point used by the standalone generator script.
+ * When lookbackDays > 0, completed fixtures within that window are included
+ * with `completed: true` so the generator can determine each team's prior fixture.
+ */
+export async function fetchLeagueFixtures(league: string, lookbackDays = 0): Promise<UpcomingGame[]> {
+  if      (league === 'afl')         return fetchAFLFixtures(lookbackDays);
+  else if (league === 'nrl')         return fetchNRLFixtures(lookbackDays);
+  else if (league === 'epl')         return fetchEPLFixtures(lookbackDays);
+  else if (league === 'super_rugby') return fetchSRUFixtures(lookbackDays);
+  else if (league === 'rugby_int')   return fetchRINTFixtures(lookbackDays);
+  else if (league === 'f1')          return fetchF1Fixtures(lookbackDays);
+  else if (league === 'bbl')         return fetchBBLFixtures(lookbackDays);
+  else if (league === 'cricket_int') return fetchCricketIntFixtures(lookbackDays);
+  else if (league === 'world_cup')   return fetchWorldCupFixtures(lookbackDays);
+  else if (league === 'nba')         return fetchNBAFixtures(lookbackDays);
   return [];
 }

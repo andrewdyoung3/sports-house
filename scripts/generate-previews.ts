@@ -3,29 +3,31 @@
  * Standalone preview generator — runs Ollama and upserts results to Supabase
  * directly. No Next.js dev server required.
  *
- * Run via: npm run warm
- *   (the npm script loads .env.local before tsx starts)
+ * Normal run (scheduled):
+ *   npm run warm
+ *   → per-fixture lifecycle: initial gen after settle, regen at 48h/24h marks.
  *
- * Designed for a scheduled LaunchAgent on the Mac mini that hosts Ollama:
- *   scripts/launchd/com.sporthouse.previews.plist
+ * Force run (manual, ad-hoc):
+ *   npm run warm:force
+ *   → regenerates every followed team's next fixture regardless of freshness.
+ *   Never used by the launchd plist; manual only.
  *
- * Overlap protection: uses the same file-based lock as generation-lock.ts so
- * concurrent cron firings skip cleanly.
- *
- * Freshness skip: previews are regenerated only when stale. Staleness threshold
- * tightens as kickoff nears so late team news / lineups are captured:
- *   > 48 h to kickoff  → skip if row is < 24 h old  (once per day)
- *   ≤ 48 h to kickoff  → skip if row is < 6 h old   (4× per day in final run-up)
+ * Overlap protection: file-based lock so concurrent launchd firings skip cleanly.
  */
 
-import { readFileSync } from 'fs';
-import { appendFileSync } from 'fs';
+import { readFileSync, appendFileSync } from 'fs';
 import { acquireLock, releaseLock } from '@/lib/generation-lock';
 import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
 import { fetchLeagueFixtures } from '@/lib/league-fixtures';
 import { generateAndStorePreview } from '@/lib/preview-generator';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { TEAMS } from '@/lib/teams';
+import {
+  decideForTeam,
+  LOOKAHEAD_DAYS,
+  LOOKBACK_DAYS,
+  type TaggedFixture,
+} from '@/lib/preview-lifecycle';
 import type { UpcomingGame } from '@/types';
 
 // ─── Env loading ──────────────────────────────────────────────────────────────
@@ -47,18 +49,12 @@ try {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-// Leagues to warm — same set the old warm-cache cron used, plus world_cup.
 const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup'] as const;
 
-// How far ahead to look for upcoming fixtures.
-const LOOKAHEAD_MS = 48 * 60 * 60 * 1000;
-
-// Freshness thresholds — tighten as kickoff approaches.
-const FAR_THRESHOLD_MS  = 24 * 60 * 60 * 1000; // > 48 h to kickoff: daily refresh
-const NEAR_THRESHOLD_MS =  6 * 60 * 60 * 1000; // ≤ 48 h to kickoff: 6-hourly refresh
-const NEAR_WINDOW_MS    = 48 * 60 * 60 * 1000; // boundary between the two regimes
-
 const LOG_FILE = '/tmp/sporthouse-ai.log';
+
+/** When true, bypass decideForTeam and regenerate every team's next fixture. */
+const FORCE = process.argv.includes('--force');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,29 +67,8 @@ function log(msg: string) {
 async function isOllamaReachable(): Promise<boolean> {
   const base = (process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1').replace(/\/v1\/?$/, '');
   try {
-    const res = await fetch(`${base}/api/tags`, {
-      signal: AbortSignal.timeout(5000),
-    });
+    const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(5000) });
     return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function isFreshPreview(gameId: string, kickoffMs: number): Promise<boolean> {
-  const admin = getSupabaseAdmin();
-  if (!admin) return false;
-  try {
-    const { data } = await admin
-      .from('game_previews')
-      .select('updated_at')
-      .eq('game_id', gameId)
-      .maybeSingle();
-    if (!data?.updated_at) return false; // no row → generate
-    const rowAgeMs      = Date.now() - new Date(data.updated_at).getTime();
-    const msTillKickoff = kickoffMs - Date.now();
-    const threshold     = msTillKickoff <= NEAR_WINDOW_MS ? NEAR_THRESHOLD_MS : FAR_THRESHOLD_MS;
-    return rowAgeMs < threshold;
   } catch {
     return false;
   }
@@ -102,6 +77,15 @@ async function isFreshPreview(gameId: string, kickoffMs: number): Promise<boolea
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
+  // Polyfill WebSocket for Node.js < 22 before Supabase creates its Realtime client.
+  // The Realtime client checks for globalThis.WebSocket at init time and calls
+  // process.exit(1) if absent. The script never uses Realtime subscriptions but
+  // supabase-js always initialises the client during createClient().
+  if (typeof (globalThis as any).WebSocket === 'undefined') {
+    const { default: ws } = await import('ws');
+    (globalThis as any).WebSocket = ws;
+  }
+
   if (!acquireLock()) {
     log('skipped — another generate-previews job holds the lock');
     process.exit(0);
@@ -113,71 +97,149 @@ async function main() {
       process.exit(0);
     }
 
-    const followedIds  = await getDistinctFollowedTeamIds();
-    const hasF1Fans    = Array.from(followedIds).some(id => id.startsWith('f1-'));
-    const failOpen     = followedIds.size === 0;
+    const followedIds = await getDistinctFollowedTeamIds();
+    const hasF1Fans   = Array.from(followedIds).some(id => id.startsWith('f1-'));
+    const failOpen    = followedIds.size === 0;
 
     if (failOpen) {
-      log('no followed teams found (admin not configured or no users) — generating all fixtures');
+      log(`${FORCE ? '[force] ' : ''}no followed teams found — generating all fixtures`);
     } else {
-      log(`followed teams: ${followedIds.size} ids, hasF1Fans=${hasF1Fans}`);
+      log(`${FORCE ? '[force] ' : ''}followed teams: ${followedIds.size} ids, hasF1Fans=${hasF1Fans}`);
     }
 
-    let attempted = 0, generated = 0, skipped = 0, failed = 0;
-
+    // ── 1. Fetch all fixtures (with lookback) and tag by league ──────────────
+    const allFixtures: TaggedFixture[] = [];
     for (const league of LEAGUES) {
       let fixtures: UpcomingGame[];
       try {
-        fixtures = await fetchLeagueFixtures(league);
+        fixtures = await fetchLeagueFixtures(league, LOOKBACK_DAYS);
       } catch (err) {
         log(`fetch-fail league=${league} err=${err instanceof Error ? err.message : err}`);
         continue;
       }
+      for (const f of fixtures) allFixtures.push({ ...f, league });
+    }
 
-      const now    = Date.now();
-      const cutoff = now + LOOKAHEAD_MS;
+    const now         = Date.now();
+    const lookaheadMs = LOOKAHEAD_DAYS * 86400_000;
 
-      const upcoming = fixtures.filter(f => {
-        const t = new Date(f.date).getTime();
-        return t >= now && t <= cutoff;
-      });
+    // In failOpen mode, iterate over all home-team IDs (every fixture has one).
+    // In normal mode, iterate over followed team IDs (includes both sides).
+    const allTeamIds: string[] = failOpen
+      ? Array.from(new Set(allFixtures.map(f => f.teamId)))
+      : Array.from(followedIds);
 
-      const toGenerate = failOpen
-        ? upcoming
-        : upcoming.filter(f => {
-            if (league === 'f1') return hasF1Fans;
-            return followedIds.has(f.teamId) ||
-                   (f.opponentId != null && followedIds.has(f.opponentId));
-          });
+    const processedGameIds = new Set<string>();
 
-      if (toGenerate.length === 0) continue;
-      log(`${league}: ${upcoming.length} upcoming, ${toGenerate.length} after filter`);
+    if (FORCE) {
+      // ── Force mode: bypass lifecycle, regenerate every team's next fixture ──
+      let forcedCount = 0, skippedCount = 0, failedCount = 0;
 
-      for (const fixture of toGenerate) {
-        attempted++;
+      for (const teamId of allTeamIds) {
+        if (teamId.startsWith('f1-') && !hasF1Fans && !failOpen) continue;
 
-        if (await isFreshPreview(fixture.id, new Date(fixture.date).getTime())) {
-          log(`  skip-fresh gameId=${fixture.id}`);
-          skipped++;
+        // Same candidate selection as normal: next upcoming within lookahead window.
+        const next = allFixtures
+          .filter(f =>
+            (f.teamId === teamId || f.opponentId === teamId) &&
+            !f.completed &&
+            new Date(f.date).getTime() > now &&
+            new Date(f.date).getTime() <= now + lookaheadMs,
+          )
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+
+        if (!next) {
+          skippedCount++;
           continue;
         }
+
+        // Dedup: if both home and away are followed, first one wins.
+        if (processedGameIds.has(next.id)) {
+          skippedCount++;
+          continue;
+        }
+        processedGameIds.add(next.id);
+
+        const teamEntry = TEAMS.find(t => t.id === next.teamId);
+        const teamName  = teamEntry?.name ?? next.teamId;
+
+        log(`  force gameId=${next.id} league=${next.league} team=${teamName} vs ${next.opponent}`);
+
+        const result = await generateAndStorePreview(next.league, next, teamName);
+        if (result.ok) {
+          forcedCount++;
+        } else {
+          log(`  failed gameId=${next.id} err=${result.error ?? 'unknown'}`);
+          failedCount++;
+        }
+      }
+
+      log(`done: forced=${forcedCount} skipped=${skippedCount} failed=${failedCount}`);
+
+    } else {
+      // ── Normal mode: batch Supabase query + decideForTeam lifecycle ──────────
+      const upcomingIds = Array.from(
+        new Set(
+          allFixtures
+            .filter(f => !f.completed && new Date(f.date).getTime() > now &&
+                         new Date(f.date).getTime() <= now + lookaheadMs)
+            .map(f => f.id),
+        ),
+      );
+
+      const existingRows = new Map<string, string>();
+      const admin = getSupabaseAdmin();
+      if (admin && upcomingIds.length > 0) {
+        const { data } = await admin
+          .from('game_previews')
+          .select('game_id, updated_at')
+          .in('game_id', upcomingIds);
+        for (const row of data ?? []) {
+          if (row.game_id && row.updated_at) {
+            existingRows.set(row.game_id as string, row.updated_at as string);
+          }
+        }
+      }
+      log(`supabase: ${existingRows.size} existing rows across ${upcomingIds.length} upcoming fixtures`);
+
+      let initialCount = 0, regen48Count = 0, regen24Count = 0, skippedCount = 0, failedCount = 0;
+
+      for (const teamId of allTeamIds) {
+        if (teamId.startsWith('f1-') && !hasF1Fans && !failOpen) continue;
+
+        const decision = decideForTeam(teamId, allFixtures, existingRows, now);
+        if (!decision) {
+          skippedCount++;
+          continue;
+        }
+
+        const { fixture, action } = decision;
+
+        // Dedup: both home and away teams may resolve to the same game.
+        if (processedGameIds.has(fixture.id)) {
+          skippedCount++;
+          continue;
+        }
+        processedGameIds.add(fixture.id);
 
         const teamEntry = TEAMS.find(t => t.id === fixture.teamId);
         const teamName  = teamEntry?.name ?? fixture.teamId;
 
-        log(`  generating gameId=${fixture.id} team=${teamName} vs ${fixture.opponent}`);
-        const result = await generateAndStorePreview(league, fixture, teamName);
+        log(`  ${action} gameId=${fixture.id} league=${fixture.league} team=${teamName} vs ${fixture.opponent}`);
 
+        const result = await generateAndStorePreview(fixture.league, fixture, teamName);
         if (result.ok) {
-          generated++;
+          if (action === 'initial')  initialCount++;
+          if (action === 'regen-48') regen48Count++;
+          if (action === 'regen-24') regen24Count++;
         } else {
           log(`  failed gameId=${fixture.id} err=${result.error ?? 'unknown'}`);
-          failed++;
+          failedCount++;
         }
       }
-    }
 
-    log(`done: attempted=${attempted} generated=${generated} skipped=${skipped} failed=${failed}`);
+      log(`done: initial=${initialCount} regen-48=${regen48Count} regen-24=${regen24Count} skipped=${skippedCount} failed=${failedCount}`);
+    }
   } finally {
     releaseLock();
   }

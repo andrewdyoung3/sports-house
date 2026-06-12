@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent — polls preview_jobs every 60 s for on-follow preview generation.
+
+  REQUIREMENTS:
+    - Ollama must be running. If unreachable, jobs stay pending until the next tick.
+    - .env.local must exist at the project root with SUPABASE_SERVICE_ROLE_KEY and
+      NEXT_PUBLIC_SUPABASE_URL set.
+    - 0003_preview_jobs.sql must be applied in the Supabase SQL editor first.
+
+  INSTALL (after verifying npm run poll works manually):
+    1. Copy this file to ~/Library/LaunchAgents/:
+         cp scripts/launchd/com.sporthouse.previewjobs.plist ~/Library/LaunchAgents/
+
+    2. If previously loaded, unload first:
+         launchctl bootout gui/$(id -u)/com.sporthouse.previewjobs 2>/dev/null
+
+    3. Load it (runs immediately via RunAtLoad, then every 60 s):
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.previewjobs.plist
+
+  VERIFY:
+    launchctl list | grep previewjobs
+    # Should show: -  0  com.sporthouse.previewjobs  (0 = clean exit)
+
+    tail -f /tmp/sporthouse-previewjobs.log   # per-tick summary lines
+    tail -f /tmp/sporthouse-ai.log            # generation detail
+
+  UNLOAD:
+    launchctl bootout gui/$(id -u)/com.sporthouse.previewjobs
+
+  LOCK SHARING:
+    This agent uses the same /tmp/sporthouse-generation.lock as the hourly heartbeat
+    (com.sporthouse.previews). If both fire simultaneously, the one that acquires the
+    lock first proceeds; the other exits cleanly and retries next tick.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sporthouse.previewjobs</string>
+
+  <!-- Verbatim env-source from the working heartbeat plist: loads nvm directly
+       rather than relying on interactive shell profiles that launchd doesn't source. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh" || export PATH="/Users/andreasjenkins/.nvm/versions/node/v20.20.2/bin:$PATH"; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run poll</string>
+  </array>
+
+  <!-- Poll every 60 seconds. -->
+  <key>StartInterval</key>
+  <integer>60</integer>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/andreasjenkins/Documents/SportHouse</string>
+
+  <!-- Run once immediately on load to drain any queued jobs, then on the interval. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Separate log from the heartbeat so both are independently tail-able. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/sporthouse-previewjobs.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sporthouse-previewjobs.log</string>
+
+  <!-- Don't hammer on rapid crash-loop; give Ollama time to come back up. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+</dict>
+</plist>

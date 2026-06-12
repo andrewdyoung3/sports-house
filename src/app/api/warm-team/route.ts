@@ -2,80 +2,22 @@
  * POST /api/warm-team
  * Body: { teamId: string; league: string }
  *
- * Fire-and-forget: pre-generates AI previews for the team's next round of
- * upcoming fixtures (next 24 h). Returns 202 immediately so the client never
- * waits. Generation runs in the background on the server event loop.
+ * Enqueues a preview_jobs row for the newly-followed team so the Mac-side
+ * poll-jobs poller picks it up within ~1 minute instead of waiting for the
+ * next hourly heartbeat.
  *
- * Requires a valid Supabase session (anonymous sessions are fine). This
- * prevents open abuse while still working for first-time visitors.
+ * Returns 202 immediately; the enqueue is best-effort. If it fails (Supabase
+ * not configured, network error) we log and swallow — the hourly heartbeat is
+ * the backstop and the follow itself must never be broken.
  *
- * Called by the client in user-prefs.ts whenever a new team is followed.
+ * Requires a valid Supabase session (anonymous sessions are fine) to prevent
+ * open abuse. The service-role insert bypasses RLS; the browser client never
+ * writes preview_jobs directly.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { UpcomingGame } from '@/types';
-import { TEAMS } from '@/lib/teams';
 import { getSupabaseServer } from '@/lib/supabase/server';
-
-// In-memory set to prevent duplicate concurrent warm runs for the same team.
-const inProgress = new Set<string>();
-
-async function generatePreviews(
-  teamId: string,
-  league: string,
-  base: string,
-  cronSecret: string,
-): Promise<void> {
-  if (inProgress.has(teamId)) return;
-  inProgress.add(teamId);
-  try {
-    const fixtureRes = await fetch(`${base}/api/league-fixtures?league=${league}`, {
-      cache: 'no-store',
-    });
-    if (!fixtureRes.ok) return;
-
-    const allFixtures = await fixtureRes.json() as UpcomingGame[];
-    if (!Array.isArray(allFixtures)) return;
-
-    const now    = new Date();
-    const cutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-    const teamFixtures = allFixtures.filter(f => {
-      const d = new Date(f.date);
-      if (d < now || d > cutoff) return false;
-      if (league === 'f1') return true; // any F1 follower → all F1 fixtures
-      return f.teamId === teamId || f.opponentId === teamId;
-    });
-
-    const teamEntry = TEAMS.find(t => t.id === teamId);
-    for (const fixture of teamFixtures) {
-      try {
-        await fetch(`${base}/api/ai-preview`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-cron-secret': cronSecret,
-          },
-          body: JSON.stringify({
-            league,
-            teamId:       fixture.teamId,
-            teamName:     teamEntry?.name ?? fixture.teamId,
-            opponentName: fixture.opponent,
-            gameId:       fixture.id,
-            context:      {},
-            teamResults:  [],
-            oppResults:   [],
-            competition:  fixture.competition,
-            isHome:       fixture.isHome,
-            opponentId:   fixture.opponentId,
-          }),
-        });
-      } catch { /* non-fatal — partial generation is fine */ }
-    }
-  } finally {
-    inProgress.delete(teamId);
-  }
-}
+import { getSupabaseAdmin } from '@/lib/supabase/admin';
 
 export async function POST(req: NextRequest) {
   // ── Auth gate ───────────────────────────────────────────────────────────────
@@ -85,26 +27,40 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return NextResponse.json({ ok: true, status: 'no-op' });
-
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let teamId: string, league: string;
+  let teamId: string;
   try {
     const body = await req.json() as { teamId?: unknown; league?: unknown };
-    if (typeof body.teamId !== 'string' || typeof body.league !== 'string') {
-      return NextResponse.json({ error: 'teamId and league required' }, { status: 400 });
+    if (typeof body.teamId !== 'string') {
+      return NextResponse.json({ error: 'teamId required' }, { status: 400 });
     }
     teamId = body.teamId;
-    league = body.league;
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
+  // ── Enqueue (best-effort) ────────────────────────────────────────────────────
+  // Insert a pending job. The partial unique index on (team_id) where status =
+  // 'pending' prevents duplicate queuing for the same team — on conflict do nothing.
+  try {
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      // Insert with throwOnError so constraint violations surface as exceptions.
+      // The partial unique index on (team_id) where status='pending' throws 23505
+      // for duplicate follows — that's expected and swallowed below.
+      await admin
+        .from('preview_jobs')
+        .insert({ team_id: teamId, status: 'pending' })
+        .throwOnError();
+    }
+  } catch (err) {
+    // Best-effort: log and swallow. The hourly heartbeat is the backstop.
+    // 23505 = unique_violation (duplicate pending for same team) — expected, silent.
+    const code = (err as any)?.code ?? (err as any)?.details?.code;
+    if (code !== '23505') {
+      console.error('[warm-team] enqueue error', err instanceof Error ? err.message : err);
+    }
+  }
 
-  // ── Fire and forget ─────────────────────────────────────────────────────────
-  void generatePreviews(teamId, league, base, cronSecret);
-
-  return NextResponse.json({ ok: true, status: 'warming' }, { status: 202 });
+  return NextResponse.json({ ok: true, status: 'queued' }, { status: 202 });
 }
