@@ -62,6 +62,11 @@ export const COMPETITION_PROFILES: Record<string, CompetitionProfile> = {
     profile:
       `International cricket is played across three formats: Test matches (5 days, 2 innings per side — the game's highest form; results can be wins, losses, or draws), One Day Internationals (50 overs per side, one innings each), and T20 Internationals (20 overs per side). Series are typically 2–5 matches; series winners are decided by match wins within that series. NO single global points table for one-off bilateral series — the ICC World Test Championship (WTC) aggregates Test results, but bilateral ODI/T20 series are standalone. ICC knockout tournaments (World Cup, Champions Trophy) have group-stage and knockout phases. NO relegation from international cricket — teams' Test status is governed by ICC membership.`,
   },
+  nba: {
+    name: 'NBA (National Basketball Association)',
+    profile:
+      `82-game regular season; 30 teams, Eastern and Western Conferences. Top 6 teams per conference qualify directly for the playoffs. Teams 7th–10th play the Play-In Tournament to decide the 7th and 8th seeds. Playoffs are single-elimination best-of-7 series: the first team to win 4 games advances. Conference Quarterfinals (Round 1) → Conference Semifinals → Conference Finals → NBA Finals. The NBA Finals is the championship series between the Eastern and Western Conference champions; the first team to win 4 games becomes NBA Champion. Home court advantage in a series belongs to the higher seed (more regular-season wins). SERIES SCORE: take the SERIES SCORE line in this data block as the authoritative current state — never invent or assume it from game number alone. If the series score shows one team leads 3-1, the trailing team must win 3 consecutive games to claim the series; the leading team needs only 1 more win for the championship. NO relegation — all 30 NBA franchises are permanent members.`,
+  },
   world_cup: {
     name: 'FIFA World Cup 2026',
     profile:

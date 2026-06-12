@@ -303,6 +303,7 @@ export async function generateAndStorePreview(
       fixture.isHome,
       fixture.teamId,
       fixture.opponentId,
+      fixture.seriesSummary,
     );
 
     const preview = await callOllama(prompt, false, maxTokens);

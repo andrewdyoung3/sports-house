@@ -915,6 +915,7 @@ export function buildDataBlock(
   isHome?: boolean,
   teamId?: string,
   opponentId?: string,
+  seriesSummary?: string,
 ): string {
   // ─── F1 — completely different data model ────────────────────────────────
   if (league === 'f1' && context.f1RaceName) {
@@ -923,9 +924,11 @@ export function buildDataBlock(
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
-  // A fixture is "off-league" when it's in a cup, European, or international
-  // tournament that differs from the primary league (e.g. CL, FA Cup, RC).
-  const isOffLeague = !!competition;
+  // A fixture is "off-league" when it's in a cup or European tournament that
+  // genuinely differs from the primary league (e.g. CL, FA Cup, RC). NBA
+  // playoffs are organized by the NBA itself, so playoff labels like
+  // "NBA Finals - Game 5" are NOT off-league — the competition profile applies.
+  const isOffLeague = !!competition && league !== 'nba';
   // Detect a cup/European final — single match, not two-legged.
   // 'Final' is set by normaliseRoundName() in the preview route; 'semi' guard avoids
   // matching 'Semi-finals' (which ARE two-legged ties).
@@ -950,11 +953,17 @@ export function buildDataBlock(
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
   }
+  // Official series score from ESPN — preferred over results-based computation
+  // because it's always available at heartbeat time (no lookback results needed).
+  if (seriesSummary) {
+    lines.push(`SERIES SCORE (official, before this game): ${seriesSummary}`);
+  }
 
   // Playoff/cup series: compute series score from completed results so the AI
   // never has to count from raw form (and can't hallucinate it).
   // Triggered when the competition label looks like "X - Game N".
-  if (competition && /\s[-–]\s*game\s+\d+/i.test(competition)) {
+  // Skip when official series data is already present above.
+  if (!seriesSummary && competition && /\s[-–]\s*game\s+\d+/i.test(competition)) {
     const seriesPrefix = competition.replace(/\s*[-–]\s*game\s+\d+.*/i, '').trim();
     const inSeries = teamResults.filter(r =>
       r.opponent === opponentName &&

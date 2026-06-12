@@ -123,6 +123,8 @@ export interface UpcomingGame {
   worldCupOpponentPlaceholder?: string;
   /** Set by fetchLeagueFixtures when lookbackDays > 0 — true for recently-completed games */
   completed?: boolean;
+  /** NBA playoffs — official series score from ESPN (e.g. "NY leads series 3-1") */
+  seriesSummary?: string;
 }
 
 // ─── Results ──────────────────────────────────────────────────────────────────

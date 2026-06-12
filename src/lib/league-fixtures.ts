@@ -638,6 +638,7 @@ export async function fetchNBAFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         broadcast:       ['ESPN', 'ABC'],
         streaming:       ['NBA League Pass', 'Kayo Sports'],
         competition:     (comp.notes?.[0]?.headline as string | undefined),
+        seriesSummary:   (comp.series as any)?.summary as string | undefined,
         opponentId:      away?.id,
         completed:       isComplete || undefined,
       });
@@ -839,9 +840,46 @@ const CRICKET_INT_GENERIC_SERIES = [8037];
 
 const CRICKET_INT_TEAM_SERIES: Partial<Record<string, number[]>> = {
   'int-aus': [
-    24231,    // Bangladesh tour of Australia 2026 (2 Tests, Aug)
+    24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
+    24322,    // Australia in Bangladesh T20I Series 2026 (Jun 17)
+    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13) — format-specific
+    24231,    // Bangladesh tour of Australia 2026 (Aug 13) — tour wrapper
     1530201,  // Australia tour of Zimbabwe 2026 (3 ODIs, Sep)
     24203,    // Australia tour of South Africa 2026/27 (3 ODIs + 1 Test, Sep-Oct)
+  ],
+  'int-ban': [
+    24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
+    24322,    // Australia in Bangladesh T20I Series 2026 (Jun 17)
+    24419,    // Bangladesh in Zimbabwe Test Match 2026 (Jun 28)
+    24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
+    24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
+    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13)
+  ],
+  'int-ind': [
+    24300,    // India in Zimbabwe T20I Series 2026 (Jul 23)
+  ],
+  'int-pak': [
+    24378,    // Australia in Pakistan ODI Series 2026 (Jun 4)
+    24436,    // Pakistan tour of West Indies 2026 (Jul 18, Test)
+  ],
+  'int-nz': [
+    24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
+  ],
+  'int-sl': [
+    24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
+    24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
+  ],
+  'int-wi': [
+    24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
+    24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
+    24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
+    24436,    // Pakistan tour of West Indies 2026 (Jul 18, Test)
+  ],
+  'int-zim': [
+    24419,    // Bangladesh in Zimbabwe Test Match 2026 (Jun 28)
+    24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
+    24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
+    1530201,  // Australia tour of Zimbabwe 2026 (3 ODIs, Sep)
   ],
 };
 
