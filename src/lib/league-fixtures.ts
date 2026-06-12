@@ -18,7 +18,7 @@ import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
-import { WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
+import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -1091,7 +1091,7 @@ export async function fetchWorldCupFixtures(lookbackDays = 0): Promise<UpcomingG
           : (awayComp?.team?.logo as string | undefined),
         opponentId:      WC_ESPN_NAME_TO_ID[awayName],
         worldCupStage:   stage,
-        worldCupGroup:   group,
+        worldCupGroup:   WC_TEAM_GROUPS[homeId] ?? group,
         completed:       isComplete || undefined,
       });
       return acc;

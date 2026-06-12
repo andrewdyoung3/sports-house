@@ -212,6 +212,38 @@ function ordinal(n: number): string {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+// ─── Team → group mapping (from the 2026 FIFA World Cup draw) ────────────────
+// Keyed by internal wc-* ID. Used to pre-select the correct group tab when
+// opening a World Cup expand panel (ESPN's scoreboard API omits the group label
+// from round-hint strings, so espnRoundToGroup always returns undefined).
+
+export const WC_TEAM_GROUPS: Record<string, string> = {
+  // Group A
+  'wc-mexico':      'A', 'wc-czechia':    'A', 'wc-southkorea': 'A', 'wc-southafrica': 'A',
+  // Group B
+  'wc-canada':      'B', 'wc-bosnia':     'B', 'wc-switzerland': 'B', 'wc-qatar':       'B',
+  // Group C
+  'wc-brazil':      'C', 'wc-scotland':   'C', 'wc-haiti':       'C', 'wc-morocco':     'C',
+  // Group D
+  'wc-paraguay':    'D', 'wc-turkey':     'D', 'wc-australia':   'D', 'wc-usa':         'D',
+  // Group E
+  'wc-ecuador':     'E', 'wc-germany':    'E', 'wc-ivorycoast':  'E', 'wc-curacao':     'E',
+  // Group F
+  'wc-netherlands': 'F', 'wc-sweden':     'F', 'wc-japan':       'F', 'wc-tunisia':     'F',
+  // Group G
+  'wc-belgium':     'G', 'wc-iran':       'G', 'wc-egypt':       'G', 'wc-newzealand':  'G',
+  // Group H
+  'wc-spain':       'H', 'wc-uruguay':    'H', 'wc-saudiarabia': 'H', 'wc-capeverde':   'H',
+  // Group I
+  'wc-norway':      'I', 'wc-france':     'I', 'wc-senegal':     'I', 'wc-iraq':        'I',
+  // Group J
+  'wc-argentina':   'J', 'wc-austria':    'J', 'wc-algeria':     'J', 'wc-jordan':      'J',
+  // Group K
+  'wc-colombia':    'K', 'wc-portugal':   'K', 'wc-uzbekistan':  'K', 'wc-drcongo':     'K',
+  // Group L
+  'wc-england':     'L', 'wc-croatia':    'L', 'wc-panama':      'L', 'wc-ghana':       'L',
+};
+
 // ─── ESPN team display name → our internal wc-* id ───────────────────────────
 
 /**
