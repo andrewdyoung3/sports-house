@@ -1086,7 +1086,9 @@ export async function fetchWorldCupFixtures(lookbackDays = 0): Promise<UpcomingG
         venue:           comp.venue?.fullName ?? '',
         broadcast:       WC_BROADCAST.broadcast,
         streaming:       WC_BROADCAST.streaming,
-        opponentLogoUrl: awayComp?.team?.logo as string | undefined,
+        opponentLogoUrl: awayName === 'Australia'
+          ? TEAM_LOGOS['wc-australia']
+          : (awayComp?.team?.logo as string | undefined),
         opponentId:      WC_ESPN_NAME_TO_ID[awayName],
         worldCupStage:   stage,
         worldCupGroup:   group,

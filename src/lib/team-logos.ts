@@ -379,7 +379,7 @@ export const TEAM_LOGOS: Record<string, string> = {
   'wc-japan':       'https://flagcdn.com/w320/jp.png',
   'wc-iran':        'https://flagcdn.com/w320/ir.png',
   'wc-southkorea':  'https://flagcdn.com/w320/kr.png',
-  'wc-australia':   'https://flagcdn.com/w320/au.png',
+  'wc-australia':   'https://a.espncdn.com/i/teamlogos/soccer/500/628.png', // Socceroos badge, not flag
   'wc-qatar':       'https://flagcdn.com/w320/qa.png',
   'wc-saudiarabia': 'https://flagcdn.com/w320/sa.png',
   'wc-uzbekistan':  'https://flagcdn.com/w320/uz.png',
