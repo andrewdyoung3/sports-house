@@ -8,6 +8,7 @@
     "start": "next start -p 3001",
     "lint": "next lint",
     "clear-cache": "rimraf .next/cache/fetch-cache && echo \"Server cache cleared. Also open DevTools → Application → Local Storage and delete all ai-preview-* keys to clear browser cache.\"",
+    "regen": "tsx scripts/regen-preview.ts",
     "warm": "tsx scripts/generate-previews.ts",
     "warm:force": "tsx scripts/generate-previews.ts --force",
     "poll": "tsx scripts/poll-jobs.ts",

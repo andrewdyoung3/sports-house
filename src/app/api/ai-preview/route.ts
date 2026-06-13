@@ -46,13 +46,15 @@ export async function POST(req: NextRequest) {
 
     const { data, error: dbError } = await sb
       .from('game_previews')
-      .select('payload')
+      .select('payload, updated_at')
       .eq('game_id', gameId)
       .maybeSingle();
 
     if (!dbError && data?.payload) {
       aiLog(`supabase-hit gameId=${gameId}`);
-      return NextResponse.json(data.payload as AIPreview);
+      // Include _serverUpdatedAt so the client can detect when Supabase has a
+      // newer row than its localStorage cache and swap without a version bump.
+      return NextResponse.json({ ...(data.payload as AIPreview), _serverUpdatedAt: data.updated_at as string | undefined });
     }
     aiLog(`supabase-miss gameId=${gameId}`);
     return NextResponse.json({ preparing: true });

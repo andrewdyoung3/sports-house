@@ -112,6 +112,8 @@ interface PreviewCache {
   newsFingerprint: string;
   /** When the preview was first generated (for age-based eviction). */
   generatedAt: number;
+  /** ISO timestamp from Supabase updated_at — used by SWR staleness check. */
+  serverUpdatedAt?: string;
 }
 
 /**
@@ -1102,7 +1104,35 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         setAiLoading(false);
 
         if (cached.newsFingerprint === fingerprint) {
-          // News unchanged — nothing to do.
+          // News unchanged — run a lightweight SWR staleness check: fetch the
+          // current Supabase row's updated_at and swap if it's newer than our
+          // cached copy. This propagates corrections made via `npm run regen`
+          // without needing a version bump or a full background regen.
+          await Promise.race([
+            ensureSession(),
+            new Promise<void>(resolve => setTimeout(resolve, 5000)),
+          ]);
+          fetch('/api/ai-preview', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ gameId: game.id }),
+          })
+            .then(r => r.ok ? r.json() : null)
+            .catch(() => null)
+            .then((fresh: (AIPreview & { _serverUpdatedAt?: string }) | null) => {
+              if (!fresh?.context) return;
+              const cachedSat = cached.serverUpdatedAt ?? '';
+              const freshSat  = fresh._serverUpdatedAt ?? '';
+              if (freshSat > cachedSat) {
+                setAiPreview(fresh);
+                savePreviewCache(game.id, {
+                  preview:         fresh,
+                  newsFingerprint: fingerprint,
+                  generatedAt:     cached.generatedAt,
+                  serverUpdatedAt: freshSat,
+                });
+              }
+            });
           return;
         }
 
@@ -1144,7 +1174,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       })
         .then(r => { if (!r.ok) console.error(`[ai-preview] HTTP ${r.status} for ${team.league}/${team.id}`); return r.ok ? r.json() : null; })
         .catch((e) => { console.error('[ai-preview] fetch error', e); return null; })
-        .then((aiData: AIPreview | null) => {
+        .then((aiData: (AIPreview & { _serverUpdatedAt?: string }) | null) => {
           // Only accept a response with actual content — { preparing: true } is a
           // Supabase miss signal, not a valid preview. Don't cache it.
           if (aiData?.context) {
@@ -1153,6 +1183,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
               preview:         aiData,
               newsFingerprint: fingerprint,
               generatedAt:     cached?.generatedAt ?? Date.now(),
+              serverUpdatedAt: aiData._serverUpdatedAt,
             });
           }
         })

@@ -10,7 +10,7 @@
 
 import { appendFileSync } from 'fs';
 import OpenAI from 'openai';
-import type { AIPreview, UpcomingGame } from '@/types';
+import type { AIPreview, UpcomingGame, PreviewContext } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, collectPlayerWhitelist } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
@@ -284,6 +284,7 @@ export async function generateAndStorePreview(
   league: string,
   fixture: UpcomingGame,
   teamName: string,
+  previewContext?: Partial<PreviewContext>,
 ): Promise<{ ok: boolean; error?: string }> {
   const isF1         = league === 'f1';
   const maxTokens    = isF1 ? 5000 : undefined;
@@ -293,7 +294,7 @@ export async function generateAndStorePreview(
       league,
       teamName,
       fixture.opponent,
-      {},
+      (previewContext ?? {}) as PreviewContext,
       [],
       [],
       fixture.competition,
