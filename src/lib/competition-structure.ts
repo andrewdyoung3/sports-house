@@ -358,7 +358,9 @@ export function resolveCompetitionContext(
   if (def.totalRounds && played !== undefined) {
     phase = computePhase(played, def.totalRounds);
   } else if (def.archetype === 'group-knockout') {
-    phase = worldCupCtx?.stage === 'group' ? 'group stage' : 'knockout stage';
+    // Default to 'group stage' — the safe fallback when worldCupCtx is absent.
+    // Only emit 'knockout stage' when the context is present and explicitly non-group.
+    phase = (worldCupCtx && worldCupCtx.stage !== 'group') ? 'knockout stage' : 'group stage';
   }
 
   // ── World Cup ─────────────────────────────────────────────────────────────

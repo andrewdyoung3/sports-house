@@ -1121,15 +1121,18 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
             .catch(() => null)
             .then((fresh: (AIPreview & { _serverUpdatedAt?: string }) | null) => {
               if (!fresh?.context) return;
-              const cachedSat = cached.serverUpdatedAt ?? '';
-              const freshSat  = fresh._serverUpdatedAt ?? '';
-              if (freshSat > cachedSat) {
+              // Parse both sides to epoch ms — ISO string lexicographic comparison
+              // silently breaks if the server returns 'Z' vs '+00:00' or varies
+              // fractional seconds. Numeric comparison is format-agnostic.
+              const freshMs  = fresh._serverUpdatedAt  ? new Date(fresh._serverUpdatedAt).getTime()  : 0;
+              const cachedMs = cached.serverUpdatedAt  ? new Date(cached.serverUpdatedAt).getTime()  : 0;
+              if (freshMs > cachedMs) {
                 setAiPreview(fresh);
                 savePreviewCache(game.id, {
                   preview:         fresh,
                   newsFingerprint: fingerprint,
                   generatedAt:     cached.generatedAt,
-                  serverUpdatedAt: freshSat,
+                  serverUpdatedAt: fresh._serverUpdatedAt,
                 });
               }
             });

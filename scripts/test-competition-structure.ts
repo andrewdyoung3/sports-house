@@ -438,6 +438,47 @@ console.log('\n── World Cup: group stage ───────────�
   }
 }
 
+console.log('\n── World Cup: phase classification (Bug A regression) ───────────────');
+
+// Group fixture with worldCupCtx.stage = 'group' → 'group stage'
+{
+  const wc: WorldCupMatchContext = { stage: 'group', gamesRemaining: 2 };
+  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Türkiye', undefined, wc);
+  test('WC group ctx → phase = group stage', r.phase, 'group stage');
+}
+
+// Knockout fixture (r16) with worldCupCtx → 'knockout stage'
+{
+  const wc: WorldCupMatchContext = { stage: 'r16' };
+  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Brazil', undefined, wc);
+  test('WC r16 ctx → phase = knockout stage', r.phase, 'knockout stage');
+}
+
+// WC final with worldCupCtx → 'knockout stage'
+{
+  const wc: WorldCupMatchContext = { stage: 'final' };
+  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Argentina', undefined, wc);
+  test('WC final ctx → phase = knockout stage', r.phase, 'knockout stage');
+}
+
+// REGRESSION: absent worldCupCtx (as called from regen script or early diagnostics)
+// → must default to 'group stage', NOT 'knockout stage'
+{
+  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Türkiye', undefined, undefined);
+  test('WC absent ctx → phase = group stage (not knockout — regression guard)', r.phase, 'group stage');
+}
+
+// REGRESSION: absent worldCupCtx + leagueTable populated (group table fetched by regen)
+// → still 'group stage'
+{
+  const table: LeagueTableRow[] = [
+    makeRow('USA',        1, 1, 3), makeRow('Paraguay',  2, 1, 0),
+    makeRow('Australia',  3, 0, 0), makeRow('Türkiye',   4, 0, 0),
+  ];
+  const r = resolveCompetitionContext('world_cup', table, 'Australia', 'Türkiye', undefined, undefined);
+  test('WC absent ctx + group table → phase = group stage', r.phase, 'group stage');
+}
+
 // ─── Summary ──────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed\n`);
