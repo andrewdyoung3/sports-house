@@ -901,6 +901,64 @@ function buildF1DataBlock(context: PreviewContext): string {
   return lines.join('\n');
 }
 
+/**
+ * Parses ESPN's abbreviated series summary (e.g. "NY leads series 3-1") and
+ * returns an unambiguous SERIES STATE line using the full team names from the
+ * fixture, so the AI never has to interpret abbreviations.
+ *
+ * Matching strategy: compare ESPN's leader hint against the initials of each
+ * team name (e.g. "NY" → "NYK" for "New York Knicks" → starts-with match).
+ * Falls back to word-prefix matching. Returns null if ambiguous.
+ */
+function deriveSeriesState(
+  summary: string,
+  teamName: string,
+  opponentName: string,
+): string | null {
+  const m = summary.match(/^(.+?)\s+leads?\s+series?\s+(\d+)[–\-](\d+)/i);
+  if (!m) return null;
+
+  const hint       = m[1].trim();
+  const leaderWins = parseInt(m[2], 10);
+  const trailerWins = parseInt(m[3], 10);
+  const winsNeeded = 4 - leaderWins; // NBA/NHL playoffs are best-of-7
+
+  const initials = (name: string) =>
+    name.split(/\s+/).map(w => w[0].toUpperCase()).join('');
+  const hintUp = hint.toUpperCase().replace(/[^A-Z]/g, '');
+  const teamInit = initials(teamName);
+  const oppInit  = initials(opponentName);
+
+  // Match by initials prefix (e.g. "NY" matches "NYK" for New York Knicks)
+  let leaderName: string, trailerName: string;
+  if (teamInit.startsWith(hintUp) || hintUp.startsWith(teamInit.slice(0, 2))) {
+    leaderName = teamName; trailerName = opponentName;
+  } else if (oppInit.startsWith(hintUp) || hintUp.startsWith(oppInit.slice(0, 2))) {
+    leaderName = opponentName; trailerName = teamName;
+  } else {
+    // Word-level fallback
+    const hintLow = hint.toLowerCase();
+    const teamWords = teamName.toLowerCase().split(/\s+/);
+    const oppWords  = opponentName.toLowerCase().split(/\s+/);
+    if (teamWords.some(w => hintLow === w || (w.length >= 3 && hintLow.startsWith(w.slice(0, 3))))) {
+      leaderName = teamName; trailerName = opponentName;
+    } else if (oppWords.some(w => hintLow === w || (w.length >= 3 && hintLow.startsWith(w.slice(0, 3))))) {
+      leaderName = opponentName; trailerName = teamName;
+    } else {
+      return null;
+    }
+  }
+
+  const clinchVerb = 'clinch the series';
+  const mustWin    = 4 - trailerWins;
+  return [
+    `SERIES STATE: ${leaderName} LEAD ${leaderWins}–${trailerWins} and need ${winsNeeded} more win${winsNeeded !== 1 ? 's' : ''} to ${clinchVerb}.`,
+    `${trailerName} TRAIL ${trailerWins}–${leaderWins} and must win ${mustWin} consecutive game${mustWin !== 1 ? 's' : ''} to come back.`,
+    `CRITICAL: Do NOT describe ${trailerName} as "close to clinching", "one win away", or use any language suggesting they are the leading team.`,
+    `Do NOT describe ${leaderName} as "down", "trailing", or "needing a miracle comeback".`,
+  ].join(' ');
+}
+
 export function buildDataBlock(
   league: string,
   teamName: string,
@@ -957,6 +1015,10 @@ export function buildDataBlock(
   // because it's always available at heartbeat time (no lookback results needed).
   if (seriesSummary) {
     lines.push(`SERIES SCORE (official, before this game): ${seriesSummary}`);
+    // Derive an unambiguous SERIES STATE line using full team names so the model
+    // never has to interpret ESPN's abbreviated summary (e.g. "NY leads series 3-1").
+    const seriesState = deriveSeriesState(seriesSummary, teamName, opponentName);
+    if (seriesState) lines.push(seriesState);
   }
 
   // Playoff/cup series: compute series score from completed results so the AI
