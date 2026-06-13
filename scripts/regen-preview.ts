@@ -21,7 +21,8 @@ import { generateAndStorePreview } from '@/lib/preview-generator';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { TEAMS } from '@/lib/teams';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
-import type { LeagueTableRow, PreviewContext } from '@/types';
+import { WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
+import type { LeagueTableRow, PreviewContext, WorldCupGroupRow, WorldCupMatchContext } from '@/types';
 
 // ─── Env loading (mirrors generate-previews.ts) ───────────────────────────────
 
@@ -125,28 +126,44 @@ async function fetchSRUTable(): Promise<LeagueTableRow[]> {
   }));
 }
 
-async function fetchWCGroupTable(teamName: string): Promise<LeagueTableRow[]> {
+interface WCGroupData {
+  table: LeagueTableRow[];
+  wcRows: WorldCupGroupRow[];
+}
+
+async function fetchWCGroupTable(teamName: string): Promise<WCGroupData> {
   const data = await fetchJson('https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings');
   const groups: any[] = data.children ?? [];
   const stat = (e: any, ...ns: string[]) =>
     ns.reduce((v: number, n: string) => v || ((e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0), 0 as number);
-  const groupLabel = (g: any, idx: number) => {
-    const m = (g.name ?? '').match(/[Gg]roup\s+([A-La-l])\b/);
-    return m ? m[1].toUpperCase() : String.fromCharCode(65 + idx);
-  };
   for (let i = 0; i < groups.length; i++) {
     const entries: any[] = groups[i].standings?.entries ?? [];
     if (!entries.some((e: any) => e.team?.displayName === teamName)) continue;
-    const lbl = groupLabel(groups[i], i);
-    void lbl; // group label tracked elsewhere — LeagueTableRow is standings-only
-    return entries.map((e: any, j: number): LeagueTableRow => ({
+    const table: LeagueTableRow[] = entries.map((e: any, j: number): LeagueTableRow => ({
       name: e.team?.displayName ?? '', position: j + 1,
       played: stat(e, 'gamesPlayed', 'played'), wins: stat(e, 'wins'),
       draws: stat(e, 'ties', 'draws'), losses: stat(e, 'losses'),
       points: stat(e, 'points'),
     }));
+    const wcRows: WorldCupGroupRow[] = entries.map((e: any, j: number): WorldCupGroupRow => {
+      const gf = stat(e, 'pointsFor', 'goalsFor');
+      const ga = stat(e, 'pointsAgainst', 'goalsAgainst');
+      return {
+        teamName:       e.team?.displayName ?? '',
+        position:       j + 1,
+        played:         stat(e, 'gamesPlayed', 'played'),
+        wins:           stat(e, 'wins'),
+        draws:          stat(e, 'ties', 'draws'),
+        losses:         stat(e, 'losses'),
+        goalsFor:       gf,
+        goalsAgainst:   ga,
+        goalDifference: gf - ga,
+        points:         stat(e, 'points'),
+      };
+    });
+    return { table, wcRows };
   }
-  return [];
+  return { table: [], wcRows: [] };
 }
 
 async function fetchLeagueTable(league: string, teamName: string): Promise<LeagueTableRow[]> {
@@ -156,12 +173,40 @@ async function fetchLeagueTable(league: string, teamName: string): Promise<Leagu
       case 'nrl':         return await fetchNRLTable();
       case 'epl':         return await fetchEPLTable();
       case 'super_rugby': return await fetchSRUTable();
-      case 'world_cup':   return await fetchWCGroupTable(teamName);
+      case 'world_cup':   return (await fetchWCGroupTable(teamName)).table;
       default:            return [];
     }
   } catch (err) {
     console.warn(`  [standings fetch failed for ${league}: ${err instanceof Error ? err.message : err}]`);
     return [];
+  }
+}
+
+async function fetchWCMatchContext(
+  teamName: string,
+  teamId: string,
+  worldCupStage: string | undefined,
+): Promise<WorldCupMatchContext | undefined> {
+  try {
+    const { wcRows } = await fetchWCGroupTable(teamName);
+    if (wcRows.length === 0) return undefined;
+    const group = WC_TEAM_GROUPS[teamId];
+    const ourRow = wcRows.find(r => r.teamName === teamName || teamName.includes(r.teamName.split(' ')[0]));
+    const played = ourRow?.played ?? 0;
+    const gamesRemaining = Math.max(0, 3 - played);
+    return {
+      stage:               (worldCupStage ?? 'group') as import('@/types').WorldCupStage,
+      group,
+      groupTable:          wcRows,
+      gamesPlayed:         played,
+      gamesRemaining,
+      advancementScenario: ourRow
+        ? computeGroupAdvancementScenario(teamName, ourRow.points, played, gamesRemaining, ourRow.position)
+        : '',
+    };
+  } catch (err) {
+    console.warn(`  [WC match context fetch failed: ${err instanceof Error ? err.message : err}]`);
+    return undefined;
   }
 }
 
@@ -234,6 +279,12 @@ async function main() {
     // This is the key difference from the heartbeat (which passes empty context).
     const leagueTable = await fetchLeagueTable(league, teamName);
 
+    // For WC fixtures, also fetch the full WorldCupMatchContext (group, groupTable,
+    // advancement scenario). This drives the GROUP D STANDINGS block in the prompt.
+    const wcMatchCtx = league === 'world_cup'
+      ? await fetchWCMatchContext(teamName, fixture.teamId, fixture.worldCupStage)
+      : undefined;
+
     let previewContext: Partial<PreviewContext> = {};
     if (leagueTable.length > 0) {
       const sorted = [...leagueTable].sort((a, b) => a.position - b.position);
@@ -245,6 +296,9 @@ async function main() {
         opponentStanding: oppRow      ? { name: oppRow.name,      position: oppRow.position,      played: oppRow.played,      wins: oppRow.wins,      draws: oppRow.draws,      losses: oppRow.losses,      points: oppRow.points }      : undefined,
       };
     }
+    if (wcMatchCtx) {
+      previewContext.worldCup = wcMatchCtx;
+    }
 
     // Compute and print the FIXTURE CONTEXT label (diagnostic — helps verify the
     // label logic before inspecting the full generated preview).
@@ -255,7 +309,7 @@ async function main() {
       teamName,
       fixture.opponent,
       fixtureCtxPlayed,
-      undefined,
+      wcMatchCtx,
     );
 
     console.log(`  FIXTURE CONTEXT:`);

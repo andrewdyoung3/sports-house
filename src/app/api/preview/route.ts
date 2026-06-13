@@ -12,7 +12,7 @@ import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS }
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { fetchTimeout } from '@/lib/espn';
 import { SQUIGGLE_NAME } from '@/lib/afl';
-import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, computeGroupAdvancementScenario } from '@/lib/world-cup';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -1761,7 +1761,7 @@ async function fetchWorldCupPreview(
       const ourRow      = groupTable.find(r => r.teamName === teamName);
       const oppRow      = groupTable.find(r => r.teamName === opponentName);
       const stage       = worldCupStage ?? 'group';
-      const groupLetter = worldCupGroup ?? group.name?.replace(/^Group\s*/i, '') ?? '';
+      const groupLetter = worldCupGroup ?? WC_TEAM_GROUPS[teamId] ?? group.name?.replace(/^Group\s*/i, '') ?? '';
 
       if (stage === 'group' && ourRow) {
         const played         = ourRow.played;

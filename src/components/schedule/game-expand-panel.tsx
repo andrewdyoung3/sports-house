@@ -7,6 +7,7 @@ import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
+import { WC_TEAM_GROUPS } from '@/lib/world-cup';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { cn, ordinal } from '@/lib/utils';
@@ -975,7 +976,8 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   // Mobile tab — 'preview' | 'table'. Desktop always shows full content.
   const [activeTab,    setActiveTab]    = useState<'preview' | 'table'>('preview');
   // World Cup group browser — active group letter (A–L).
-  const [activeWcGroup, setActiveWcGroup] = useState<string>(game.worldCupGroup ?? 'A');
+  const resolvedWcGroup = game.worldCupGroup ?? WC_TEAM_GROUPS[game.teamId];
+  const [activeWcGroup, setActiveWcGroup] = useState<string>(resolvedWcGroup ?? 'A');
 
   // Fetch weather independently — not tied to the panel-data cache so it always
   // runs even when results/standings are served from sessionStorage.
@@ -1252,7 +1254,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
               activeGroup={activeWcGroup}
               onGroupChange={setActiveWcGroup}
               followedTeamId={team.id}
-              teamGroup={game.worldCupGroup}
+              teamGroup={resolvedWcGroup}
             />
           ) : (
             <LeagueTableSh
@@ -1459,10 +1461,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                 activeGroup={activeWcGroup}
                 onGroupChange={setActiveWcGroup}
                 followedTeamId={team.id}
-                teamGroup={game.worldCupGroup}
+                teamGroup={resolvedWcGroup}
                 compact
               />
-              {context?.worldCup?.advancementScenario && activeWcGroup === (game.worldCupGroup ?? context.worldCup.group) && (
+              {context?.worldCup?.advancementScenario && activeWcGroup === (resolvedWcGroup ?? context.worldCup.group) && (
                 <p className="text-[10px] text-white/35 mt-2 leading-snug">
                   {context.worldCup.advancementScenario}
                 </p>

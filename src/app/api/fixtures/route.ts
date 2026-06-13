@@ -17,7 +17,7 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTeam } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
-import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 
 // 5-minute browser/CDN cache; server-side fetch cache handles upstream revalidation.
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
@@ -1270,7 +1270,7 @@ const fetchWorldCupFixtures = unstable_cache(
           opponentLogoUrl: (oppComp?.team?.logo as string | undefined),
           opponentId:      WC_ESPN_NAME_TO_ID[oppName],
           worldCupStage:   stage,
-          worldCupGroup:   group,
+          worldCupGroup:   group ?? WC_TEAM_GROUPS[teamId],
           worldCupOpponentTBD:         oppTBD || undefined,
           worldCupOpponentPlaceholder: oppTBD
             ? (oppComp?.team?.name ?? oppComp?.team?.abbreviation ?? 'TBD')
