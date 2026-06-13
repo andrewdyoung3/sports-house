@@ -10,6 +10,7 @@ import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
+import { resolveCompetitionContext } from '@/lib/competition-structure';
 
 // ─── Team home-venue lookup ───────────────────────────────────────────────────
 // Built once at module load; maps teamId → registered home venue string.
@@ -637,6 +638,8 @@ SEASON STRUCTURE — authoritative source, non-negotiable:
 • If COMPETITION PROFILE says "NO finals" (e.g. Premier League), do NOT write about a team's finals chances. If it says "Top 8 qualify," do NOT claim a different cutoff. If it says "NO relegation," do NOT reference relegation. Any claim about competition structure that contradicts the COMPETITION PROFILE is an error.
 • Short competitions (Six Nations, Rugby Championship, Test series — under 6 rounds) are consequential from the first game — every result matters for the series outcome. The standard thirds/early-season framework does not apply; treat every fixture as meaningful from the outset.
 
+• FIXTURE CONTEXT — when the data block contains a FIXTURE CONTEXT section, the Stakes label is authoritative (computed from live standings, not estimated). Do NOT describe the game's significance in a way that contradicts the Stakes label: if Stakes is FINALS RACE, do not say finals are assured; if ELIMINATED, do not imply survival is possible; if DEAD RUBBER, do not invent stakes.
+
 COMPETITION STATUS — non-negotiable mathematical facts:
 When the data block contains a "COMPETITION STATUS" section, those facts are mathematically certain — computed from the live points table and games remaining. They OVERRIDE any framing you might otherwise apply based on the seasonal-dynamics rules below. Do NOT soften, hedge, or contradict them.
 
@@ -1103,6 +1106,30 @@ export function buildDataBlock(
         statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
         lines.push('');
       }
+    }
+  }
+
+  // ── Fixture context (deterministic phase + stakes label) ────────────────────
+  // Resolves a Phase and Stakes label from live standings and tournament state.
+  // Only injected for first-wave leagues; omitted when stakes = STANDARD.
+  if (!isOffLeague) {
+    const fixtureCtxPlayed = context.teamStanding?.played ?? context.opponentStanding?.played;
+    const fixtureCtx = resolveCompetitionContext(
+      league,
+      context.leagueTable ?? [],
+      teamName,
+      opponentName,
+      fixtureCtxPlayed,
+      context.worldCup ?? undefined,
+    );
+    if (fixtureCtx.stakes !== 'STANDARD') {
+      lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
+      lines.push(`  Phase: ${fixtureCtx.phase}`);
+      const stakesLine = fixtureCtx.explanation
+        ? `  Stakes: ${fixtureCtx.stakes} — ${fixtureCtx.explanation}`
+        : `  Stakes: ${fixtureCtx.stakes}`;
+      lines.push(stakesLine);
+      lines.push('');
     }
   }
 

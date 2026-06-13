@@ -152,8 +152,8 @@ function buildFingerprint(
   catch { return parts.slice(0, 48); }
 }
 
-// v39: FIFA World Cup 2026 support — group table, advancement scenario, WC SPORT_CONTEXT.
-const CACHE_KEY = (gameId: string) => `ai-preview-v44:${gameId}`;
+// v45: competition-structure FIXTURE CONTEXT block; bumped to evict stale previews.
+const CACHE_KEY = (gameId: string) => `ai-preview-v45:${gameId}`;
 
 function loadPreviewCache(gameId: string): PreviewCache | null {
   try {
