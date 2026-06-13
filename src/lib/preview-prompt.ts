@@ -588,6 +588,7 @@ VENUE AWARENESS — read the label, do not infer:
 DATA INTEGRITY — non-negotiable:
 • Use ONLY the data provided. Do NOT invent statistics, player names, scorelines, or results not mentioned.
 • Player names: only name a specific player if they appear in the MOST RECENT STARTING LINEUP or TEAM NEWS data. Do not name players drawn from your own training knowledge — this produces confident-sounding claims that may be outdated or simply wrong (e.g. a player transferred, dropped, or injured since your training cutoff).
+• Coach/manager names: only name a coach or manager if their name appears in the HEAD COACHES line of the data block. Do not use training knowledge to supply a coaching name — coaching staff changes frequently, and inventing or misidentifying a name is worse than omitting it entirely. When HEAD COACHES is absent from the data, ALL tactical observations must use team-level attribution ("Australia press high and exploit channels", "their compact defensive block") — never a named individual. Using a coaching name not in HEAD COACHES is a grounding violation.
 • If team news mentions injuries or absences, state their structural impact on the side — who covers that role, how it changes the setup.
 • If a section has insufficient data to say something specific, write less — compress the section rather than filling it with generic observations. A short precise sentence is better than two vague ones.
 • Do not fabricate head-to-head records or historical facts. If no head-to-head data is provided, omit historical comparison entirely.
@@ -728,7 +729,8 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
   - Mikel Arteta (Arsenal): structured build-up, inverted wide players, high pressing triggers, set-piece investment — opponents with direct runners who bypass the press can expose the high line.
   - Arne Slot (Liverpool): similar positional principles to Klopp but more structured transitions, press is more organised and less frantic — still expects high line and ball-dominant play.
 • For AFL/NRL/rugby coaches, apply the same principle: identify their structural tendencies (e.g. defensive schemes, kick-to-run balance, risk appetite in attack) where these are well-established and relevant.
-• Do NOT invent coaching tendencies you are not confident about. If you don't have reliable knowledge of a coach's system, refer to the team's play style based on results data instead, but still name the coach by surname.
+• Do NOT invent coaching tendencies you are not confident about. If you don't have reliable knowledge of a coach's system, refer to the team's play style based on results data instead.
+• ABSENT HEAD COACHES — hard constraint: when HEAD COACHES is not in the data block, do NOT name any coach, manager, or team official anywhere in the output. Attribute all tactical observations to the team. This constraint has no exceptions — any coaching name not present in HEAD COACHES is forbidden regardless of confidence.
 • Keep coach references analytical, not biographical. "Dyche's side will be compact and physical from the first whistle" is useful. "Dyche, who was appointed in January 2023..." is not.
 
 LINEUP AND AVAILABILITY ANALYSIS:
@@ -787,7 +789,7 @@ These four elements must appear across the response — they do not need to be l
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
   "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
-  "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically — name the actual system clash.",
+  "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided in the data block, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). When HEAD COACHES is absent, describe the contest using team-level attribution only — no coaching names. Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically.",
   "playerSpotlight": "REQUIRED — never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: if player data appears in the data block (lineup/squad/injury report/team news), name the single most analytically compelling player from that data and connect them to the specific gamestate. If the data block contains a NO PLAYER DATA notice, describe the decisive tactical unit or positional role instead — never invent or assume a player name from training knowledge, even if you are confident about the squad.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
   "keyInsights": [
@@ -1210,6 +1212,23 @@ export function buildDataBlock(
           `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
           `${row.wins}W ${row.draws}D ${row.losses}L  ` +
           `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
+        );
+      }
+      lines.push('');
+      // Spell out per-team match counts so the model cannot misread the table
+      // and incorrectly claim all teams are "yet to play" when some have results.
+      const matchTally = wcGroupTable.map(r => `${r.teamName}: ${r.played}`).join('  ');
+      lines.push(`Matches played per team — ${matchTally}`);
+      const teamRow2  = wcGroupTable.find(r => r.teamName === teamName);
+      const oppRow2   = wcGroupTable.find(r => r.teamName === opponentName);
+      const fixtureUnplayed  = (teamRow2?.played ?? 0) === 0 && (oppRow2?.played ?? 0) === 0;
+      const othersHavePlayed = wcGroupTable.some(
+        r => r.teamName !== teamName && r.teamName !== opponentName && r.played > 0,
+      );
+      if (fixtureUnplayed && othersHavePlayed) {
+        lines.push(
+          `This is ${teamName} and ${opponentName}'s opening group game (0 matches played each). ` +
+          `Other matches in Group ${wc.group ?? ''} have already taken place — do NOT describe the group as unplayed or say all four teams are yet to play.`,
         );
       }
       lines.push('');

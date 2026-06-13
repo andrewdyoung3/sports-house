@@ -22,6 +22,7 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { TEAMS } from '@/lib/teams';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
 import { WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
+import { MANAGER } from '@/lib/managers';
 import type { LeagueTableRow, PreviewContext, WorldCupGroupRow, WorldCupMatchContext } from '@/types';
 
 // ─── Env loading (mirrors generate-previews.ts) ───────────────────────────────
@@ -298,6 +299,14 @@ async function main() {
     }
     if (wcMatchCtx) {
       previewContext.worldCup = wcMatchCtx;
+    }
+
+    // Wire verified coaches — feeds HEAD COACHES into the prompt so the model
+    // names real people instead of hallucinating from training knowledge.
+    previewContext.teamManager     = MANAGER[fixture.teamId];
+    previewContext.opponentManager = fixture.opponentId ? MANAGER[fixture.opponentId] : undefined;
+    if (previewContext.teamManager || previewContext.opponentManager) {
+      console.log(`  coaches  ${previewContext.teamManager ?? '?'} vs ${previewContext.opponentManager ?? '(unknown)'}`);
     }
 
     // Compute and print the FIXTURE CONTEXT label (diagnostic — helps verify the
