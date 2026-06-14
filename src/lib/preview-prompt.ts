@@ -12,6 +12,49 @@ import { getCompetitionProfile } from '@/lib/competition-context';
 import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
 
+// ─── Block types ──────────────────────────────────────────────────────────────
+
+export type BlockId =
+  | 'matchFacts'        // FIXTURE + VENUE + COMPETITION + WC tournament stage + cup stage (always-on anchor)
+  | 'fixtureContext'    // DOMESTIC COMPETITION STATUS + FIXTURE CONTEXT block
+  | 'competitionProfile' // COMPETITION PROFILE text
+  | 'sportContext'      // SPORT vocab + SEASON STATE + HEAD COACHES (with trailing blank)
+  | 'worldCupGroup'     // GROUP X STANDINGS (WC only)
+  | 'standings'         // cup group standings + LEAGUE TABLE + COMPETITION STATUS + DERIVED FACTS
+  | 'recentForm'        // RECENT FORM
+  | 'headToHead'        // HEAD-TO-HEAD — recent meetings between the two sides
+  | 'personnel'         // LINEUP + SQUAD SUBMISSION + INJURY REPORT + KEY PERFORMERS
+  | 'mediaWatch'        // FROM THE MEDIA — attributed news headlines + model tips (editorial)
+  | 'weather';          // WEATHER AT KICKOFF
+
+export const BLOCK_ORDER: readonly BlockId[] = [
+  'matchFacts', 'fixtureContext', 'competitionProfile', 'sportContext',
+  'worldCupGroup', 'standings', 'recentForm', 'headToHead', 'personnel', 'mediaWatch', 'weather',
+] as const;
+
+export const ALL_BLOCKS: ReadonlySet<BlockId> = new Set(BLOCK_ORDER);
+
+export const BLOCK_LABELS: Record<BlockId, string> = {
+  matchFacts:          'Fixture & venue',
+  fixtureContext:      'Fixture context (stakes / phase)',
+  competitionProfile:  'Competition profile',
+  sportContext:        'Sport vocab + season state + coaches',
+  worldCupGroup:       'World Cup group standings',
+  standings:           'League table & derived facts',
+  recentForm:          'Recent form',
+  headToHead:          'Head-to-head meetings',
+  personnel:           'Lineups, squads & injuries',
+  mediaWatch:          'From the media (news, tips, angles)',
+  weather:             'Weather at kickoff',
+};
+
+export interface BlockResult {
+  id: BlockId;
+  label: string;
+  /** The lines this block contributes to the full prompt, joined by '\n'. May be empty if no data. */
+  text: string;
+}
+
 // ─── Team home-venue lookup ───────────────────────────────────────────────────
 // Built once at module load; maps teamId → registered home venue string.
 const TEAM_HOME_VENUE: Record<string, string> = {};
@@ -546,6 +589,32 @@ export function collectPlayerWhitelist(prompt: string): {
     for (const line of injuryText.split('\n')) addNamesFromLine(line);
   }
 
+  // KEY PERFORMERS — "Name 28 pts/5 reb/3 ast, Name2 19 pts/..." (stats are not
+  // parenthesised, so take the text before the first digit as the player name).
+  const keyPerfText = extractSection(/KEY PERFORMERS/);
+  if (keyPerfText) {
+    hasPlayerData = true;
+    for (const line of keyPerfText.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      for (const raw of line.slice(colonIdx + 1).split(',')) {
+        const m = raw.match(/^\s*([^\d]+?)\s+\d/);
+        const name = (m ? m[1] : raw).trim();
+        if (name && name.length > 1) whitelist.add(name.toLowerCase());
+      }
+    }
+  }
+
+  // FROM THE MEDIA — attributed news/tips. Names here come from REAL fetched
+  // headlines, so they are allowed in the output (mediaWatch). Free text, so we
+  // scan for capitalised multi-word names rather than a comma list. This does NOT
+  // set hasPlayerData — media is editorial, not a confirmed lineup.
+  const mediaText = extractSection(/FROM THE MEDIA/);
+  if (mediaText) {
+    const nameRe = /\b[A-ZÀ-Þ][a-zà-ÿ'’\-]+(?:\s+[A-ZÀ-Þ][a-zà-ÿ'’\-]+)+\b/g;
+    for (const m of mediaText.matchAll(nameRe)) whitelist.add(m[0].toLowerCase());
+  }
+
   // Also whitelist coach names from HEAD COACHES line (they may be named in output)
   const coachM = prompt.match(/HEAD COACHES:\s*(.+)/);
   if (coachM) {
@@ -786,6 +855,14 @@ STRUCTURE — four elements required in every preview, distributed naturally acr
 
 These four elements must appear across the response — they do not need to be labelled separately.
 
+FROM THE MEDIA — the "mediaWatch" field (attributed editorial, strict rules):
+• "mediaWatch" is an array of short talking points (0–4 items) sourced ONLY from the FROM THE MEDIA block in the data — the fetched news headlines and the model tip. It is rendered to readers under a "From the media" heading, clearly separated from your own analysis.
+• Everything in mediaWatch must be ATTRIBUTED as reporting or opinion, never stated as fact: "Reports suggest…", "[Side] are reportedly…", "The tipsters lean toward…", "Local press flag…", "Expected to start as per last week…". Never present a media item as your own factual claim.
+• Sources must be REAL. Paraphrase the gist of an actual provided headline or the actual tip figures. Do NOT fabricate quotes, invent outlet names, or attribute words to a named outlet that it did not say. If the data names no outlet, attribute generically ("reports", "the tipsters") — do not invent one.
+• This is the ONLY place news, tips, and expected-lineup ("likely XI per last match") framing may appear. Do NOT let news headlines or the model tip leak into "context", "tacticalBattle", "playerSpotlight", "verdict", or "keyInsights" as if they were established fact — those fields use only the structured data (standings, derived facts, lineups, injuries).
+• If the data block contains no FROM THE MEDIA block, OMIT the mediaWatch field entirely (do not output an empty array, do not invent talking points).
+• Player names appearing in a real provided headline MAY be named in mediaWatch (with attribution) even if they are not in the lineup/squad data — they came from a real source. Do not introduce names that appear nowhere in the data.
+
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
   "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
@@ -796,6 +873,10 @@ OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No ex
     "Specific analytical point grounded in the data (max ~12 words)",
     "Specific analytical point grounded in the data (max ~12 words)",
     "Specific analytical point grounded in the data (max ~12 words)"
+  ],
+  "mediaWatch": [
+    "Attributed talking point sourced from the FROM THE MEDIA block — e.g. 'Reports suggest…', 'The tipsters lean toward…', 'Expected to line up as per last week…' (max ~20 words)",
+    "Another attributed angle, only if the data supports it"
   ]
 }`;
 
@@ -979,11 +1060,14 @@ export function buildDataBlock(
   teamId?: string,
   opponentId?: string,
   seriesSummary?: string,
+  enabledBlocks?: Set<BlockId>,
 ): string {
   // ─── F1 — completely different data model ────────────────────────────────
   if (league === 'f1' && context.f1RaceName) {
     return buildF1DataBlock(context);
   }
+
+  const enabled = (id: BlockId): boolean => !enabledBlocks || enabledBlocks.has(id);
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
@@ -1001,6 +1085,10 @@ export function buildDataBlock(
       /\bfinal\b/i.test(cs.roundName) && !/semi/i.test(cs.roundName);
   })();
   const lines: string[] = [];
+
+  // Compute totalRounds and played early — used by both sportContext and standings blocks
+  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
+  const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
   // World Cup: only the three host nations (USA, Canada, Mexico) have home advantage.
@@ -1096,97 +1184,101 @@ export function buildDataBlock(
     lines.push('');
   }
 
-  // For finals: surface domestic competition status (title clinched, etc.) even though
-  // the full league table is suppressed as irrelevant to the cup fixture.
-  // This gives Claude the "double" narrative context when a team has already won the league.
-  if (isFinal && context.leagueTable && context.leagueTable.length > 0) {
-    const domTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
-    if (domTotalRounds) {
-      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
-      if (statusNotes.length > 0) {
-        lines.push('DOMESTIC COMPETITION STATUS (key context for this fixture — informs the "double" narrative; the final itself is independent of league position):');
-        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+  if (enabled('fixtureContext')) {
+    // For finals: surface domestic competition status (title clinched, etc.) even though
+    // the full league table is suppressed as irrelevant to the cup fixture.
+    // This gives Claude the "double" narrative context when a team has already won the league.
+    if (isFinal && context.leagueTable && context.leagueTable.length > 0) {
+      const domTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
+      if (domTotalRounds) {
+        const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+        if (statusNotes.length > 0) {
+          lines.push('DOMESTIC COMPETITION STATUS (key context for this fixture — informs the "double" narrative; the final itself is independent of league position):');
+          statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+          lines.push('');
+        }
+      }
+    }
+
+    // ── Fixture context (deterministic phase + stakes label) ────────────────────
+    // Resolves a Phase and Stakes label from live standings and tournament state.
+    // Only injected for first-wave leagues; omitted when stakes = STANDARD.
+    if (!isOffLeague) {
+      const fixtureCtxPlayed = context.teamStanding?.played ?? context.opponentStanding?.played;
+      const fixtureCtx = resolveCompetitionContext(
+        league,
+        context.leagueTable ?? [],
+        teamName,
+        opponentName,
+        fixtureCtxPlayed,
+        context.worldCup ?? undefined,
+      );
+      if (fixtureCtx.stakes !== 'STANDARD') {
+        lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
+        lines.push(`  Phase: ${fixtureCtx.phase}`);
+        const stakesLine = fixtureCtx.explanation
+          ? `  Stakes: ${fixtureCtx.stakes} — ${fixtureCtx.explanation}`
+          : `  Stakes: ${fixtureCtx.stakes}`;
+        lines.push(stakesLine);
         lines.push('');
       }
     }
   }
 
-  // ── Fixture context (deterministic phase + stakes label) ────────────────────
-  // Resolves a Phase and Stakes label from live standings and tournament state.
-  // Only injected for first-wave leagues; omitted when stakes = STANDARD.
-  if (!isOffLeague) {
-    const fixtureCtxPlayed = context.teamStanding?.played ?? context.opponentStanding?.played;
-    const fixtureCtx = resolveCompetitionContext(
-      league,
-      context.leagueTable ?? [],
-      teamName,
-      opponentName,
-      fixtureCtxPlayed,
-      context.worldCup ?? undefined,
-    );
-    if (fixtureCtx.stakes !== 'STANDARD') {
-      lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
-      lines.push(`  Phase: ${fixtureCtx.phase}`);
-      const stakesLine = fixtureCtx.explanation
-        ? `  Stakes: ${fixtureCtx.stakes} — ${fixtureCtx.explanation}`
-        : `  Stakes: ${fixtureCtx.stakes}`;
-      lines.push(stakesLine);
+  if (enabled('competitionProfile')) {
+    // ── Competition profile (static) ────────────────────────────────────────────
+    // Injected for primary-league fixtures so the model knows exactly how the
+    // competition works — format, finals structure, qualification cutoffs.
+    const compProfile = !isOffLeague ? getCompetitionProfile(league) : null;
+    if (compProfile) {
+      lines.push(`COMPETITION PROFILE — ${compProfile.name} (authoritative — use this for all season-structure, finals, qualification, and relegation statements):`);
+      lines.push(compProfile.profile);
       lines.push('');
     }
   }
 
-  // ── Competition profile (static) ────────────────────────────────────────────
-  // Injected for primary-league fixtures so the model knows exactly how the
-  // competition works — format, finals structure, qualification cutoffs.
-  const compProfile = !isOffLeague ? getCompetitionProfile(league) : null;
-  if (compProfile) {
-    lines.push(`COMPETITION PROFILE — ${compProfile.name} (authoritative — use this for all season-structure, finals, qualification, and relegation statements):`);
-    lines.push(compProfile.profile);
+  if (enabled('sportContext')) {
+    lines.push(`SPORT: ${sportCtx}`);
+
+    // ── Season state (computed) ──────────────────────────────────────────────────
+    if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
+      const quarter   = Math.ceil(totalRounds / 4);
+      const third     = Math.ceil(totalRounds / 3);
+      const runHomeCutoff = Math.floor(totalRounds * 0.65);
+      const isFinalsPhase = played >= totalRounds; // regular season complete
+      const phase =
+        isFinalsPhase      ? 'finals series'
+        : played <= quarter    ? 'early season'
+        : played <= runHomeCutoff ? 'mid-season'
+        : 'run home — final stretch of the regular season';
+      const roundsRemaining = totalRounds - played;
+
+      const teamRemaining = context.teamStanding?.played !== undefined
+        ? Math.max(0, totalRounds - context.teamStanding.played) : undefined;
+      const oppRemaining  = context.opponentStanding?.played !== undefined
+        ? Math.max(0, totalRounds - context.opponentStanding.played) : undefined;
+
+      const remParts: string[] = [];
+      if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
+      if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
+
+      lines.push(
+        `SEASON STATE: Round ${played} of ${totalRounds} — ` +
+        `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
+        (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
+      );
+      if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
+    }
+    if (context.teamManager || context.opponentManager) {
+      const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
+      const oppMgr  = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
+      lines.push(`HEAD COACHES: ${[teamMgr, oppMgr].filter(Boolean).join(' | ')}`);
+    }
     lines.push('');
   }
 
-  lines.push(`SPORT: ${sportCtx}`);
-
-  // ── Season state (computed) ──────────────────────────────────────────────────
-  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
-  const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
-  if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
-    const quarter   = Math.ceil(totalRounds / 4);
-    const third     = Math.ceil(totalRounds / 3);
-    const runHomeCutoff = Math.floor(totalRounds * 0.65);
-    const isFinalsPhase = played >= totalRounds; // regular season complete
-    const phase =
-      isFinalsPhase      ? 'finals series'
-      : played <= quarter    ? 'early season'
-      : played <= runHomeCutoff ? 'mid-season'
-      : 'run home — final stretch of the regular season';
-    const roundsRemaining = totalRounds - played;
-
-    const teamRemaining = context.teamStanding?.played !== undefined
-      ? Math.max(0, totalRounds - context.teamStanding.played) : undefined;
-    const oppRemaining  = context.opponentStanding?.played !== undefined
-      ? Math.max(0, totalRounds - context.opponentStanding.played) : undefined;
-
-    const remParts: string[] = [];
-    if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
-    if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
-
-    lines.push(
-      `SEASON STATE: Round ${played} of ${totalRounds} — ` +
-      `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
-      (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
-    );
-    if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
-  }
-  if (context.teamManager || context.opponentManager) {
-    const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
-    const oppMgr  = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
-    lines.push(`HEAD COACHES: ${[teamMgr, oppMgr].filter(Boolean).join(' | ')}`);
-  }
-  lines.push('');
-
   // World Cup: group standings table + advancement scenario
-  if (league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
     const wc = context.worldCup;
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
     const groupNotStarted = wcGroupTable.every(r => r.played === 0);
@@ -1242,221 +1334,264 @@ export function buildDataBlock(
     }
   }
 
-  // Cup/European competition group/league-phase standings (highest relevance)
-  const cs = context.competitionStage;
-  if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
-    lines.push(`${(competition ?? 'COMPETITION').toUpperCase()} STANDINGS (${cs.groupName ?? 'League Phase'}):`);
-    for (const [name, s] of [
-      [teamName, cs.teamStanding],
-      [opponentName, cs.opponentStanding],
-    ] as const) {
-      if (!s) continue;
-      const draws = s.draws > 0 ? ` ${s.draws}D` : '';
-      const record = `${s.wins}W${draws} ${s.losses}L`;
-      lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}, competition points: ${s.points ?? 0}`);
-    }
-    lines.push('');
-  }
-
-  // Ladder/Table positions — suppressed for cup/off-league fixtures and knockout-phase ties.
-  // When a game is in any non-primary competition (isOffLeague=true), the domestic
-  // league table has zero bearing on the cup result; including it only invites the
-  // model to misuse it. Exception: F1 driver championship standing is always relevant.
-  const isKnockoutTie = !!cs && !cs.isGroupPhase;
-  const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
-  if (!suppressStandings) {
-    const isF1Standing = league === 'f1';
-
-    if (isF1Standing) {
-      // F1: show driver championship standing only
-      if (context.teamStanding) {
-        lines.push('DRIVERS\' CHAMPIONSHIP STANDING:');
-        const s = context.teamStanding;
-        const constructor = s.constructorName ? ` (${s.constructorName})` : '';
-        lines.push(`  ${teamName}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
-        lines.push('');
-      }
-    } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
-      // Full table with mathematical status analysis
-      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
-      const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
-
-      if (tableLines.length > 0) {
-        lines.push(...tableLines);
-        lines.push('');
-      }
-
-      if (statusNotes.length > 0) {
-        lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
-        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
-        lines.push('');
-      }
-
-      // Derived standings arithmetic — pre-computed so the model never has to
-      const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
-      if (derivedFacts.length > 0) {
-        lines.push(...derivedFacts);
-        lines.push('');
-      }
-    } else if (context.teamStanding || context.opponentStanding) {
-      // Fallback: just the two teams' rows (no full table available)
-      lines.push('CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):');
+  if (enabled('standings')) {
+    // Cup/European competition group/league-phase standings (highest relevance)
+    const cs = context.competitionStage;
+    if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
+      lines.push(`${(competition ?? 'COMPETITION').toUpperCase()} STANDINGS (${cs.groupName ?? 'League Phase'}):`);
       for (const [name, s] of [
-        [teamName, context.teamStanding],
-        [opponentName, context.opponentStanding],
-      ] as [string, typeof context.teamStanding][]) {
+        [teamName, cs.teamStanding],
+        [opponentName, cs.opponentStanding],
+      ] as const) {
         if (!s) continue;
         const draws = s.draws > 0 ? ` ${s.draws}D` : '';
         const record = `${s.wins}W${draws} ${s.losses}L`;
-        const extra = s.points !== undefined
-          ? `, competition points: ${s.points}`
-          : s.percentage !== undefined
-            ? `, percentage: ${s.percentage.toFixed(1)}%`
-            : '';
-        lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
+        lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}, competition points: ${s.points ?? 0}`);
+      }
+      lines.push('');
+    }
+
+    // Ladder/Table positions — suppressed for cup/off-league fixtures and knockout-phase ties.
+    // When a game is in any non-primary competition (isOffLeague=true), the domestic
+    // league table has zero bearing on the cup result; including it only invites the
+    // model to misuse it. Exception: F1 driver championship standing is always relevant.
+    const isKnockoutTie = !!cs && !cs.isGroupPhase;
+    const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
+    if (!suppressStandings) {
+      const isF1Standing = league === 'f1';
+
+      if (isF1Standing) {
+        // F1: show driver championship standing only
+        if (context.teamStanding) {
+          lines.push('DRIVERS\' CHAMPIONSHIP STANDING:');
+          const s = context.teamStanding;
+          const constructor = s.constructorName ? ` (${s.constructorName})` : '';
+          lines.push(`  ${teamName}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
+          lines.push('');
+        }
+      } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
+        // Full table with mathematical status analysis
+        const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+        const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
+
+        if (tableLines.length > 0) {
+          lines.push(...tableLines);
+          lines.push('');
+        }
+
+        if (statusNotes.length > 0) {
+          lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
+          statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+          lines.push('');
+        }
+
+        // Derived standings arithmetic — pre-computed so the model never has to
+        const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
+        if (derivedFacts.length > 0) {
+          lines.push(...derivedFacts);
+          lines.push('');
+        }
+      } else if (context.teamStanding || context.opponentStanding) {
+        // Fallback: just the two teams' rows (no full table available)
+        lines.push('CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):');
+        for (const [name, s] of [
+          [teamName, context.teamStanding],
+          [opponentName, context.opponentStanding],
+        ] as [string, typeof context.teamStanding][]) {
+          if (!s) continue;
+          const draws = s.draws > 0 ? ` ${s.draws}D` : '';
+          const record = `${s.wins}W${draws} ${s.losses}L`;
+          const extra = s.points !== undefined
+            ? `, competition points: ${s.points}`
+            : s.percentage !== undefined
+              ? `, percentage: ${s.percentage.toFixed(1)}%`
+              : '';
+          lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
+        }
+        lines.push('');
+      }
+    }
+  }
+
+  // Recent form prefers the context fields (populated from ESPN's lastFiveGames /
+  // Squiggle games by the fetchers); falls back to positional results otherwise.
+  const tForm = context.teamRecentForm ?? teamResults;
+  const oForm = context.opponentRecentForm ?? oppResults;
+
+  if (enabled('recentForm')) {
+    // Recent form — spans all competitions
+    if (tForm.length > 0 || oForm.length > 0) {
+      const isF1 = league === 'f1';
+      const formHeading = isF1
+        ? 'RECENT FORM — Race Results (most recent first):'
+        : isOffLeague
+          ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
+          : 'RECENT FORM (last 5 fixtures, most recent first):';
+      lines.push(formHeading);
+      if (tForm.length > 0) {
+        if (isF1) {
+          // For F1: format as "P{position} — {race name}" instead of W/L score
+          const f1FormStr = tForm.map(r => `P${r.teamScore} — ${r.opponent}`).join('; ');
+          lines.push(`  ${teamName}: ${f1FormStr}`);
+        } else {
+          lines.push(`  ${teamName}: ${formString(tForm)} — ${formDetail(tForm)}`);
+        }
+      }
+      if (oForm.length > 0 && league !== 'f1') {
+        lines.push(`  ${opponentName}: ${formString(oForm)} — ${formDetail(oForm)}`);
       }
       lines.push('');
     }
   }
 
-  // Recent form — spans all competitions
-  if (teamResults.length > 0 || oppResults.length > 0) {
-    const isF1 = league === 'f1';
-    const formHeading = isF1
-      ? 'RECENT FORM — Race Results (most recent first):'
-      : isOffLeague
-        ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
-        : 'RECENT FORM (last 5 fixtures, most recent first):';
-    lines.push(formHeading);
-    if (teamResults.length > 0) {
-      if (isF1) {
-        // For F1: format as "P{position} — {race name}" instead of W/L score
-        const f1FormStr = teamResults.map(r => `P${r.teamScore} — ${r.opponent}`).join('; ');
-        lines.push(`  ${teamName}: ${f1FormStr}`);
-      } else {
-        lines.push(`  ${teamName}: ${formString(teamResults)} — ${formDetail(teamResults)}`);
+  // Head-to-head — recent meetings between the two sides. Deliberately omits years
+  // (the system prompt forbids citing specific years) and presents an aggregate
+  // plus the most recent margin as analytical context, not a recitable record.
+  if (enabled('headToHead')) {
+    const h2h = context.headToHead ?? [];
+    if (h2h.length >= 2 && league !== 'f1') {
+      const w = h2h.filter(m => m.result === 'W').length;
+      const d = h2h.filter(m => m.result === 'D').length;
+      const l = h2h.filter(m => m.result === 'L').length;
+      lines.push(`HEAD-TO-HEAD — last ${h2h.length} meetings between these two sides (do NOT cite specific years or dates):`);
+      lines.push(`  Recent record (${teamName} perspective): ${w}W ${d}D ${l}L`);
+      const last = h2h[0];
+      const venueNote = last.teamWasHome === true ? ' at home'
+        : last.teamWasHome === false ? ' away' : '';
+      const lastVerb = last.result === 'D' ? 'drew' : last.result === 'W' ? 'won' : 'lost';
+      lines.push(
+        `  Most recent meeting: ${teamName} ${lastVerb}${venueNote} ${last.teamScore}–${last.opponentScore}.`,
+      );
+      lines.push('  Use this only to characterise the rivalry/trend — do NOT recite the full result list.');
+      lines.push('');
+    }
+  }
+
+  if (enabled('personnel')) {
+    // Recent starting lineups
+    const teamLineup = context.teamLastLineup ?? [];
+    const oppLineup  = context.opponentLastLineup ?? [];
+    if (teamLineup.length > 0 || oppLineup.length > 0) {
+      lines.push('MOST RECENT STARTING LINEUP (from each side\'s last completed game — a likely-selection guide, NOT a confirmed teamsheet for this fixture):');
+      if (teamLineup.length > 0)
+        lines.push(`  ${teamName}: ${teamLineup.join(', ')}`);
+      if (oppLineup.length > 0)
+        lines.push(`  ${opponentName}: ${oppLineup.join(', ')}`);
+      lines.push('');
+    }
+
+    // Player availability — squad (AFL) and injury report (NRL/EPL/SRU)
+    const teamSquad = context.teamSquad ?? [];
+    const oppSquad  = context.opponentSquad ?? [];
+    const teamInj   = context.teamInjuryReport ?? [];
+    const oppInj    = context.opponentInjuryReport ?? [];
+
+    if (teamSquad.length > 0 || oppSquad.length > 0) {
+      // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
+      lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
+      const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
+      const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
+
+      for (const [name, squad, lineupSet] of [
+        [teamName,     teamSquad, teamLineupSet],
+        [opponentName, oppSquad,  oppLineupSet],
+      ] as [string, string[], Set<string>][]) {
+        if (squad.length === 0) continue;
+        const squadSet = new Set(squad.map((n: string) => n.toLowerCase()));
+        // Players in last lineup but NOT in current squad → likely absent
+        const absent   = (lineupSet.size > 0)
+          ? Array.from(lineupSet).filter((n: string) => !squadSet.has(n)).map((n: string) =>
+              squad.find((s: string) => s.toLowerCase() === n) ?? n,
+            )
+          : [];
+        // Players in current squad NOT in last lineup → possible return or new inclusion
+        const returns  = (lineupSet.size > 0)
+          ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
+          : [];
+
+        lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
+        if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
+        if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
       }
+      lines.push('');
     }
-    if (oppResults.length > 0 && league !== 'f1') {
-      lines.push(`  ${opponentName}: ${formString(oppResults)} — ${formDetail(oppResults)}`);
+
+    if (teamInj.length > 0 || oppInj.length > 0) {
+      lines.push('INJURY REPORT (confirmed/likely unavailable for this fixture):');
+      const fmtInjuries = (injuries: Array<{ name: string; status: string }>) =>
+        injuries.map(i => `${i.name} (${i.status})`).join(', ');
+      if (teamInj.length > 0) lines.push(`  ${teamName}: ${fmtInjuries(teamInj)}`);
+      if (oppInj.length > 0)  lines.push(`  ${opponentName}: ${fmtInjuries(oppInj)}`);
+      lines.push('');
     }
-    lines.push('');
-  }
 
-  // Team news and headlines
-  const teamNews = context.teamNews ?? [];
-  const oppNews  = context.opponentNews ?? [];
-  if (teamNews.length > 0 || oppNews.length > 0) {
-    lines.push('TEAM NEWS & RECENT HEADLINES:');
-    teamNews.slice(0, 3).forEach(n => {
-      const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-      lines.push(`  ${teamName}: "${n.headline}"${desc}`);
-    });
-    oppNews.slice(0, 3).forEach(n => {
-      const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-      lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
-    });
-    lines.push('');
-  }
-
-  // Recent starting lineups
-  const teamLineup = context.teamLastLineup ?? [];
-  const oppLineup  = context.opponentLastLineup ?? [];
-  if (teamLineup.length > 0 || oppLineup.length > 0) {
-    lines.push('MOST RECENT STARTING LINEUP (use to infer likely selection for this fixture):');
-    if (teamLineup.length > 0)
-      lines.push(`  ${teamName}: ${teamLineup.join(', ')}`);
-    if (oppLineup.length > 0)
-      lines.push(`  ${opponentName}: ${oppLineup.join(', ')}`);
-    lines.push('');
-  }
-
-  // Player availability — squad (AFL) and injury report (NRL/EPL/SRU)
-  const teamSquad = context.teamSquad ?? [];
-  const oppSquad  = context.opponentSquad ?? [];
-  const teamInj   = context.teamInjuryReport ?? [];
-  const oppInj    = context.opponentInjuryReport ?? [];
-
-  if (teamSquad.length > 0 || oppSquad.length > 0) {
-    // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
-    lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
-    const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
-    const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
-
-    for (const [name, squad, lineupSet] of [
-      [teamName,     teamSquad, teamLineupSet],
-      [opponentName, oppSquad,  oppLineupSet],
-    ] as [string, string[], Set<string>][]) {
-      if (squad.length === 0) continue;
-      const squadSet = new Set(squad.map((n: string) => n.toLowerCase()));
-      // Players in last lineup but NOT in current squad → likely absent
-      const absent   = (lineupSet.size > 0)
-        ? Array.from(lineupSet).filter((n: string) => !squadSet.has(n)).map((n: string) =>
-            squad.find((s: string) => s.toLowerCase() === n) ?? n,
-          )
-        : [];
-      // Players in current squad NOT in last lineup → possible return or new inclusion
-      const returns  = (lineupSet.size > 0)
-        ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
-        : [];
-
-      lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
-      if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
-      if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
+    // Key players from the most recent game (basketball / any sport that supplies them)
+    const teamKP = context.teamKeyPlayers ?? [];
+    const oppKP  = context.opponentKeyPlayers ?? [];
+    if (teamKP.length > 0 || oppKP.length > 0) {
+      const gameLabel = context.keyPlayersGameLabel ? ` (${context.keyPlayersGameLabel})` : '';
+      lines.push(`KEY PERFORMERS — most recent game${gameLabel}:`);
+      if (teamKP.length > 0)
+        lines.push(`  ${teamName}: ${teamKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+      if (oppKP.length > 0)
+        lines.push(`  ${opponentName}: ${oppKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+      lines.push('');
     }
-    lines.push('');
   }
 
-  if (teamInj.length > 0 || oppInj.length > 0) {
-    lines.push('INJURY REPORT (confirmed/likely unavailable for this fixture):');
-    const fmtInjuries = (injuries: Array<{ name: string; status: string }>) =>
-      injuries.map(i => `${i.name} (${i.status})`).join(', ');
-    if (teamInj.length > 0) lines.push(`  ${teamName}: ${fmtInjuries(teamInj)}`);
-    if (oppInj.length > 0)  lines.push(`  ${opponentName}: ${fmtInjuries(oppInj)}`);
-    lines.push('');
+  // Player-data availability — reflects the actual fixture data, independent of the
+  // personnel toggle. (Block-independent so the trailing sentinel below stays
+  // invariant across the sandbox's block-decomposition; see the sentinel note.)
+  const hasPlayerData = (
+    (context.teamLastLineup?.length ?? 0) > 0 || (context.opponentLastLineup?.length ?? 0) > 0 ||
+    (context.teamSquad?.length ?? 0) > 0 || (context.opponentSquad?.length ?? 0) > 0 ||
+    (context.teamInjuryReport?.length ?? 0) > 0 || (context.opponentInjuryReport?.length ?? 0) > 0 ||
+    (context.teamKeyPlayers?.length ?? 0) > 0 || (context.opponentKeyPlayers?.length ?? 0) > 0
+  );
+
+  if (enabled('mediaWatch')) {
+    // FROM THE MEDIA — attributed editorial source material (news headlines + model
+    // tips). This is the ONLY home for subjective/predictive content; it feeds the
+    // "mediaWatch" output field, never the factual prose. Suppressed when empty.
+    const teamNews = context.teamNews ?? [];
+    const oppNews  = context.opponentNews ?? [];
+    const hasNews  = teamNews.length > 0 || oppNews.length > 0;
+    const hasTips  = !!context.tips;
+    if (hasNews || hasTips) {
+      lines.push('FROM THE MEDIA (attributed editorial source material — present these as reporting or opinion with attribution, NEVER as your own factual claim; paraphrase, do not fabricate quotes):');
+      if (hasNews) {
+        lines.push('  RECENT HEADLINES (may be speculative or outdated):');
+        teamNews.slice(0, 3).forEach(n => {
+          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
+          lines.push(`    ${teamName}: "${n.headline}"${desc}`);
+        });
+        oppNews.slice(0, 3).forEach(n => {
+          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
+          lines.push(`    ${opponentName}: "${n.headline}"${desc}`);
+        });
+      }
+      if (hasTips) {
+        const t = context.tips!;
+        // Keep the exact "average predicted winning margin: N points" phrasing —
+        // validatePointsClaims keys off it to bound any margin claim in the output.
+        lines.push(`  MODEL TIP (a prediction, not a result): ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
+      }
+      lines.push('');
+    }
   }
 
-  // Key players from the most recent game (basketball / any sport that supplies them)
-  const teamKP = context.teamKeyPlayers ?? [];
-  const oppKP  = context.opponentKeyPlayers ?? [];
-  if (teamKP.length > 0 || oppKP.length > 0) {
-    const gameLabel = context.keyPlayersGameLabel ? ` (${context.keyPlayersGameLabel})` : '';
-    lines.push(`KEY PERFORMERS — most recent game${gameLabel}:`);
-    if (teamKP.length > 0)
-      lines.push(`  ${teamName}: ${teamKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
-    if (oppKP.length > 0)
-      lines.push(`  ${opponentName}: ${oppKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
-    lines.push('');
-  }
-
-  // Player-data availability sentinel — must appear AFTER all lineup/squad/injury blocks
-  // so the model has a clear, final signal before it generates.
-  const hasPlayerData = teamLineup.length > 0 || oppLineup.length > 0 ||
-    teamSquad.length > 0 || oppSquad.length > 0 ||
-    teamInj.length > 0  || oppInj.length > 0 ||
-    teamKP.length > 0   || oppKP.length > 0;
-  if (hasPlayerData) {
-    lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or TEAM NEWS sections above. Any player name not in those sections is forbidden — even if you know who plays for the team from your training data.');
-    lines.push('');
-  } else {
-    lines.push('NO PLAYER DATA: No lineup, squad, or injury report is available for this fixture. Do NOT name any individual player in any field. The playerSpotlight field must describe a tactical unit, position group, or system — never a named individual. Inventing player names from training knowledge is a grounding violation.');
-    lines.push('');
-  }
-
-  // Model tips (AFL Squiggle)
-  if (context.tips) {
-    const t = context.tips;
-    lines.push(`EXPERT MODEL PREDICTIONS: ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
-    lines.push('');
-  }
-
-  // Weather at kickoff — only included when conditions are notable
-  if (weather && weather.isNotable) {
-    lines.push(`WEATHER AT KICKOFF: ${weather.icon} ${weather.description}`);
-    lines.push(`  Temperature: ${weather.tempC}°C`);
-    if (weather.precipMm > 0.5)    lines.push(`  Precipitation: ${weather.precipMm}mm (${weather.precipProbability}% chance)`);
-    if (weather.windKmh > 25)      lines.push(`  Wind: ${weather.windKmh} km/h`);
-    lines.push('');
+  if (enabled('weather')) {
+    // Weather at kickoff — only included when conditions are notable. Prefers the
+    // context field (populated by buildPreviewContext for outdoor leagues); falls
+    // back to the positional weather arg.
+    const wx = context.weather ?? weather;
+    if (wx && wx.isNotable) {
+      lines.push(`WEATHER AT KICKOFF: ${wx.icon} ${wx.description}`);
+      lines.push(`  Temperature: ${wx.tempC}°C`);
+      if (wx.precipMm > 0.5)    lines.push(`  Precipitation: ${wx.precipMm}mm (${wx.precipProbability}% chance)`);
+      if (wx.windKmh > 25)      lines.push(`  Wind: ${wx.windKmh} km/h`);
+      lines.push('');
+    }
   }
 
   if (compact) {
@@ -1469,12 +1604,153 @@ export function buildDataBlock(
     lines.push('• "verdict": ONE sentence, max 20 words. Most likely outcome and why.');
     lines.push('• "keyInsights": exactly TWO specific, grounded points, max 8 words each — no filler.');
   }
+  // Player-data availability sentinel — emitted AFTER every data block so it is the
+  // model's final signal, and so it always sits in the trailing footer (invariant
+  // across block toggles, which keeps the sandbox decomposition byte-faithful).
+  if (hasPlayerData) {
+    lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or KEY PERFORMERS sections above (plus any names in the FROM THE MEDIA block, with attribution). Any player name from outside the data is forbidden — even if you know who plays for the team from your training data.');
+    lines.push('');
+  } else {
+    lines.push('NO PLAYER DATA: No lineup, squad, or injury report is available for this fixture. Do NOT name any individual player in any field. The playerSpotlight field must describe a tactical unit, position group, or system — never a named individual. Inventing player names from training knowledge is a grounding violation. (Names appearing in the FROM THE MEDIA block may be cited in mediaWatch with attribution.)');
+    lines.push('');
+  }
+
   lines.push(hasPlayerData
     ? 'Generate the match preview using the data provided above. Do not invent statistics, historical records, or player names not in the sections above.'
     : 'Generate the match preview using the data provided above. Do not invent statistics or historical records not given. IMPORTANT: no player data was provided — the playerSpotlight field must describe a tactical role or positional unit, never a named individual player.'
   );
 
   return lines.join('\n');
+}
+
+/**
+ * Assembles the LLM user-message from the fixture context.
+ *
+ * @param enabledBlocks - when provided, only these blocks are included. When omitted, all blocks
+ *   are included and the output is byte-identical to buildDataBlock with the same args.
+ */
+export function assemblePrompt(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  teamResults: GameResult[],
+  oppResults: GameResult[],
+  competition?: string,
+  compact?: boolean,
+  weather?: WeatherData,
+  venue?: string,
+  isHome?: boolean,
+  teamId?: string,
+  opponentId?: string,
+  seriesSummary?: string,
+  enabledBlocks?: Set<BlockId>,
+): string {
+  return buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+    enabledBlocks,
+  );
+}
+
+/** Finds lines present in `full` but absent in `without` (preserving order). */
+function diffRemoved(full: string, without: string): string {
+  const fullLines  = full.split('\n');
+  const withLines  = without.split('\n');
+  const removed: string[] = [];
+  let j = 0;
+  for (const line of fullLines) {
+    if (j < withLines.length && line === withLines[j]) {
+      j++;
+    } else {
+      removed.push(line);
+    }
+  }
+  return removed.join('\n');
+}
+
+/** Longest common trailing line-run shared by two assembled prompts. */
+function commonSuffix(a: string, b: string): string {
+  const al = a.split('\n');
+  const bl = b.split('\n');
+  let i = al.length - 1;
+  let j = bl.length - 1;
+  const suffix: string[] = [];
+  while (i >= 0 && j >= 0 && al[i] === bl[j]) {
+    suffix.unshift(al[i]);
+    i--; j--;
+  }
+  return suffix.join('\n');
+}
+
+/** Removes a known trailing line-run from a prompt. */
+function stripSuffix(full: string, suffix: string): string {
+  if (!suffix) return full;
+  const fl = full.split('\n');
+  const sl = suffix.split('\n');
+  return fl.slice(0, fl.length - sl.length).join('\n');
+}
+
+/**
+ * Decomposes the assembled prompt into per-block text plus a shared footer, for
+ * sandbox use. The footer (player-data sentinel + closing instruction) is always
+ * appended last by buildDataBlock regardless of which blocks are enabled, so it
+ * is extracted separately rather than folded into matchFacts.
+ *
+ * Faithfulness contract: with every block enabled,
+ *   [matchFacts, ...toggleableBlocks].map(b => b.text).filter(Boolean).join('\n')
+ *   + '\n' + footer
+ * reproduces buildDataBlock(...) byte-for-byte. (Verified by diff in
+ * scripts/verify-sandbox-faithful.ts.)
+ */
+export function buildBlocks(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  teamResults: GameResult[],
+  oppResults: GameResult[],
+  competition?: string,
+  compact?: boolean,
+  weather?: WeatherData,
+  venue?: string,
+  isHome?: boolean,
+  teamId?: string,
+  opponentId?: string,
+  seriesSummary?: string,
+): { blocks: BlockResult[]; footer: string } {
+  const full = buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+  );
+
+  // matchFacts is always-on; the matchFacts-only prompt is matchFacts text + footer.
+  const matchFactsOnly = buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+    new Set<BlockId>(['matchFacts']),
+  );
+
+  // Footer = the trailing lines shared by the full prompt and the matchFacts-only
+  // prompt — i.e. the part that belongs to no toggleable block.
+  const footer = commonSuffix(full, matchFactsOnly);
+
+  const blocks = BLOCK_ORDER.map(id => {
+    if (id === 'matchFacts') {
+      // matchFacts text = the matchFacts-only prompt with the shared footer removed.
+      return { id, label: BLOCK_LABELS[id], text: stripSuffix(matchFactsOnly, footer) };
+    }
+    // For toggleable blocks: build without this block, diff to find what it contributes.
+    const others = new Set(BLOCK_ORDER.filter(b => b !== id));
+    const without = buildDataBlock(
+      league, teamName, opponentName, context, teamResults, oppResults,
+      competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+      others,
+    );
+    return { id, label: BLOCK_LABELS[id], text: diffRemoved(full, without) };
+  });
+
+  return { blocks, footer };
 }
 
 export function buildUpdatePrompt(

@@ -215,6 +215,20 @@ export interface TipSummary {
   avgMargin: number;
 }
 
+/** One past meeting between the two fixture teams, from the followed team's perspective. */
+export interface HeadToHeadMeeting {
+  /** ISO date of the meeting. Kept for ordering only — NEVER surfaced as a year in the prompt. */
+  date: string;
+  /** Followed team's score. */
+  teamScore: number;
+  /** Opponent's score. */
+  opponentScore: number;
+  /** Result from the followed team's perspective. */
+  result: 'W' | 'L' | 'D';
+  /** Whether the followed team was at home for this meeting (best-effort from ESPN's atVs). */
+  teamWasHome?: boolean;
+}
+
 export interface CompetitionStage {
   /** Human-readable stage label — e.g. "Round of 16", "Quarter-finals", "Group A" */
   roundName: string;
@@ -257,6 +271,20 @@ export interface PreviewContext {
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
   tips?: TipSummary;
+  /**
+   * Each side's recent results (most recent first), sourced from ESPN's
+   * `lastFiveGames` summary block. When present, the RECENT FORM block reads from
+   * here; otherwise it falls back to the positional results passed to buildDataBlock.
+   */
+  teamRecentForm?: GameResult[];
+  opponentRecentForm?: GameResult[];
+  /** Recent meetings between the two fixture teams (most recent first), team perspective. */
+  headToHead?: HeadToHeadMeeting[];
+  /**
+   * Forecast at kickoff for outdoor fixtures (Open-Meteo). When present, the WEATHER
+   * block reads from here; otherwise it falls back to the positional weather arg.
+   */
+  weather?: WeatherData;
   /** Cup/European competitions — current stage info and optional group standings. */
   competitionStage?: CompetitionStage;
   /** Head coach / manager name, used to inform tactical analysis. */
@@ -380,6 +408,14 @@ export interface AIPreview {
   verdict: string;
   /** 3–4 short punchy tactical or contextual insights. */
   keyInsights: string[];
+  /**
+   * "From the media" — attributed editorial talking points sourced from the
+   * fetched news headlines, model tips, and expected-lineup framing. Every entry
+   * is presented as reporting or opinion ("[Outlet] reports…", "The tipsters
+   * lean…"), never as the model's own factual claim. Omitted when there is no
+   * editorial data for the fixture.
+   */
+  mediaWatch?: string[];
 }
 
 // ─── Weather ─────────────────────────────────────────────────────────────────

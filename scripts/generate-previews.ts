@@ -28,8 +28,7 @@ import {
   LOOKBACK_DAYS,
   type TaggedFixture,
 } from '@/lib/preview-lifecycle';
-import type { UpcomingGame, PreviewContext } from '@/types';
-import { MANAGER } from '@/lib/managers';
+import type { UpcomingGame } from '@/types';
 
 // ─── Env loading ──────────────────────────────────────────────────────────────
 // Load .env.local before anything reads process.env. Already-set env vars win
@@ -166,11 +165,7 @@ async function main() {
 
         log(`  force gameId=${next.id} league=${next.league} team=${teamName} vs ${next.opponent}`);
 
-        const forceCtx: Partial<PreviewContext> = {
-          teamManager:     MANAGER[next.teamId],
-          opponentManager: next.opponentId ? MANAGER[next.opponentId] : undefined,
-        };
-        const result = await generateAndStorePreview(next.league, next, teamName, forceCtx);
+        const result = await generateAndStorePreview(next.league, next, teamName);
         if (result.ok) {
           forcedCount++;
         } else {
@@ -232,11 +227,7 @@ async function main() {
 
         log(`  ${action} gameId=${fixture.id} league=${fixture.league} team=${teamName} vs ${fixture.opponent}`);
 
-        const ctx: Partial<PreviewContext> = {
-          teamManager:     MANAGER[fixture.teamId],
-          opponentManager: fixture.opponentId ? MANAGER[fixture.opponentId] : undefined,
-        };
-        const result = await generateAndStorePreview(fixture.league, fixture, teamName, ctx);
+        const result = await generateAndStorePreview(fixture.league, fixture, teamName);
         if (result.ok) {
           if (action === 'initial')  initialCount++;
           if (action === 'regen-48') regen48Count++;

@@ -676,6 +676,17 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
                   )}
                 </div>
               )}
+              {/* From the media (attributed editorial talking points) */}
+              {aiPreview.mediaWatch && aiPreview.mediaWatch.length > 0 && (
+                <div className="sh-detail-section">
+                  <div className="sh-detail-head"><Newspaper className="sh-icon h-[13px] w-[13px]" />From the media</div>
+                  <ul className="sh-quick-list">
+                    {aiPreview.mediaWatch.map((item, i) => (
+                      <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-[11px] text-white/30 italic">Preview being prepared…</p>
@@ -1643,6 +1654,18 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
               </blockquote>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── From the media (AI only, attributed editorial talking points) ── */}
+      {!compact && !loading && aiPreview?.mediaWatch && aiPreview.mediaWatch.length > 0 && (
+        <div>
+          <p className="sh-detail-head"><Newspaper className="h-3 w-3" />From the media</p>
+          <ul className="sh-detail-list">
+            {aiPreview.mediaWatch.map((item, i) => (
+              <li key={i} className="sh-detail-body-sm">{item}</li>
+            ))}
+          </ul>
         </div>
       )}
 

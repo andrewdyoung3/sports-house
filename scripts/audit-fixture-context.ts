@@ -33,7 +33,7 @@ async function fetchAFLStandings(): Promise<LeagueTableRow[]> {
     wins:     s.wins    ?? 0,
     draws:    s.draws   ?? 0,
     losses:   s.losses  ?? 0,
-    points:   s.points  ?? 0,
+    points:   s.pts ?? 0,  // Squiggle field is "pts" not "points"
   }));
 }
 

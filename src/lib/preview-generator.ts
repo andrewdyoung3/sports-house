@@ -14,6 +14,7 @@ import type { AIPreview, UpcomingGame, PreviewContext } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, collectPlayerWhitelist } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { buildPreviewContext } from '@/lib/preview-context';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 
@@ -96,7 +97,7 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
   'between', 'within', 'beyond', 'before', 'after', 'during', 'through',
 ]);
 
-function validatePlayerNames(output: AIPreview, prompt: string): string[] {
+export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
 
   const fixtureM = prompt.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
@@ -121,9 +122,13 @@ function validatePlayerNames(output: AIPreview, prompt: string): string[] {
     }
   }
 
+  // When player data is present we scan the whole output. Otherwise we scan the
+  // factual playerSpotlight PLUS the attributed mediaWatch — names invented in
+  // either are caught, while real names from the fetched headlines pass because
+  // collectPlayerWhitelist added them to the whitelist.
   const textToScan = hasPlayerData
     ? JSON.stringify(output)
-    : (output.playerSpotlight ?? '');
+    : `${output.playerSpotlight ?? ''} ${(output.mediaWatch ?? []).join(' ')}`;
 
   const violations: string[] = [];
   const seen = new Set<string>();
@@ -179,7 +184,11 @@ export async function callOllama(
   const doGenerate = async (): Promise<AIPreview> => {
     const response = await ollamaClient.chat.completions.create({
       model:      modelOverride ?? AI_MODEL,
-      max_tokens: maxTokensOverride ?? (compact ? 2500 : 4000),
+      // Non-compact ceiling is 6000 (headroom for richer future prompts; current
+      // previews land well under 1000 tokens so this never costs anything today).
+      // compact (2500) is unreachable on the main preview path — generateAndStorePreview
+      // always passes compact=false — and is left untouched.
+      max_tokens: maxTokensOverride ?? (compact ? 2500 : 6000),
       messages:   [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: prompt },
@@ -276,9 +285,9 @@ export async function upsertPreview(
  * the result to Supabase. Designed to be called server-side or from the
  * standalone generator script — never from the browser.
  *
- * Context (standings, form, news) is intentionally minimal here: this is the
- * "warm" generation path. The full-context path runs when a user opens a game
- * panel with live data already loaded in the client.
+ * Builds a rich context (standings, WC group, managers) via buildPreviewContext,
+ * then merges any caller-provided enrichment (form/news/lineups from the API
+ * route). All entry points — heartbeat, poller, regen — converge here.
  */
 export async function generateAndStorePreview(
   league: string,
@@ -286,15 +295,23 @@ export async function generateAndStorePreview(
   teamName: string,
   previewContext?: Partial<PreviewContext>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const isF1         = league === 'f1';
-  const maxTokens    = isF1 ? 5000 : undefined;
+  const isF1      = league === 'f1';
+  // Non-F1 falls through to callOllama's 6000 default. F1 previews are longer
+  // (driver + constructor + championship detail); keep them at the same ceiling.
+  const maxTokens = isF1 ? 6000 : undefined;
 
   try {
+    // Build the canonical base context (standings + WC group + managers).
+    // Results are cached per league — safe for batch heartbeat runs.
+    const baseCtx = await buildPreviewContext(league, fixture, teamName);
+    // Merge: baseCtx provides structure; previewContext adds form/news/lineups.
+    const ctx = { ...baseCtx, ...previewContext } as PreviewContext;
+
     const prompt = buildDataBlock(
       league,
       teamName,
       fixture.opponent,
-      (previewContext ?? {}) as PreviewContext,
+      ctx,
       [],
       [],
       fixture.competition,
