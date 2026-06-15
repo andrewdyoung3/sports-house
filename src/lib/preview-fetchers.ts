@@ -23,6 +23,7 @@ import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdv
 import {
   cricketConfigured, cricMatchInfo, cricMatchSquad, cricSeriesInfo, type CricMatch,
 } from '@/lib/cricketdata';
+import { fetchAflLineups } from '@/lib/afl-roster';
 
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
 // SQUIGGLE_NAME lives in @/lib/afl (derived from teams.ts/team-logos.ts).
@@ -209,6 +210,14 @@ export async function fetchAFLPreview(
           }
           } // end Array.isArray guard
         }
+      }
+
+      // AFL.com named team lists (Squiggle squads return null) — the real source.
+      // Empty until teams are named (~Thursday); overrides Squiggle when present.
+      if (matchGame.round) {
+        const afl = await fetchAflLineups(Number(matchGame.round), sqTeam, oppSqName);
+        if (afl.teamSquad)     teamSquad = afl.teamSquad;
+        if (afl.opponentSquad) opponentSquad = afl.opponentSquad;
       }
     }
   }
