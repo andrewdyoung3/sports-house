@@ -19,6 +19,7 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
 import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
+import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -750,74 +751,105 @@ const BBL_LEAGUE_TEAMS: Record<string, TeamEntry> = {
   'Sydney Thunder':      { id: 'bbl-thunder',    color: '#8dc63f', abbr: 'ST'  },
 };
 
-export async function fetchBBLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
-  const nowDate    = new Date();
-  const lookbackMs = lookbackDays * 86400_000;
-  const start      = lookbackDays > 0 ? new Date(nowDate.getTime() - lookbackMs) : nowDate;
-  const end        = new Date(nowDate.getTime() + 150 * 86400_000);
-  const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+// ─── Shared cricket fixtures (cricketdata.org) ────────────────────────────────
+// ESPN/cricinfo cricket endpoints are WAF-blocked server-side, so cricket fixtures
+// come from cricketdata.org via the cached client. Quota is daily (100 hits), so
+// currentMatches is fetched once per process and shared by BBL + internationals;
+// series_info is only pulled for series that already contain a tracked-team match,
+// and capped, so a heartbeat across both cricket leagues costs ~1 hit when nothing
+// tracked is live. Emits ONE fixture per match (teamId = first tracked side), as
+// the ESPN path did — avoids duplicate game ids.
 
-  const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
-    { cache: 'no-store' },
-  );
-  if (!res.ok) return [];
+async function buildCricketFixtures(
+  prefix: 'cint' | 'bbl',
+  teamMap: Record<string, TeamEntry & { abbr: string }>,
+  broadcast: string[],
+  streaming: string[],
+  lookbackDays: number,
+): Promise<UpcomingGame[]> {
+  if (!cricketConfigured()) return [];
 
-  const data     = await res.json();
-  const nowMs    = nowDate.getTime();
-  const cutoff   = nowMs - lookbackMs;
-  const seen     = new Set<string>();
+  const now          = Date.now();
+  const cutoff       = now - lookbackDays * 86400_000;
+  const lookaheadEnd = now + 30 * 86400_000;
 
-  return ((data.events ?? []) as any[])
-    .filter((e: any) => {
-      const state      = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state;
-      const isComplete = state === 'post';
-      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
-      return true;
-    })
-    .reduce<UpcomingGame[]>((acc, e: any) => {
-      const id = `bbl-${e.id}`;
-      if (seen.has(id)) return acc;
-      seen.add(id);
+  const norm    = (s: string) => s.toLowerCase().trim();
+  const byNorm: Record<string, TeamEntry & { abbr: string }> = {};
+  for (const [k, v] of Object.entries(teamMap)) byNorm[norm(k)] = v;
+  const lookup = (name: string) => byNorm[norm(name)];
 
-      const comp:  any   = e.competitions?.[0] ?? {};
-      const comps: any[] = comp.competitors ?? [];
-      const homeComp = comps.find((c: any) => c.homeAway === 'home');
-      const awayComp = comps.find((c: any) => c.homeAway === 'away');
-      const homeName = homeComp?.team?.displayName ?? '';
-      const awayName = awayComp?.team?.displayName ?? '';
+  // Discovery: one shared currentMatches fetch (cached), then expand any series
+  // that already shows a tracked-team match — bounded to protect the daily quota.
+  const current = await cricCurrentMatches();
+  const candidates = new Map<string, CricMatch>();
+  for (const m of current) if (m.id) candidates.set(m.id, m);
 
-      const home = BBL_LEAGUE_TEAMS[homeName];
-      if (!home) return acc;
-      const away = BBL_LEAGUE_TEAMS[awayName];
+  const trackedSeries = new Set<string>();
+  for (const m of current) {
+    if (m.series_id && (m.teams ?? []).some(t => lookup(t))) trackedSeries.add(m.series_id);
+  }
+  let budget = 6;
+  for (const sid of trackedSeries) {
+    if (budget-- <= 0) break;
+    const s = await cricSeriesInfo(sid);
+    for (const m of (s?.matchList ?? [])) {
+      if (m.id && !candidates.has(m.id)) candidates.set(m.id, m);
+    }
+  }
 
-      const utcDate    = new Date(e.date);
-      const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-      const fmt2       = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
-      const state      = comp.status?.type?.state ?? e.status?.type?.state;
-      const isComplete = state === 'post';
+  const out: UpcomingGame[] = [];
+  for (const m of candidates.values()) {
+    const teams = m.teams ?? [];
+    if (teams.length < 2) continue;
 
-      acc.push({
-        id,
-        teamId:          home.id,
-        opponent:        awayName,
-        opponentAbbr:    away?.abbr  ?? initials(awayName),
-        opponentColor:   away?.color ?? '#6B7280',
-        opponentLogoUrl: TEAM_LOGOS[away?.id ?? ''] ?? (awayComp?.team?.logo as string | undefined),
-        isHome:          true,
-        date:            utcDate.toISOString(),
-        time:            aestDisplay(aestDate),
-        venue:           comp.venue?.fullName ?? '',
-        broadcast:       ['Fox Cricket', 'Channel 7'],
-        streaming:       ['Kayo Sports', '7plus'],
-        opponentId:      away?.id,
-        cricketFormat:   fmt2,
-        completed:       isComplete || undefined,
-      });
-      return acc;
-    }, [])
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // teamId = first tracked side; skip matches with no tracked team.
+    const homeIdx = teams.findIndex(t => lookup(t));
+    if (homeIdx < 0) continue;
+    const me      = lookup(teams[homeIdx])!;
+    const oppName = teams[1 - homeIdx] ?? '';
+    const opp     = lookup(oppName);
+
+    const ended  = !!m.matchEnded;
+    const dateMs = new Date(m.dateTimeGMT ?? m.date ?? 0).getTime();
+    if (ended) {
+      if (!(lookbackDays > 0 && dateMs >= cutoff)) continue;
+    } else if (dateMs && dateMs > lookaheadEnd) {
+      continue; // too far out — decideForTeam only looks ~14 days ahead anyway
+    }
+
+    const fmtRaw = (m.matchType ?? '').toLowerCase();
+    const fmt: 'test' | 'odi' | 't20' = fmtRaw === 'test' ? 'test' : fmtRaw === 'odi' ? 'odi' : 't20';
+    const utc = new Date(m.dateTimeGMT ?? m.date ?? now);
+
+    out.push({
+      id:              `${prefix}-${m.id}`,
+      teamId:          me.id,
+      opponent:        oppName,
+      opponentAbbr:    opp?.abbr ?? initials(oppName),
+      opponentColor:   opp?.color ?? '#6B7280',
+      opponentLogoUrl: TEAM_LOGOS[opp?.id ?? ''],
+      isHome:          false, // cricketdata gives no reliable host flag — treat as neutral
+      date:            utc.toISOString(),
+      time:            aestDisplay(new Date(utc.getTime() + 10 * 3600 * 1000)),
+      venue:           m.venue ?? '',
+      broadcast,
+      streaming,
+      opponentId:      opp?.id,
+      cricketFormat:   fmt,
+      matchDays:       fmt === 'test' ? 5 : undefined,
+      completed:       ended || undefined,
+    });
+  }
+
+  return out.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
+
+export async function fetchBBLFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
+  return buildCricketFixtures(
+    'bbl', BBL_LEAGUE_TEAMS, ['Fox Cricket', 'Channel 7'], ['Kayo Sports', '7plus'], lookbackDays,
+  );
+}
+
 
 // ─── International Cricket ─────────────────────────────────────────────────────
 
@@ -836,190 +868,64 @@ const CRICKET_INT_LEAGUE_TEAMS: Record<string, TeamEntry & { abbr: string }> = {
   'Afghanistan':  { id: 'int-afg', color: '#000000', abbr: 'AFG' },
 };
 
-const CRICKET_INT_GENERIC_SERIES = [8037];
-
-// Each team's series IDs, organised by format where separate ESPN series exist
-// per format. IDs verified against ESPN cricket scoreboard API June 2026.
-// Event-level deduplication in fetchCricketIntFixtures handles any series that
-// share events (e.g. tour-wrapper + format-specific IDs).
-const CRICKET_INT_TEAM_SERIES: Partial<Record<string, number[]>> = {
-  'int-aus': [
-    24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
-    24322,    // Australia in Bangladesh T20I Series 2026 (Jun 17)
-    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13)
-    24302,    // Australia in Zimbabwe ODI Series 2026 (Sep 15)
-    24202,    // Australia in South Africa ODI Series 2026/27 (Sep 24)
-    24201,    // Australia in South Africa Test Series 2026/27 (Oct 9)
-    24272,    // England in Australia ODI Series 2026/27 (Nov 13)
-    24271,    // England in Australia T20I Series 2026/27 (Nov 21)
-    24269,    // Trans-Tasman Trophy 2026/27 — NZ in Australia (Dec 9)
-    24280,    // Border-Gavaskar Trophy 2026/27 — Australia in India (Jan 21)
-  ],
-  'int-ban': [
-    24323,    // Australia in Bangladesh ODI Series 2026 (Jun 11)
-    24322,    // Australia in Bangladesh T20I Series 2026 (Jun 17)
-    24419,    // Bangladesh in Zimbabwe Test Match 2026 (Jun 28)
-    24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
-    24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
-    24230,    // Bangladesh in Australia Test Series 2026 (Aug 13)
-    24200,    // Bangladesh in South Africa Test Series 2026/27 (Nov 15)
-  ],
-  'int-ind': [
-    24226,    // Afghanistan in India Test Match 2026 (Jun 6)
-    24225,    // Afghanistan in India ODI Series 2026 (Jun 13)
-    24257,    // India in Ireland T20I Series 2026 (Jun 26)
-    24300,    // India in Zimbabwe T20I Series 2026 (Jul 23)
-    24288,    // West Indies in India ODI Series 2026/27 (Sep 27)
-    24287,    // West Indies in India T20I Series 2026/27 (Oct 6)
-    24468,    // India in New Zealand T20I Series 2026/27 (Oct 22)
-    24467,    // India in New Zealand ODI Series 2026/27 (Nov 4)
-    24466,    // India in New Zealand Test Series 2026/27 (Nov 18)
-    24285,    // Sri Lanka in India ODI Series 2026/27 (Dec 13)
-    24284,    // Sri Lanka in India T20I Series 2026/27 (Dec 22)
-    24282,    // Zimbabwe in India ODI Series 2026/27 (Jan 3)
-    24280,    // Border-Gavaskar Trophy 2026/27 — Australia in India (Jan 21)
-  ],
-  'int-pak': [
-    24378,    // Australia in Pakistan ODI Series 2026 (Jun 4)
-    24435,    // Pakistan in West Indies Test Series 2026 (Jul 25)
-  ],
-  'int-nz': [
-    24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
-    24468,    // India in New Zealand T20I Series 2026/27 (Oct 22)
-    24467,    // India in New Zealand ODI Series 2026/27 (Nov 4)
-    24466,    // India in New Zealand Test Series 2026/27 (Nov 18)
-    24269,    // Trans-Tasman Trophy 2026/27 — NZ in Australia (Dec 9)
-    24461,    // Sri Lanka in New Zealand ODI Series 2026/27 (Jan 15)
-    24460,    // Sri Lanka in New Zealand T20I Series 2026/27 (Jan 26)
-    24459,    // Sri Lanka in New Zealand Test Series 2026/27 (Feb 3)
-  ],
-  'int-sl': [
-    24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
-    24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
-    24285,    // Sri Lanka in India ODI Series 2026/27 (Dec 13)
-    24284,    // Sri Lanka in India T20I Series 2026/27 (Dec 22)
-    24461,    // Sri Lanka in New Zealand ODI Series 2026/27 (Jan 15)
-    24460,    // Sri Lanka in New Zealand T20I Series 2026/27 (Jan 26)
-    24459,    // Sri Lanka in New Zealand Test Series 2026/27 (Feb 3)
-  ],
-  'int-wi': [
-    24422,    // Sri Lanka in West Indies ODI Series 2026 (Jun 8)
-    24421,    // Sri Lanka in West Indies T20I Series 2026 (Jun 12)
-    24437,    // New Zealand in West Indies ODI Series 2026 (Jul 11)
-    24435,    // Pakistan in West Indies Test Series 2026 (Jul 25)
-    24288,    // West Indies in India ODI Series 2026/27 (Sep 27)
-    24287,    // West Indies in India T20I Series 2026/27 (Oct 6)
-  ],
-  'int-zim': [
-    24419,    // Bangladesh in Zimbabwe Test Match 2026 (Jun 28)
-    24418,    // Bangladesh in Zimbabwe ODI Series 2026 (Jul 6)
-    24417,    // Bangladesh in Zimbabwe T20I Series 2026 (Jul 15)
-    24300,    // India in Zimbabwe T20I Series 2026 (Jul 23)
-    24302,    // Australia in Zimbabwe ODI Series 2026 (Sep 15)
-    24282,    // Zimbabwe in India ODI Series 2026/27 (Jan 3)
-  ],
-  'int-sa': [
-    24202,    // Australia in South Africa ODI Series 2026/27 (Sep 24)
-    24201,    // Australia in South Africa Test Series 2026/27 (Oct 9)
-    24200,    // Bangladesh in South Africa Test Series 2026/27 (Nov 15)
-  ],
-  'int-eng': [
-    24272,    // England in Australia ODI Series 2026/27 (Nov 13)
-    24271,    // England in Australia T20I Series 2026/27 (Nov 21)
-    24264,    // 150th Anniversary Test Match 2026/27 — AUS vs ENG (Mar 2027)
-  ],
-  'int-ire': [
-    24257,    // India in Ireland T20I Series 2026 (Jun 26)
-    24262,    // Afghanistan in Ireland ODI Series 2026 (Aug 5)
-  ],
-  'int-afg': [
-    24226,    // Afghanistan in India Test Match 2026 (Jun 6)
-    24225,    // Afghanistan in India ODI Series 2026 (Jun 13)
-    24262,    // Afghanistan in Ireland ODI Series 2026 (Aug 5)
-  ],
-};
-
-const CRICKET_INT_LEAGUE_SERIES: number[] = Array.from(
-  new Set([
-    ...CRICKET_INT_GENERIC_SERIES,
-    ...(Object.values(CRICKET_INT_TEAM_SERIES).flat().filter((n): n is number => n !== undefined)),
-  ]),
-);
 
 export async function fetchCricketIntFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
-  const nowMs    = Date.now();
-  const cutoff   = nowMs - lookbackDays * 86400_000;
-
-  const settled = await Promise.allSettled(
-    CRICKET_INT_LEAGUE_SERIES.map(async (seriesId) => {
-      const res = await fetchTimeout(
-        `https://site.api.espn.com/apis/site/v2/sports/cricket/${seriesId}/scoreboard`,
-        { next: { revalidate: 3600 } },
-      );
-      if (!res.ok) return [] as any[];
-      const data = await res.json();
-      return (data.events ?? []) as any[];
-    }),
+  return buildCricketFixtures(
+    'cint', CRICKET_INT_LEAGUE_TEAMS, ['Fox Cricket'], ['Kayo Sports'], lookbackDays,
   );
+}
 
-  const allEvents: any[] = [];
-  for (const r of settled) {
-    if (r.status === 'fulfilled') allEvents.push(...r.value);
-  }
+/**
+ * Resolve a single cricket fixture by game id (`cint-<matchId>` / `bbl-<matchId>`)
+ * directly from cricketdata match_info — works even for matches not surfaced by the
+ * dormant fixture lists. Returns the fixture AND the team display name (teams[0]),
+ * since untracked sides (e.g. women's WC) have no TEAMS entry to derive a name from.
+ * Used by the dev sandbox route + faithfulness verifier so cricket can be proven
+ * sandbox==prod. Returns null for non-cricket ids or when unavailable.
+ */
+export async function fetchCricketFixtureById(
+  gameId: string,
+): Promise<{ fixture: UpcomingGame; teamName: string } | null> {
+  const prefix = gameId.startsWith('bbl-') ? 'bbl' : gameId.startsWith('cint-') ? 'cint' : null;
+  if (!prefix || !cricketConfigured()) return null;
 
-  const seen = new Set<string>();
-  return allEvents
-    .filter((e: any) => {
-      const id    = String(e.id ?? '');
-      if (seen.has(id)) return false;
-      seen.add(id);
-      const state      = e.competitions?.[0]?.status?.type?.state ?? e.status?.type?.state ?? '';
-      const isComplete = state === 'post';
-      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
-      return true;
-    })
-    .map((e: any): UpcomingGame | null => {
-      const comp:  any   = e.competitions?.[0] ?? {};
-      const comps: any[] = comp.competitors ?? [];
-      const homeComp = comps.find((c: any) => c.homeAway === 'home') ?? comps[0];
-      const awayComp = comps.find((c: any) => c.homeAway === 'away') ?? comps[1];
-      if (!homeComp || !awayComp) return null;
+  const m = await cricMatchInfo(gameId.replace(/^(cint|bbl)-/, ''));
+  const teams = m?.teams ?? [];
+  if (!m || teams.length < 2) return null;
 
-      const homeName = homeComp.team?.displayName ?? '';
-      const awayName = awayComp.team?.displayName ?? '';
-      const home = CRICKET_INT_LEAGUE_TEAMS[homeName];
-      if (!home) return null;
-      const away = CRICKET_INT_LEAGUE_TEAMS[awayName];
+  const map = prefix === 'bbl' ? BBL_LEAGUE_TEAMS : CRICKET_INT_LEAGUE_TEAMS;
+  const norm = (s: string) => s.toLowerCase().trim();
+  const byNorm: Record<string, TeamEntry & { abbr: string }> = {};
+  for (const [k, v] of Object.entries(map)) byNorm[norm(k)] = v;
 
-      const state      = comp.status?.type?.state ?? e.status?.type?.state ?? '';
-      const isComplete = state === 'post';
-      const utcDate    = new Date(e.date);
-      const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-      const fmt        = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
-      const seriesName = e.name ?? comp.description ?? '';
+  const teamName = teams[0];
+  const oppName  = teams[1];
+  const me  = byNorm[norm(teamName)];
+  const opp = byNorm[norm(oppName)];
 
-      return {
-        id:              `cint-${e.id}`,
-        teamId:          home.id,
-        opponent:        awayName,
-        opponentAbbr:    away?.abbr ?? awayName.slice(0, 3).toUpperCase(),
-        opponentColor:   away?.color ?? '#888888',
-        opponentLogoUrl: TEAM_LOGOS[away?.id ?? ''],
-        isHome:          true,
-        date:            utcDate.toISOString(),
-        time:            aestDisplay(aestDate),
-        venue:           comp.venue?.fullName ?? '',
-        broadcast:       ['Fox Cricket'],
-        streaming:       ['Kayo Sports'],
-        opponentId:      away?.id,
-        cricketFormat:   fmt,
-        matchDays:       fmt === 'test' ? 5 : undefined,
-        competition:     seriesName || undefined,
-        completed:       isComplete || undefined,
-      };
-    })
-    .filter((g): g is UpcomingGame => g !== null)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const fmtRaw = (m.matchType ?? '').toLowerCase();
+  const fmt: 'test' | 'odi' | 't20' = fmtRaw === 'test' ? 'test' : fmtRaw === 'odi' ? 'odi' : 't20';
+  const utc = new Date(m.dateTimeGMT ?? m.date ?? Date.now());
+
+  const fixture: UpcomingGame = {
+    id:              gameId,
+    teamId:          me?.id ?? `${prefix}-${norm(teamName).replace(/\s+/g, '-')}`,
+    opponent:        oppName,
+    opponentAbbr:    opp?.abbr ?? initials(oppName),
+    opponentColor:   opp?.color ?? '#6B7280',
+    opponentLogoUrl: TEAM_LOGOS[opp?.id ?? ''],
+    isHome:          false,
+    date:            utc.toISOString(),
+    time:            aestDisplay(new Date(utc.getTime() + 10 * 3600 * 1000)),
+    venue:           m.venue ?? '',
+    broadcast:       prefix === 'bbl' ? ['Fox Cricket', 'Channel 7'] : ['Fox Cricket'],
+    streaming:       prefix === 'bbl' ? ['Kayo Sports', '7plus'] : ['Kayo Sports'],
+    opponentId:      opp?.id,
+    cricketFormat:   fmt,
+    matchDays:       fmt === 'test' ? 5 : undefined,
+    completed:       m.matchEnded || undefined,
+  };
+  return { fixture, teamName };
 }
 
 // ─── World Cup ────────────────────────────────────────────────────────────────

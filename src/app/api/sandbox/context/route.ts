@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { buildBlocks, SYSTEM_PROMPT } from '@/lib/preview-prompt';
 import { buildPreviewContext } from '@/lib/preview-context';
 import { TEAMS } from '@/lib/teams';
-import { fetchLeagueFixtures } from '@/lib/league-fixtures';
-import type { PreviewContext } from '@/types';
+import { fetchLeagueFixtures, fetchCricketFixtureById } from '@/lib/league-fixtures';
+import type { PreviewContext, UpcomingGame } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,13 +35,18 @@ export async function GET(req: NextRequest) {
   try {
     const fixtures = await fetchLeagueFixtures(league, 30);
     const now = Date.now();
-    const fixture = fixtures.find(
+    let fixture: UpcomingGame | undefined = fixtures.find(
       f => f.id === gameId && new Date(f.date).getTime() <= now + 60 * 86400_000,
     );
-    if (!fixture) return NextResponse.json({ error: 'fixture not found' }, { status: 404 });
+    let teamName = fixture ? (TEAMS.find(t => t.id === fixture!.teamId)?.name ?? fixture.teamId) : '';
 
-    const teamEntry = TEAMS.find(t => t.id === fixture.teamId);
-    const teamName  = teamEntry?.name ?? fixture.teamId;
+    // Cricket fixtures are dormant for tracked teams (off-season / between series),
+    // so resolve any cricket match id directly from cricketdata for the sandbox.
+    if (!fixture && (league === 'bbl' || league === 'cricket_int')) {
+      const resolved = await fetchCricketFixtureById(gameId);
+      if (resolved) { fixture = resolved.fixture; teamName = resolved.teamName; }
+    }
+    if (!fixture) return NextResponse.json({ error: 'fixture not found' }, { status: 404 });
 
     // Canonical context — the exact same builder production's generation path uses.
     const ctx = await buildPreviewContext(league, fixture, teamName);

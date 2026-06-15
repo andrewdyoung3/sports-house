@@ -38,7 +38,7 @@ try {
   }
 } catch { /* env set externally */ }
 
-import { fetchLeagueFixtures } from '@/lib/league-fixtures';
+import { fetchLeagueFixtures, fetchCricketFixtureById } from '@/lib/league-fixtures';
 import { TEAMS } from '@/lib/teams';
 import { buildDataBlock, SYSTEM_PROMPT } from '@/lib/preview-prompt';
 import { buildPreviewContext } from '@/lib/preview-context';
@@ -103,13 +103,18 @@ async function main() {
     // ── PRODUCTION (in-process) ──────────────────────────────────────────────
     const fixtures = await fetchLeagueFixtures(league, 30);
     const now = Date.now();
-    const fixture = fixtures.find(
+    let fixture = fixtures.find(
       f => f.id === gameId && new Date(f.date).getTime() <= now + 60 * 86400_000,
     );
+    let teamName = fixture ? (TEAMS.find(t => t.id === fixture!.teamId)?.name ?? fixture.teamId) : '';
+
+    // Mirror the sandbox route: resolve cricket ids directly (dormant fixture lists).
+    if (!fixture && (league === 'bbl' || league === 'cricket_int')) {
+      const resolved = await fetchCricketFixtureById(gameId);
+      if (resolved) { fixture = resolved.fixture; teamName = resolved.teamName; }
+    }
     if (!fixture) { console.log(`\n${gameId}: fixture not found — skip`); continue; }
 
-    const teamEntry = TEAMS.find(t => t.id === fixture.teamId);
-    const teamName  = teamEntry?.name ?? fixture.teamId;
     const ctx = await buildPreviewContext(league, fixture, teamName);
 
     const prodUser   = buildDataBlock(

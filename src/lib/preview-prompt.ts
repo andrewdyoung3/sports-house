@@ -123,6 +123,8 @@ NEW POWER UNITS (2026 spec): Approximately 50/50 split between ICE and electrica
 PERFORMANCE IMPLICATIONS: The reset creates uncertainty — teams that excelled under 2022–2025 ground-effect aero may not retain their positions. Active aero compliance, MO energy efficiency, and PU deployment strategy are the new differentiating factors. Use this context when discussing team performance trajectories and constructor competitiveness.
 
 Championship points: 25/18/15/12/10/8/6/4/2/1 for positions 1–10, plus 1 point for fastest lap. The standings are called "the Championship". Use F1 terminology: active aero, Manual Override (MO), undercut, overcut, pit window, soft/medium/hard compounds, safety car, VSC, parc fermé, setup, downforce, tyre deg. Do NOT reference DRS as a current system — it does not exist in 2026.`,
+  cricket_int: `International Cricket. Match the analysis to the FORMAT given (T20: powerplay, death overs, pinch-hitting, matchups; ODI: building partnerships, the middle overs, death bowling; Test: new-ball spells, sessions, declarations, follow-on, batting/bowling collapses, the fourth-innings chase). Use cricket terminology: top order, middle order, the tail, powerplay, spin vs pace, swing/seam, reverse swing, the new ball, run rate, required rate, strike rate, economy, partnerships, the toss (bat/bowl decision), pitch/wicket conditions (green, dry, turning, flat deck). Refer to the standings as a "series" or "tournament" — there is no week-to-week ladder for a bilateral series. Use "side" or "team".`,
+  bbl: `Big Bash League (BBL) — Australian domestic men's T20 franchise cricket. T20-specific: the powerplay, pinch-hitting up top, the death overs, matchup bowling, spin in the middle overs, big hitting, the run chase, net run rate for the table. Use cricket terminology: top order, finisher, the tail, strike rate, economy, the toss, pitch conditions. The competition has a league table then finals. Use "side" or "team".`,
 };
 
 const LEAGUE_LABELS: Record<string, string> = {
@@ -133,6 +135,8 @@ const LEAGUE_LABELS: Record<string, string> = {
   rugby_int:   'International Rugby Union',
   f1:          'Formula 1',
   world_cup:   'FIFA World Cup 2026',
+  bbl:         'Big Bash League',
+  cricket_int: 'International Cricket',
 };
 
 /** Total regular-season rounds for each league — used to compute season phase. */
@@ -583,6 +587,13 @@ export function collectPlayerWhitelist(prompt: string): {
     for (const line of squadText.split('\n')) addNamesFromLine(line);
   }
 
+  // Cricket named squad (cricketdata.org) — the only player-name source for cricket.
+  const cricketSquadText = extractSection(/ANNOUNCED SQUAD/);
+  if (cricketSquadText) {
+    hasPlayerData = true;
+    for (const line of cricketSquadText.split('\n')) addNamesFromLine(line);
+  }
+
   const injuryText = extractSection(/INJURY REPORT/);
   if (injuryText) {
     hasPlayerData = true;
@@ -613,6 +624,18 @@ export function collectPlayerWhitelist(prompt: string): {
   if (mediaText) {
     const nameRe = /\b[A-ZÀ-Þ][a-zà-ÿ'’\-]+(?:\s+[A-ZÀ-Þ][a-zà-ÿ'’\-]+)+\b/g;
     for (const m of mediaText.matchAll(nameRe)) whitelist.add(m[0].toLowerCase());
+  }
+
+  // RECENT FORM / HEAD-TO-HEAD — these blocks list OTHER team names (past
+  // opponents, e.g. "United States", "South Africa"). They are legitimate grounded
+  // references, so whitelist multi-word team names here to avoid the player-name
+  // validator flagging them. Does NOT set hasPlayerData — these are teams.
+  const formText = extractSection(/RECENT FORM/);
+  const h2hText  = extractSection(/HEAD-TO-HEAD/);
+  const teamNameRe = /\b[A-ZÀ-Þ][a-zà-ÿ'’\-]+(?:\s+[A-ZÀ-Þ][a-zà-ÿ'’\-]+)+\b/g;
+  for (const section of [formText, h2hText]) {
+    if (!section) continue;
+    for (const m of section.matchAll(teamNameRe)) whitelist.add(m[0].toLowerCase());
   }
 
   // Also whitelist coach names from HEAD COACHES line (they may be named in output)
@@ -678,13 +701,20 @@ INFORMATION ECONOMY — no redundant data:
 • FORM RESULT RECENCY — the form data shows results in sequence (most recent first) but contains NO round numbers or dates. Do not use time-anchored language ("last round", "last week", "last month", "recently", "just last week") for any specific result unless you are certain it was the most recent game (first in the sequence). For results in positions 2–5, use neutral phrases: "in their loss to the Sharks", "when they faced City", "against the Broncos earlier this season". Calling a third-game-ago result "last round" is factually wrong — the form data does not tell you when that game was played.
 • RESULT ORDERING — when describing results in chronological narrative order ("they lost to X before beating Y"), you MUST reflect the array sequence accurately: the first item in the form list is the MOST RECENT game; later items happened EARLIER. So if results are [win vs A, loss vs B], chronologically the loss to B came first and the win over A came second. Getting this backwards produces factually wrong statements — double-check the sequence before using any "before/after/following/then" language.
 • Forbidden vague momentum phrases — these assert something without saying anything: "building momentum", "hitting their stride", "finding their form", "growing in confidence", "on the rise", "firing on all cylinders", "clicking into gear". If form is genuinely positive, state the specific structural reason — what is working and why it matters for this fixture.
-• For standings: state the stakes and what they mean structurally — not the coordinates that produced them.
+• For standings: state the stakes and what they mean structurally — not the coordinates that produced them. Point gaps and DERIVED FACTS exist to inform your REASONING; translate them into stakes ("effectively safe", "a converted try covers the gap", "still within touching distance of the eight") rather than quoting the raw figure ("leads by four points", "a 14-point buffer"). Quote an exact gap only when that single number is itself the decisive point of a sentence — and then it must match DERIVED FACTS verbatim.
 • POSITION vs POINTS — understand the model, then use it correctly:
   HOW IT WORKS: Each result earns competition points (e.g. 2 pts for a win, 1 for a draw, 0 for a loss in most leagues). The total of those points determines a team's ordinal position on the ladder/table — 1st = most points, last = fewest. Position and points are two different things derived from the same underlying results; never conflate them.
   TALKING ABOUT THE POINTS TOTAL — acceptable phrases: "league points", "points on the table", "points tally", "competition points". Example: "Brisbane sit on 10 points" or "12 points from eight games".
   TALKING ABOUT THE ORDINAL RANK — acceptable phrases: "league position", "ladder position", "Xth on the ladder", "Xth on the table", "sitting in Xth". Example: "Brisbane sit 13th on the ladder".
   FORBIDDEN: "ladder points" — this phrase conflates the two concepts and is meaningless. Never use it. Never write "13 ladder points" when you mean 13th place. Never write "6 table points" when you mean 6th on the table.
 • Defensive/offensive records: never cite a raw total in isolation ("52 points conceded", "14 goals scored"). A raw number is meaningless without context. Instead, express the record as a league rank — "the tightest defence in the competition", "conceding the fewest points of any side", "the second-highest scoring attack". If the data doesn't tell you where they rank, describe the quality directionally ("among the better defensive sides") rather than quoting a figure. The analytical question is always: where do they sit relative to the rest of the league?
+
+INFORMATION BREADTH — use the whole data block, not just the ladder:
+• The data block may carry several independent signals: recent form, head-to-head history, confirmed/likely lineups and injuries, key performers, league position and stakes, weather, and media. A strong preview is built on the MOST DECISIVE two-to-four of these for THIS specific fixture — it does not lean on the same one (usually the table) in every section.
+• Vary the angle across the sections. If "context" is built on stakes/standings, then "tacticalBattle", "playerSpotlight" and "verdict" should each pull from a DIFFERENT signal — a personnel change or return, a head-to-head pattern, a stylistic mismatch, a weather factor, a key performer's role. Three sections that all restate the ladder position is a weak preview.
+• keyInsights must each cover a DIFFERENT dimension wherever the data allows (e.g. one personnel/availability, one tactical matchup, one form or head-to-head trend) — never three rephrasings of the same point, and never three points all derived from the table.
+• GRACEFUL OMISSION — if a signal is absent for this fixture (no head-to-head, no lineup, no weather, no media), simply say nothing about it and lean harder on the signals that ARE present. NEVER announce the absence ("no head-to-head data is available", "lineup unconfirmed", "weather unknown"), and NEVER invent the missing piece to fill the gap. Missing data narrows the available angles; it does not lower the bar for specificity on the angles you do have.
+• RELEVANCE OVER COMPLETENESS — do not mechanically tour every available signal. Bring in a signal only when it changes how you read this fixture. An unremarkable, neutral data point is better left out entirely (see NO FILLER). Breadth means choosing the most telling signals, not listing all of them.
 
 SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring range:
 • NRL Rugby League: scores routinely reach 30–50 pts per side. ≤10 pts margin = competitive; 11–20 pts = clear defeat; 21–30 pts = comfortable; 31+ pts = heavy/hammering. A 32–40 loss is an 8-point margin — that is a competitive defeat, NOT a heavy loss.
@@ -751,7 +781,8 @@ HISTORICAL ACCURACY — year-specific claims are the risk, not historical contex
 • The constraint is specificity without verification: NEVER cite a specific year, season, scoreline, or result unless the data block explicitly states it. Year-specific claims are a known hallucination failure mode.
 • Forbidden patterns: "their 2024 Grand Final rematch", "last season's title fight (2025)", "the 2023 decider", "they met in the 2024 semi-final" — any claim that pins history to a specific date you cannot verify.
 • Acceptable: "two clubs with a genuine finals rivalry", "a fixture that has defined the competition in recent seasons", "these sides have met at the business end before" — general historical framing grounded in knowledge you are confident about.
-• If the data block provides an explicit head-to-head result, reproduce it accurately and do not embellish.
+• HEAD-TO-HEAD DATA — when the data block contains a HEAD-TO-HEAD section, use it for the matchup TREND only: which side has tended to come out on top, whether recent meetings have been tight or one-sided, any home/away pattern. Do NOT recite the raw win-draw-loss record (a bare tally adds no insight), do NOT list past scorelines, and NEVER attach a year or date to any meeting — the data deliberately omits them. You may characterise the single most recent meeting qualitatively ("their last meeting was a tight, low-scoring affair") but only when you tie it to something tactical about THIS fixture. If there is no HEAD-TO-HEAD section, omit historical comparison entirely.
+• NEVER state or imply a calendar year or season-year anywhere in the output (e.g. "winless in 2024", "since the 2025 season"). You do not know the current date. Describe timeframes only in relative, data-grounded terms ("winless so far this season", "across their recent run").
 • Do NOT infer what "last season" means — you don't know the current date unless it is stated in the data.
 
 COMPETITION CONTEXT — critical:
@@ -803,7 +834,8 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
 • Keep coach references analytical, not biographical. "Dyche's side will be compact and physical from the first whistle" is useful. "Dyche, who was appointed in January 2023..." is not.
 
 LINEUP AND AVAILABILITY ANALYSIS:
-• PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, or INJURY REPORT. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, INJURY REPORT, or KEY PERFORMERS. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• PLAYER-TEAM ATTRIBUTION: A named player belongs ONLY to the team whose lineup/squad/injury/key-performer list contains them. Never attribute a player to the opponent, and never to a third team that appears only as a PAST OPPONENT in the RECENT FORM or HEAD-TO-HEAD data. Check which side's list a name came from before describing them.
 • MOST RECENT STARTING LINEUP (when provided): Use as the baseline for predicting selection, adjusted for availability data. Focus on players in structurally important roles — the first-choice goalkeeper, the main ball-carrier, the primary playmaker, the key defensive pairing. Do not list every player; name only those whose presence or absence materially changes how the team sets up.
 • SQUAD SUBMISSION (AFL — when SQUAD SUBMISSION FOR THIS GAME is provided): The "Absent vs last lineup" list shows players who were in the last game but are NOT in the 26-man submission — they are definitively unavailable. Assess each absent player's structural role and what the team loses. The "possible returns/inclusions" list shows players in the squad who weren't in the last lineup. Cross-reference with team news — if news confirms a player is returning from injury, state the positional and structural impact of their return. Player returns are analytically significant, especially when they restore a role that has been structurally weaker without them.
 • INJURY REPORT (NRL/EPL/SRU — when INJURY REPORT is provided): "Out" = confirmed unavailable. "Doubtful" = significant doubt, likely to miss. Only name an injured player if they hold an important structural role (regular starter, key specialist). Do not list every injury; filter to the ones that materially affect the team's attacking or defensive capability. For key absences, explain who fills that role and whether it represents a genuine structural downgrade.
@@ -842,6 +874,7 @@ F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORM
 
 GROUNDING — absolute constraint, no exceptions:
 • Only cite statistics, percentages, rankings, or records that are explicitly present in the data block below. Never invent numbers. If a stat is not in the data, do not state it.
+• Do NOT attach a specific per-player statline (tackle counts, turnovers, goals, metres, points, assists) to any player unless those exact figures appear in a KEY PERFORMERS line. Naming a player from the lineup and describing their ROLE qualitatively is fine; inventing their numbers is a grounding violation — the most common one. If there is no KEY PERFORMERS data, never quote a single player number.
 • Only name individual players whose names appear in the provided STARTING LINEUP or TEAM NEWS sections. If no player data is provided, do not name any player — describe roles and patterns instead.
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
@@ -987,6 +1020,84 @@ function buildF1DataBlock(context: PreviewContext): string {
   return lines.join('\n');
 }
 
+// ─── Cricket data block ───────────────────────────────────────────────────────
+
+function buildCricketDataBlock(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  venue?: string,
+): string {
+  const c = context.cricketContext ?? {};
+  const lines: string[] = [];
+
+  lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
+  const venueStr = c.venue || venue;
+  if (venueStr) lines.push(`VENUE: ${venueStr} (cricket — treat as a neutral tournament/host venue unless the side is the designated host)`);
+  lines.push(`COMPETITION: ${c.seriesName || LEAGUE_LABELS[league] || league}`);
+  lines.push('');
+
+  // Match context — format is authoritative for how the game is played.
+  lines.push('CRICKET MATCH CONTEXT:');
+  if (c.format)    lines.push(`  Format: ${c.format}${c.matchDesc ? ` — ${c.matchDesc}` : ''}`);
+  else if (c.matchDesc) lines.push(`  ${c.matchDesc}`);
+  if (c.seriesName) lines.push(`  Series/Tournament: ${c.seriesName}`);
+  if (c.status) {
+    const stage = c.ended ? 'completed result' : c.started ? 'in progress' : 'scheduled — not yet started';
+    lines.push(`  Match status: ${c.status} (${stage})`);
+  }
+  if (c.toss)    lines.push(`  Toss: ${c.toss}`);
+  if (c.started && (c.teamScoreLine || c.opponentScoreLine)) {
+    if (c.teamScoreLine)     lines.push(`  ${teamName}: ${c.teamScoreLine}`);
+    if (c.opponentScoreLine) lines.push(`  ${opponentName}: ${c.opponentScoreLine}`);
+  }
+  lines.push('');
+
+  // Recent form (this series/tournament) — qualitative, no scorelines.
+  if (c.teamRecentResults && c.teamRecentResults.length > 0) {
+    lines.push('RECENT FORM (this series/tournament, most recent first):');
+    lines.push(`  ${teamName}: ${c.teamRecentResults.join('; ')}`);
+    lines.push('');
+  }
+  if (c.h2hNote) {
+    lines.push('HEAD-TO-HEAD (matchup trend only — no scores, years or dates):');
+    lines.push(`  ${c.h2hNote}.`);
+    lines.push('');
+  }
+
+  // Named squad — the ONLY source of player names for cricket (provenance label).
+  const teamSquad = context.teamSquad ?? [];
+  const oppSquad  = context.opponentSquad ?? [];
+  const hasPlayerData = teamSquad.length > 0 || oppSquad.length > 0;
+  if (hasPlayerData) {
+    lines.push('ANNOUNCED SQUAD (named players in the official squad for this fixture — a selection guide, not a confirmed XI; may change at the toss):');
+    if (teamSquad.length > 0) lines.push(`  ${teamName}: ${teamSquad.join(', ')}`);
+    if (oppSquad.length  > 0) lines.push(`  ${opponentName}: ${oppSquad.join(', ')}`);
+    lines.push('');
+  }
+
+  // Sport vocabulary + coaches.
+  lines.push(`SPORT: ${SPORT_CONTEXT[league] ?? ''}`);
+  if (context.teamManager || context.opponentManager) {
+    const t = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
+    const o = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
+    lines.push(`HEAD COACHES: ${[t, o].filter(Boolean).join(' | ')}`);
+  }
+  lines.push('');
+
+  // Trailing player-data sentinel (mirrors the generic block so the validators behave).
+  if (hasPlayerData) {
+    lines.push('PLAYER NAMING CONSTRAINT: Only name players listed in the ANNOUNCED SQUAD section above (plus any names in a FROM THE MEDIA block, with attribution). Any player name from outside the data is forbidden — even if you know the side from your training data. Do NOT attach a statline (runs, wickets, strike rate, average) to any player — no per-player numbers are provided.');
+  } else {
+    lines.push('NO PLAYER DATA: No squad has been published for this fixture yet. Do NOT name any individual player; describe roles and units (top order, the spinners, the death bowlers) instead. Inventing player names from training knowledge is a grounding violation.');
+  }
+  lines.push('');
+  lines.push('Generate the cricket match preview using only the data provided above. Do not invent statistics, scorelines, player names, or historical records not given.');
+
+  return lines.join('\n');
+}
+
 /**
  * Parses ESPN's abbreviated series summary (e.g. "NY leads series 3-1") and
  * returns an unambiguous SERIES STATE line using the full team names from the
@@ -1065,6 +1176,11 @@ export function buildDataBlock(
   // ─── F1 — completely different data model ────────────────────────────────
   if (league === 'f1' && context.f1RaceName) {
     return buildF1DataBlock(context);
+  }
+
+  // ─── Cricket — its own data model (innings/squads, no league ladder) ──────
+  if ((league === 'bbl' || league === 'cricket_int') && context.cricketContext) {
+    return buildCricketDataBlock(league, teamName, opponentName, context, venue);
   }
 
   const enabled = (id: BlockId): boolean => !enabledBlocks || enabledBlocks.has(id);
@@ -1451,18 +1567,19 @@ export function buildDataBlock(
     const h2h = context.headToHead ?? [];
     if (h2h.length >= 2 && league !== 'f1') {
       const w = h2h.filter(m => m.result === 'W').length;
-      const d = h2h.filter(m => m.result === 'D').length;
       const l = h2h.filter(m => m.result === 'L').length;
-      lines.push(`HEAD-TO-HEAD — last ${h2h.length} meetings between these two sides (do NOT cite specific years or dates):`);
-      lines.push(`  Recent record (${teamName} perspective): ${w}W ${d}D ${l}L`);
+      // Qualitative only — no raw scorelines (the model must not recite them) and
+      // no years/dates. A trend descriptor + the most-recent outcome (W/L/D + venue).
+      const trend = w > l ? `${teamName} have had the better of recent meetings`
+        : l > w ? `${opponentName} have had the better of recent meetings`
+        : 'recent meetings have been evenly split';
       const last = h2h[0];
       const venueNote = last.teamWasHome === true ? ' at home'
         : last.teamWasHome === false ? ' away' : '';
       const lastVerb = last.result === 'D' ? 'drew' : last.result === 'W' ? 'won' : 'lost';
-      lines.push(
-        `  Most recent meeting: ${teamName} ${lastVerb}${venueNote} ${last.teamScore}–${last.opponentScore}.`,
-      );
-      lines.push('  Use this only to characterise the rivalry/trend — do NOT recite the full result list.');
+      lines.push(`HEAD-TO-HEAD (matchup trend only — no scores, years or dates are given; use for context, do NOT recite a record):`);
+      lines.push(`  Over the last ${h2h.length} meetings, ${trend}.`);
+      lines.push(`  Most recently, ${teamName} ${lastVerb}${venueNote}.`);
       lines.push('');
     }
   }

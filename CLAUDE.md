@@ -59,7 +59,9 @@ src/
 | NRL | ESPN `rugby-league/3/scoreboard?dates=RANGE` | ESPN `v2/rugby-league/3/standings` (children[0].standings.entries, stat names: gamesWon/gamesLost/gamesDrawn) | ESPN `rugby-league/3/teams/{id}/news` |
 | EPL | ESPN `soccer/eng.1/scoreboard` (fan-out across 5 comps) | ESPN `v2/soccer/eng.1/standings` (children[0].standings.entries, stat names: wins/losses/ties) | ESPN `soccer/eng.1/teams/{id}/news` |
 
-Standings/news are also live for **Super Rugby, Rugby Int'l, NBA, NHL** and the **World Cup** (ESPN), and **F1** (Jolpi/Ergast) — all via `preview-fetchers.ts`. Leagues with no fetcher (NFL, MLB, cricket) still use `src/lib/mock-data.ts`.
+Standings/news are also live for **Super Rugby, Rugby Int'l, NBA, NHL** and the **World Cup** (ESPN), **F1** (Jolpi/Ergast), and **cricket — BBL + internationals** via **cricketdata.org / CricAPI** (`src/lib/cricketdata.ts`; ESPN/cricinfo cricket is WAF-blocked server-side). Leagues with no fetcher (NFL, MLB) still use `src/lib/mock-data.ts`.
+
+**Cricket (cricketdata.org)** — `CRICKETDATA_API_KEY` required. Free tier = **100 hits/DAY** (not feature-gated), so the client caches every call per process: one shared `currentMatches` fetch drives both BBL + international fixtures, `series_info`/`match_info`/`match_squad` are cached per id, and a quota signal trips a circuit breaker. Fixtures: `buildCricketFixtures` (currentMatches + bounded series_info expansion). Preview data: `fetchCricketPreview` (match context, toss, scores, named squads → whitelist, series form, H2H) rendered by a dedicated cricket data block (F1-style early return). Cricket fixture ids are `cint-<uuid>` / `bbl-<uuid>` where the uuid is the cricketdata match id.
 
 ### AI match-preview enrichment (per fixture)
 Beyond standings/news, each preview's data block is enriched by `buildPreviewContext` → `preview-fetchers.ts`:
@@ -69,7 +71,8 @@ Beyond standings/news, each preview's data block is enriched by `buildPreviewCon
 **Faithfulness invariant:** generation, the sandbox route, and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext` and pass `[],[]` for positional results — so add new data to `PreviewContext`/`buildDataBlock`, never a parallel path, and prod/sandbox stay byte-identical.
 
 ## Planned future leagues
-- **Cricket** — Australian (BBL/Sheffield Shield) + international. Best free source: Cricinfo API or ESPNcricinfo public endpoints. On radar, not yet started.
+- **Cricket** — DONE (BBL + internationals via cricketdata.org). Will populate tracked-team fixtures in-season (BBL summer; men's bilateral series); currently dormant like EPL/NBA off-season.
+- **NFL / MLB** — still mock; would use their official APIs.
 
 ## Upgrade Path (in priority order)
 1. **Persistence** — Supabase wired (`game_previews`, `preview_jobs`); see memory `project-preview-pipeline`

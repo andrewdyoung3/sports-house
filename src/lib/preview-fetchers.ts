@@ -20,6 +20,9 @@ import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football
 import { fetchTimeout } from '@/lib/espn';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
+import {
+  cricketConfigured, cricMatchInfo, cricMatchSquad, cricSeriesInfo, type CricMatch,
+} from '@/lib/cricketdata';
 
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
 // SQUIGGLE_NAME lives in @/lib/afl (derived from teams.ts/team-logos.ts).
@@ -1990,5 +1993,146 @@ export async function fetchWorldCupPreview(
     teamRecentForm:     extras.teamRecentForm,
     opponentRecentForm: extras.opponentRecentForm,
     headToHead:         extras.headToHead,
+  };
+}
+
+// ─── Cricket (BBL + internationals) — cricketdata.org / CricAPI ────────────────
+
+/**
+ * Strict cricket team-name match — exact or full-substring only. Does NOT use the
+ * last-word fallback espnNameMatch has: every women's side ends in "Women", so the
+ * fallback would match "India Women" to "South Africa Women" and scramble
+ * form/H2H/squad assignment. "United States Of America" still matches
+ * "United States" by substring.
+ */
+function cricNameMatch(a: string, b: string): boolean {
+  const x = (a ?? '').toLowerCase().trim();
+  const y = (b ?? '').toLowerCase().trim();
+  if (!x || !y) return false;
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/** Opponent name for a match, from its `teams` (preferred) or "A vs B" name. */
+function cricOpponent(match: CricMatch, teamName: string): string {
+  const fromTeams = (match.teams ?? []).find(t => !cricNameMatch(t, teamName));
+  if (fromTeams) return fromTeams;
+  const head = (match.name ?? '').split(',')[0];
+  const sides = head.split(/\s+vs\.?\s+/i).map(s => s.trim()).filter(Boolean);
+  return sides.find(s => !cricNameMatch(s, teamName)) ?? '';
+}
+
+/** Format a cricketdata score entry as a scoreline, e.g. "170/6 (20 ov)". */
+function cricScoreLine(match: CricMatch, teamName: string): string | undefined {
+  const first = teamName.toLowerCase().split(' ')[0];
+  const s = (match.score ?? []).find(x => (x.inning ?? '').toLowerCase().includes(first));
+  if (!s) return undefined;
+  const ov = s.o != null ? ` (${s.o} ov)` : '';
+  return `${s.r ?? 0}/${s.w ?? 0}${ov}`;
+}
+
+/** Turn a cricketdata status string into a qualitative result for the followed team. */
+function cricResult(status: string | undefined, teamName: string, oppName: string): string {
+  const s = status ?? '';
+  const m = s.match(/^(.+?)\s+won\b/i);
+  if (m) return cricNameMatch(m[1].trim(), teamName) ? `beat ${oppName}` : `lost to ${oppName}`;
+  if (/\btie(d)?\b/i.test(s))       return `tied with ${oppName}`;
+  if (/\bdraw/i.test(s))            return `drew with ${oppName}`;
+  if (/no result|abandon/i.test(s)) return `no result vs ${oppName}`;
+  return '';
+}
+
+/**
+ * Builds cricket preview context from cricketdata.org for a given match id.
+ * Pulls match_info (context/toss/score), match_squad (named players — only when
+ * the match has a published squad), and series_info (series name + matchList for
+ * recent form & head-to-head). All calls are cached per process (daily quota).
+ */
+export async function fetchCricketPreview(
+  matchId: string,
+  teamName: string,
+  opponentName: string,
+): Promise<PreviewContext> {
+  if (!cricketConfigured() || !matchId) return {};
+  const info = await cricMatchInfo(matchId);
+  if (!info) return {};
+
+  const fmtMap: Record<string, string> = { t20: 'T20', odi: 'ODI', test: 'Test' };
+  const format = fmtMap[(info.matchType ?? '').toLowerCase()] ?? ((info.matchType ?? '').toUpperCase() || undefined);
+
+  // "India vs Pakistan, 6th Match, Group A, ICC Womens T20 World Cup 2026"
+  // → matchDesc "6th Match, Group A" (drop the "X vs Y" head and the series tail).
+  let matchDesc: string | undefined;
+  if (info.name) {
+    const parts = info.name.split(',').map(s => s.trim()).filter(Boolean);
+    const middle = parts.slice(1).filter(p => !/\b(cup|series|trophy|tour|league|championship)\b/i.test(p));
+    matchDesc = middle.join(', ') || undefined;
+  }
+
+  const toss = info.tossWinner
+    ? `${info.tossWinner}${info.tossChoice ? ` won the toss and chose to ${info.tossChoice}` : ' won the toss'}`
+    : undefined;
+
+  // ── Named squads (only when published) ──
+  let teamSquad: string[] | undefined;
+  let opponentSquad: string[] | undefined;
+  if (info.hasSquad) {
+    const groups = await cricMatchSquad(matchId);
+    for (const g of groups) {
+      const names = (g.players ?? []).map(p => p.name ?? '').filter(Boolean);
+      if (names.length === 0) continue;
+      if (cricNameMatch(g.teamName ?? '', teamName))          teamSquad = names;
+      else if (cricNameMatch(g.teamName ?? '', opponentName)) opponentSquad = names;
+    }
+  }
+
+  // ── Series state + recent form + head-to-head (from series matchList) ──
+  let seriesName: string | undefined;
+  let teamRecentResults: string[] | undefined;
+  let h2hNote: string | undefined;
+  if (info.series_id) {
+    const series = await cricSeriesInfo(info.series_id);
+    seriesName = series?.info?.name;
+    const ended = (series?.matchList ?? [])
+      .filter(m => m.matchEnded && m.status)
+      .sort((a, b) => new Date(b.dateTimeGMT ?? 0).getTime() - new Date(a.dateTimeGMT ?? 0).getTime());
+
+    const teamGames = ended.filter(m => (m.teams ?? []).some(t => cricNameMatch(t, teamName)));
+    const results = teamGames.slice(0, 5).map(m => cricResult(m.status, teamName, cricOpponent(m, teamName))).filter(Boolean);
+    if (results.length > 0) teamRecentResults = results;
+
+    const meetings = ended.filter(m =>
+      (m.teams ?? []).some(t => cricNameMatch(t, teamName)) &&
+      (m.teams ?? []).some(t => cricNameMatch(t, opponentName)),
+    );
+    if (meetings.length >= 2) {
+      const wins = meetings.filter(m => {
+        const mm = (m.status ?? '').match(/^(.+?)\s+won\b/i);
+        return mm ? cricNameMatch(mm[1].trim(), teamName) : false;
+      }).length;
+      h2hNote = wins * 2 > meetings.length
+        ? `${teamName} have won most of the recent meetings in this series`
+        : wins * 2 < meetings.length
+          ? `${opponentName} have won most of the recent meetings in this series`
+          : 'recent meetings in this series have been evenly split';
+    }
+  }
+
+  return {
+    teamSquad,
+    opponentSquad,
+    cricketContext: {
+      format,
+      seriesName,
+      matchDesc,
+      venue: info.venue,
+      status: info.status,
+      started: info.matchStarted,
+      ended: info.matchEnded,
+      toss,
+      teamScoreLine:     info.matchStarted ? cricScoreLine(info, teamName) : undefined,
+      opponentScoreLine: info.matchStarted ? cricScoreLine(info, opponentName) : undefined,
+      teamRecentResults,
+      h2hNote,
+    },
   };
 }

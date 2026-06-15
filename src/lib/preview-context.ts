@@ -19,7 +19,7 @@ import { WC_TEAM_GROUPS, WC_ID_TO_ESPN_NAME, computeGroupAdvancementScenario } f
 import {
   fetchAFLPreview, fetchNRLPreview, fetchEPLPreview, fetchSRUPreview,
   fetchRINTPreview, fetchNBAPreview, fetchNHLPreview, fetchF1Preview,
-  fetchESPNMatchExtras,
+  fetchESPNMatchExtras, fetchCricketPreview,
 } from './preview-fetchers';
 import { fetchVenueWeather, OUTDOOR_LEAGUES } from './weather';
 import type {
@@ -81,6 +81,7 @@ async function fetchJson(url: string): Promise<unknown> {
 async function fetchRichContext(
   league: string,
   fixture: UpcomingGame,
+  teamName: string,
 ): Promise<Partial<PreviewContext>> {
   const opp = fixture.opponent;
   // Fixture ids embed the ESPN event id as the final segment (e.g. nrl-603367 →
@@ -95,6 +96,13 @@ async function fetchRichContext(
     case 'rugby_int':   return fetchRINTPreview(fixture.teamId, opp, eventId);
     case 'nba':         return fetchNBAPreview(fixture.teamId, opp, eventId);
     case 'nhl':         return fetchNHLPreview(fixture.teamId, opp, eventId);
+    // Cricket fixture ids are `cint-<uuid>` / `bbl-<uuid>` where the uuid is the
+    // cricketdata.org match id (which itself contains hyphens — strip the prefix).
+    case 'bbl':
+    case 'cricket_int': {
+      const matchId = fixture.id.replace(/^(cint|bbl)-/, '');
+      return fetchCricketPreview(matchId, teamName, opp);
+    }
     case 'f1': {
       // F1 fixture id is `f1-<round>-<sessionKey>`; raceName=opponent, circuit=venue,
       // sessionType=competition label (e.g. "Race", "Qualifying").
@@ -112,12 +120,13 @@ async function fetchRichContext(
 async function cachedRichContext(
   league: string,
   fixture: UpcomingGame,
+  teamName: string,
 ): Promise<Partial<PreviewContext>> {
   const key = `${league}:${fixture.teamId}:${fixture.opponent}:${fixture.competition ?? ''}:${fixture.id}`;
   if (_richCache.has(key)) return _richCache.get(key)!;
   let ctx: Partial<PreviewContext>;
   try {
-    ctx = await fetchRichContext(league, fixture);
+    ctx = await fetchRichContext(league, fixture, teamName);
   } catch (err) {
     console.warn(`[preview-context] rich fetch failed league=${league} team=${fixture.teamId}: ${err instanceof Error ? err.message : err}`);
     ctx = {};
@@ -276,7 +285,7 @@ export async function buildPreviewContext(
 ): Promise<Partial<PreviewContext>> {
   const ctx: Partial<PreviewContext> = league === 'world_cup'
     ? await _buildWorldCupContext(fixture, teamName)
-    : { ...(await cachedRichContext(league, fixture)) };
+    : { ...(await cachedRichContext(league, fixture, teamName)) };
 
   // Verified head coaches — static map, never model-inferred.
   ctx.teamManager     = MANAGER[fixture.teamId];

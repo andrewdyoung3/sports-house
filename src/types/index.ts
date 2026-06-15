@@ -347,6 +347,25 @@ export interface PreviewContext {
   /** World Cup structural context — assembled by /api/preview for world_cup league. */
   worldCup?: WorldCupMatchContext;
 
+  /** Cricket (BBL / internationals) — match + series context from cricketdata.org.
+   *  Rendered by the dedicated cricket data block. Squads use teamSquad/opponentSquad. */
+  cricketContext?: {
+    format?: string;          // "T20" | "ODI" | "Test"
+    seriesName?: string;
+    matchDesc?: string;       // e.g. "18th Match, Group A"
+    venue?: string;
+    status?: string;          // cricketdata status line (started/result/"not started")
+    started?: boolean;
+    ended?: boolean;
+    toss?: string;            // e.g. "India won the toss and chose to bat"
+    teamScoreLine?: string;   // followed team's innings, e.g. "170/6 (20 ov)" — only if started
+    opponentScoreLine?: string;
+    /** Qualitative recent results for the followed team in this series (most recent first). */
+    teamRecentResults?: string[];
+    /** Qualitative head-to-head note between the two sides in this series. */
+    h2hNote?: string;
+  };
+
   f1SessionType?: string;   // "Race", "Qualifying", "Practice 1", etc.
   f1RaceName?: string;      // "Japanese Grand Prix"
   f1CircuitName?: string;   // "Suzuka Circuit"

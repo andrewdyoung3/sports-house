@@ -76,6 +76,54 @@ function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+/**
+ * Catches invented per-player statlines. When the data block contains NO KEY
+ * PERFORMERS section, the model has no grounded per-player numbers, so any stat
+ * like "two tries", "18 tackles", "3 turnovers" attached in the factual fields is
+ * fabricated. Scans only the factual fields (mediaWatch is attributed editorial
+ * and may legitimately echo a real headline's numbers). Excludes "points"/"goals"
+ * — those collide with competition points and team scorelines.
+ */
+function validateInventedStatlines(output: AIPreview, prompt: string): string[] {
+  if (/^KEY PERFORMERS/m.test(prompt)) return []; // grounded stats may be present
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const statRe = /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(tries|try|assists?|tackles?|turnovers?|line[\s-]?breaks?|tackle[\s-]?busts?|carries|offloads?|rebounds?|steals?|blocks?|interceptions?)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(statRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`invented player statline "${m[0]}" — no KEY PERFORMERS data provided for this fixture`);
+  }
+  return violations;
+}
+
+/**
+ * Catches invented calendar years. The data block deliberately omits past years
+ * (form/H2H carry no dates), so any year in the factual fields that does NOT appear
+ * in the prompt (e.g. competition labels like "World Cup 2026") is fabricated —
+ * the classic "winless in 2024" failure. Scans factual fields only.
+ */
+function validateInventedYears(output: AIPreview, prompt: string): string[] {
+  const promptYears = new Set([...prompt.matchAll(/\b(?:19|20)\d{2}\b/g)].map(m => m[0]));
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(/\b(?:19|20)\d{2}\b/g)) {
+    if (promptYears.has(m[0]) || seen.has(m[0])) continue;
+    seen.add(m[0]);
+    violations.push(`invented year "${m[0]}" — not present in the data block`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -107,18 +155,35 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
   const compM = prompt.match(/^COMPETITION:\s*(.+)$/m);
   const competition = compM?.[1]?.trim() ?? '';
 
+  // The VENUE line carries a stadium name (e.g. "McDonald Jones Stadium") that the
+  // model legitimately references; its words must not be flagged as player names.
+  const venueM = prompt.match(/^VENUE:\s*([^—\n]+)/m);
+  const venueName = venueM?.[1]?.trim() ?? '';
+
+  // Expand a name token into the forms the validator's matcher may produce.
+  // The name regex breaks internal-capital surnames (e.g. "O'Brien" → "Brien"),
+  // so also surface the substring after an apostrophe.
+  const expandWord = (w: string): string[] => {
+    const out = [w];
+    if (w.includes("'") || w.includes('’')) {
+      const tail = w.split(/['’]/).pop();
+      if (tail && tail.length > 1) out.push(tail);
+    }
+    return out;
+  };
+
   const excluded = new Set(PLAYER_NAME_SAFE_WORDS);
-  for (const w of `${teamName} ${opponentName} ${competition}`.toLowerCase().split(/\s+/)) {
-    if (w) excluded.add(w);
+  for (const w of `${teamName} ${opponentName} ${competition} ${venueName}`.toLowerCase().split(/\s+/)) {
+    if (w) for (const e of expandWord(w)) excluded.add(e);
   }
   for (const name of whitelist) {
-    for (const w of name.split(/\s+/)) excluded.add(w);
+    for (const w of name.split(/\s+/)) for (const e of expandWord(w)) excluded.add(e);
   }
 
   const whitelistWords = new Set<string>();
   for (const entry of whitelist) {
     for (const w of entry.split(/\s+/)) {
-      if (w.length >= 3) whitelistWords.add(w);
+      for (const e of expandWord(w)) if (e.length >= 3) whitelistWords.add(e);
     }
   }
 
@@ -227,6 +292,8 @@ export async function callOllama(
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
     ...validatePlayerNames(v, prompt),
+    ...validateInventedStatlines(v, prompt),
+    ...validateInventedYears(v, prompt),
   ];
   const violations = allViolations(result);
   if (violations.length > 0) {
