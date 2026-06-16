@@ -327,8 +327,10 @@ export const WC_ESPN_NAME_TO_ID: Record<string, string> = {
 
 /** Reverse map: our wc-* id → ESPN displayName (primary name). */
 export const WC_ID_TO_ESPN_NAME: Record<string, string> = Object.fromEntries(
-  // Use the longer/more canonical name when there are multiple entries for same id
+  // Exclude only the NON-canonical variant per id so the other wins. NOTE: 'Iran'
+  // is intentionally NOT excluded — ESPN's WC feed returns 'Iran', and excluding
+  // BOTH 'IR Iran' and 'Iran' (the prior bug) left wc-iran unmapped/previewless.
   Object.entries(WC_ESPN_NAME_TO_ID)
-    .filter(([espnName]) => !['USA', 'Türkiye', 'Korea Republic', 'Congo DR', 'Ivory Coast', 'IR Iran', 'Iran', 'Curacao', 'Czechia', 'Bosnia and Herzegovina', 'Cabo Verde'].includes(espnName))
+    .filter(([espnName]) => !['USA', 'Türkiye', 'Korea Republic', 'Congo DR', 'Ivory Coast', 'IR Iran', 'Curacao', 'Czechia', 'Bosnia and Herzegovina', 'Cabo Verde'].includes(espnName))
     .map(([espnName, id]) => [id, espnName]),
 );

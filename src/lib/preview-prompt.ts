@@ -1301,6 +1301,13 @@ export function buildDataBlock(
   }
 
   if (enabled('fixtureContext')) {
+    // Representative-series state (State of Origin) — replaces the club ladder,
+    // which doesn't apply to rep teams. Authoritative, derived from the live series.
+    if (context.seriesState) {
+      lines.push(`SERIES STATE (authoritative — this is a representative series, NOT a club ladder fixture): ${context.seriesState}`);
+      lines.push('');
+    }
+
     // For finals: surface domestic competition status (title clinched, etc.) even though
     // the full league table is suppressed as irrelevant to the cup fixture.
     // This gives Claude the "double" narrative context when a team has already won the league.

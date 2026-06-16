@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic';
 const PREFIX_TO_LEAGUE: Record<string, string> = {
   afl:  'afl',
   nrl:  'nrl',
+  soo:  'nrl',  // State of Origin canonical fixture id: soo-<repTeamId>-<eventId>
+
   epl:  'epl',
   sru:  'super_rugby',
   wc:   'world_cup',

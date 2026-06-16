@@ -125,6 +125,10 @@ export interface UpcomingGame {
   completed?: boolean;
   /** NBA playoffs — official series score from ESPN (e.g. "NY leads series 3-1") */
   seriesSummary?: string;
+  /** Extra game_previews keys to upsert the SAME generated payload under.
+   *  Used for representative games (State of Origin) whose display layer keys per
+   *  perspective (soo-nrl-blues-… AND soo-nrl-maroons-…) — one generation, both keys. */
+  mirrorGameIds?: string[];
 }
 
 // ─── Results ──────────────────────────────────────────────────────────────────
@@ -309,6 +313,9 @@ export interface PreviewContext {
   keyPlayersGameLabel?: string;
   /** For two-legged knockout ties: score from the first leg (team's perspective). */
   firstLegResult?: { teamScore: number; opponentScore: number };
+  /** Representative-series state (State of Origin) — replaces the club ladder.
+   *  e.g. "Game 2 of 3 — New South Wales lead the series 1-0; a win here clinches it." */
+  seriesState?: string;
   /** For English cup fixtures: the division the opponent currently plays in (e.g. "Championship", "League One") — only set when they are not in the top flight. */
   opponentLeague?: string;
 

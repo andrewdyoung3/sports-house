@@ -18,6 +18,7 @@ import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTe
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
+import { SOO_META, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
 // 5-minute browser/CDN cache; server-side fetch cache handles upstream revalidation.
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
@@ -417,33 +418,8 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
 }
 
 // ─── State of Origin — ESPN NRL scoreboard (league ID: 3) ────────────────────
-
-interface SOOMeta {
-  self: string;     // ESPN displayName of followed team
-  opponent: string; // ESPN displayName of the opposition
-  selfAbbr: string;
-  oppAbbr:  string;
-  oppColor: string;
-  oppLogoUrl: string;
-  oppTeamId: string; // our internal team ID for the opponent (drives name substitution)
-}
-
-const SOO_META: Record<string, SOOMeta> = {
-  'nrl-maroons': {
-    self: 'Queensland',      opponent: 'New South Wales',
-    selfAbbr: 'QLD',         oppAbbr: 'NSW',
-    oppColor: '#003DA5',
-    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289317.png',
-    oppTeamId: 'nrl-blues',
-  },
-  'nrl-blues': {
-    self: 'New South Wales', opponent: 'Queensland',
-    selfAbbr: 'NSW',         oppAbbr: 'QLD',
-    oppColor: '#6B0000',
-    oppLogoUrl: 'https://a.espncdn.com/i/teamlogos/rugby/teams/500/289318.png',
-    oppTeamId: 'nrl-maroons',
-  },
-};
+// SOO_META + series-state derivation live in @/lib/soo (shared with the
+// generation path so the two never drift).
 
 async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
   const meta = SOO_META[teamId];
@@ -472,19 +448,8 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
     })
     .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  // Tally series score from completed games
-  let selfWins = 0;
-  let oppWins  = 0;
-  for (const e of allSOO) {
-    if (!e.status?.type?.completed) break;
-    const comps: any[] = e.competitions?.[0]?.competitors ?? [];
-    const selfC  = comps.find(c => c.team?.displayName === meta.self);
-    const oppC   = comps.find(c => c.team?.displayName === meta.opponent);
-    const selfPts = Number(selfC?.score ?? 0);
-    const oppPts  = Number(oppC?.score  ?? 0);
-    if (selfPts > oppPts) selfWins++;
-    else if (oppPts > selfPts) oppWins++;
-  }
+  // Series tally — shared derivation (see @/lib/soo).
+  const tally = tallySeries(allSOO, meta);
 
   const now         = Date.now();
   const twoHoursAgo = now - 2 * 3600 * 1000;
@@ -504,19 +469,8 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
     const utcDate  = new Date(e.date);
     const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
 
-    // Series context label
-    const seriesDecided = selfWins >= 2 || oppWins >= 2;
-    let seriesCtx = '';
-    if (seriesDecided) {
-      const wAbbr = selfWins >= 2 ? meta.selfAbbr : meta.oppAbbr;
-      const wCount = Math.max(selfWins, oppWins);
-      const lCount = Math.min(selfWins, oppWins);
-      seriesCtx = ` (Series won: ${wAbbr} ${wCount}-${lCount})`;
-    } else if (selfWins + oppWins > 0) {
-      if (selfWins > oppWins)       seriesCtx = ` (${meta.selfAbbr} lead ${selfWins}-${oppWins})`;
-      else if (oppWins > selfWins)  seriesCtx = ` (${meta.oppAbbr} lead ${oppWins}-${selfWins})`;
-      else                          seriesCtx = ` (Series level ${selfWins}-all)`;
-    }
+    // Series context label — shared derivation (see @/lib/soo).
+    const seriesCtx = seriesLabelSuffix(tally, meta);
 
     return {
       id:              `soo-${teamId}-${e.id}`,

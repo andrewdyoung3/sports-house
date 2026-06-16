@@ -20,6 +20,7 @@ import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
 import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
+import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
   const cutoff   = nowMs - lookbackMs;
   const seen     = new Set<string>();
 
-  return ((data.events ?? []) as any[])
+  const clubFixtures = ((data.events ?? []) as any[])
     .filter(e => {
       const isComplete = e.status?.type?.completed === true;
       if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
@@ -171,8 +172,94 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         completed:       isComplete || undefined,
       });
       return acc;
-    }, [])
+    }, []);
+
+  // State of Origin (NSW vs QLD) is in the same rugby-league/3 feed but its teams
+  // aren't clubs, so it's dropped above. Append it via the rep-team path so the
+  // GENERATION pipeline queues it (the display route does this separately).
+  const soo = await fetchSOOGenerationFixtures(lookbackDays);
+
+  return [...clubFixtures, ...soo]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+// ESPN rep displayName → our internal rep team id.
+const SOO_ESPN_TO_REPID: Record<string, string> = {
+  'Queensland':      'nrl-maroons',
+  'New South Wales': 'nrl-blues',
+};
+
+/**
+ * Canonical State of Origin fixtures for the generation pipeline. ONE fixture per
+ * physical game (id `soo-<homeRepId>-<eventId>`, teamId = home rep, opponentId =
+ * away rep) so both rep followers' decideForTeam resolve to it → a single
+ * generation (the loop dedupes by fixture.id). mirrorGameIds carries the other
+ * perspective key (`soo-<awayRepId>-<eventId>`) so the one payload is upserted
+ * under both display keys. Series state/label derived via the shared soo.ts.
+ */
+async function fetchSOOGenerationFixtures(lookbackDays: number): Promise<UpcomingGame[]> {
+  const year   = new Date().getFullYear();
+  const cutoff = Date.now() - lookbackDays * 86400_000;
+
+  const res = await fetchTimeout(
+    `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${year}0415-${year}0901&limit=200`,
+    { next: { revalidate: 3600 } },
+  );
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const allSOO = ((data.events ?? []) as any[])
+    .filter(isSOOEvent)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  const out: UpcomingGame[] = [];
+  allSOO.forEach((e: any, idx: number) => {
+    const completed = e.status?.type?.completed === true;
+    const startMs   = new Date(e.date).getTime();
+    if (completed) {
+      if (!(lookbackDays > 0 && startMs >= cutoff)) return; // skip old completed games
+    }
+
+    const comp:  any   = e.competitions?.[0] ?? {};
+    const comps: any[] = comp.competitors ?? [];
+    const homeName = (comps.find(c => c.homeAway === 'home') ?? comps[0])?.team?.displayName ?? '';
+    const awayName = (comps.find(c => c.homeAway === 'away') ?? comps[1])?.team?.displayName ?? '';
+    const homeId = SOO_ESPN_TO_REPID[homeName];
+    const awayId = SOO_ESPN_TO_REPID[awayName];
+    if (!homeId || !awayId) return;
+
+    const meta  = SOO_META[homeId];            // home-team perspective
+    const tally = tallySeries(allSOO, meta);   // shared derivation (C2)
+    const gameNumber = idx + 1;
+
+    const utc  = new Date(e.date);
+    const aest = new Date(utc.getTime() + 10 * 3600 * 1000);
+
+    out.push({
+      id:              `soo-${homeId}-${e.id}`,
+      teamId:          homeId,
+      opponent:        TEAMS.find(t => t.id === awayId)?.name ?? awayName,
+      opponentAbbr:    meta.oppAbbr,
+      opponentColor:   meta.oppColor,
+      opponentLogoUrl: meta.oppLogoUrl,
+      opponentId:      awayId,
+      // ESPN's "home" flag for Origin is nominal (jersey/last-change rights), not
+      // venue advantage — Origin rotates through neutral venues (MCG, Perth…).
+      // Leave isHome=false so the prompt's venue classifier decides from the
+      // registered ground: neutral at the MCG, genuine home only at Accor/Suncorp.
+      isHome:          false,
+      date:            utc.toISOString(),
+      time:            aestDisplay(aest),
+      venue:           comp.venue?.fullName ?? '',
+      broadcast:       ['Nine Network', 'Fox Sports'],
+      streaming:       ['Kayo Sports', '9Now'],
+      competition:     `State of Origin — Game ${gameNumber}${seriesLabelSuffix(tally, meta)}`,
+      mirrorGameIds:   [`soo-${awayId}-${e.id}`],
+      completed:       completed || undefined,
+    });
+  });
+
+  return out;
 }
 
 // ─── EPL — ESPN (multiple competitions) ──────────────────────────────────────

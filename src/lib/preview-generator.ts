@@ -395,6 +395,11 @@ export async function generateAndStorePreview(
 
     if (isValidPreview(preview)) {
       await upsertPreview(fixture.id, preview, AI_MODEL, null);
+      // Representative games (State of Origin) key per perspective on the display
+      // side — upsert the SAME payload under the mirror key(s) so both resolve.
+      for (const mirrorId of fixture.mirrorGameIds ?? []) {
+        await upsertPreview(mirrorId, preview, AI_MODEL, null);
+      }
       return { ok: true };
     }
 

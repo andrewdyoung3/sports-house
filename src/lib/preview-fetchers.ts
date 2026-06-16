@@ -24,6 +24,7 @@ import {
   cricketConfigured, cricMatchInfo, cricMatchSquad, cricSeriesInfo, type CricMatch,
 } from '@/lib/cricketdata';
 import { fetchAflLineups } from '@/lib/afl-roster';
+import { SOO_META, isSOOEvent, tallySeries, seriesStateForPreview } from '@/lib/soo';
 
 // ─── AFL — Squiggle ───────────────────────────────────────────────────────────
 // SQUIGGLE_NAME lives in @/lib/afl (derived from teams.ts/team-logos.ts).
@@ -319,11 +320,53 @@ function parseNRLStandings(entries: any[], displayName: string): TeamStanding | 
   };
 }
 
+/**
+ * State of Origin preview context. Reps have no club ladder, so standings are
+ * suppressed; the SERIES STATE (from shared soo.ts) replaces it. Form + lineups
+ * come from the ESPN summary extractor by rep name + eventId. Head-to-head is
+ * omitted because for Origin it IS the recent form (the sides only play each
+ * other) — surfacing both would be redundant.
+ */
+async function fetchSOOPreview(teamId: string, eventId?: string): Promise<PreviewContext> {
+  const meta = SOO_META[teamId];
+  if (!meta || !eventId) return {};
+
+  const extras = await fetchESPNMatchExtras('rugby-league/3', eventId, meta.self, meta.opponent, 13);
+
+  let seriesState: string | undefined;
+  try {
+    const year = new Date().getFullYear();
+    const res = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${year}0415-${year}0901&limit=200`,
+      { next: { revalidate: 3600 } },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      const allSOO = ((data.events ?? []) as any[])
+        .filter(isSOOEvent)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const idx = allSOO.findIndex(e => String(e.id) === String(eventId));
+      if (idx >= 0) seriesState = seriesStateForPreview(tallySeries(allSOO, meta), meta, idx + 1);
+    }
+  } catch { /* series state is best-effort */ }
+
+  return {
+    teamRecentForm:     extras.teamRecentForm,
+    opponentRecentForm: extras.opponentRecentForm,
+    teamLastLineup:     extras.teamLastLineup,
+    opponentLastLineup: extras.opponentLastLineup,
+    seriesState,
+    // No leagueTable/standings (reps have no club ladder); no headToHead (= form here).
+  };
+}
+
 export async function fetchNRLPreview(
   teamId: string,
   opponentName: string,
   eventId?: string,
 ): Promise<PreviewContext> {
+  if (SOO_META[teamId]) return fetchSOOPreview(teamId, eventId);
+
   const teamESPNName = NRL_ESPN_NAME[teamId];
   const teamESPNId   = NRL_ESPN_ID[teamId];
   if (!teamESPNName) return {};
@@ -1374,7 +1417,7 @@ const NBA_ESPN_ID: Record<string, string> = {
   'nba-wizards':      '27',
 };
 
-const NBA_ESPN_NAME: Record<string, string> = {
+export const NBA_ESPN_NAME: Record<string, string> = {
   'nba-celtics':      'Boston Celtics',
   'nba-nets':         'Brooklyn Nets',
   'nba-knicks':       'New York Knicks',
@@ -1602,7 +1645,7 @@ export async function fetchNBAPreview(teamId: string, opponentName: string, even
 
 // ─── NHL — ESPN ───────────────────────────────────────────────────────────────
 
-const NHL_ESPN_NAME: Record<string, string> = {
+export const NHL_ESPN_NAME: Record<string, string> = {
   'nhl-bruins':        'Boston Bruins',
   'nhl-sabres':        'Buffalo Sabres',
   'nhl-redwings':      'Detroit Red Wings',
