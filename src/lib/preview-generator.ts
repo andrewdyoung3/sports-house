@@ -299,6 +299,27 @@ const ollamaClient = new OpenAI({
   timeout: 15 * 60 * 1000,
 });
 
+// ─── mediaWatch enforcement ───────────────────────────────────────────────────
+
+/**
+ * mediaWatch may carry content ONLY when a FROM THE MEDIA block was actually
+ * supplied in the data block. The model reliably ignores the prompt's "if no media
+ * block, OMIT mediaWatch" instruction and fabricates attributed lines ("Reports
+ * suggest…", "The tipsters lean toward…") — which are exempt from the name/stat
+ * validators because mediaWatch is treated as attributed editorial. So enforce it
+ * deterministically (same principle as binding standings to DERIVED FACTS): if the
+ * data block carried no FROM THE MEDIA section, strip mediaWatch to empty before
+ * storing. A retry is not enough — the model overrides retry nudges; the strip is
+ * robust to non-compliance. When a media block WAS supplied, leave it untouched
+ * (it is relaying real, attributed content).
+ */
+function stripUnsourcedMediaWatch(output: AIPreview, prompt: string): AIPreview {
+  if (/^FROM THE MEDIA/m.test(prompt)) return output;        // real source present — keep
+  if (!output.mediaWatch || output.mediaWatch.length === 0) return output;
+  aiLog(`mediaWatch-strip: removed ${output.mediaWatch.length} unsourced item(s) (no FROM THE MEDIA block)`);
+  return { ...output, mediaWatch: [] };
+}
+
 // ─── Ollama call ──────────────────────────────────────────────────────────────
 
 export async function callOllama(
@@ -364,7 +385,7 @@ export async function callOllama(
       const retryViols = allViolations(retry);
       if (retryViols.length === 0) {
         aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
-        return retry;
+        return stripUnsourcedMediaWatch(retry, prompt);
       }
       aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — returning first attempt`);
     } catch (e) {
@@ -373,7 +394,7 @@ export async function callOllama(
   } else {
     aiLog(`done elapsed=${Date.now() - t0}ms`);
   }
-  return result;
+  return stripUnsourcedMediaWatch(result, prompt);
 }
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
