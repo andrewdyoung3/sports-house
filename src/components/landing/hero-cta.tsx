@@ -44,11 +44,6 @@ export function HeroCTA() {
           <ArrowRight className="h-4 w-4" />
         </Button>
       </Link>
-      <Link href="/schedule">
-        <Button size="lg" variant="outline" className="w-full sm:w-auto">
-          See a Demo
-        </Button>
-      </Link>
     </div>
   );
 }
