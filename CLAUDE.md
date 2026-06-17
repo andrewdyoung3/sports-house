@@ -66,7 +66,12 @@ Standings/news are also live for **Super Rugby, Rugby Int'l, NBA, NHL** and the 
 ### AI match-preview enrichment (per fixture)
 Beyond standings/news, each preview's data block is enriched by `buildPreviewContext` → `preview-fetchers.ts`:
 - **Recent form + head-to-head + last lineups** — `fetchESPNMatchExtras()` reads ESPN's `summary?event=` goldmine (`lastFiveGames` / `headToHeadGames` / `rosters[].roster`) for NRL/EPL/SRU/RINT/NBA/NHL/WC. Name-driven; `eventId = fixture.id.split('-').pop()`. Lineups: `starter` flag for soccer/basketball, **jersey ≤13 (league) / ≤15 (union)** for rugby. AFL form+H2H come from the Squiggle `games` array.
+- **AFL squads/lineups** — `afl-roster.ts` (AFL.com / Telstra CFS; runtime `WMCTok` token, never stored; cached on `/tmp`). Named team lists once selected (~Thu); suppressed pre-naming. Flows into the SQUAD block + whitelist.
 - **Weather at kickoff** — `weather.ts` (Open-Meteo) for outdoor leagues; only shown when notable.
+
+**Representative teams (State of Origin)** — `nrl-maroons` / `nrl-blues` are followable rep teams with no club ladder. `src/lib/soo.ts` is the single source for `SOO_META` + series-state derivation (shared by `/api/fixtures` and the generation path). The generator emits ONE canonical fixture (`soo-<homeRepId>-<eventId>`) and `generateAndStorePreview` upserts the payload under both display perspective keys via `fixture.mirrorGameIds` (one generation, both `soo-nrl-blues-…` and `soo-nrl-maroons-…`). Preview shows SERIES STATE instead of a ladder; venue classified neutral at neutral grounds. Same pattern is the template for any future rep entity — **mirror that entity's own display id scheme**.
+
+**Recurrence guard** — `scripts/check-team-coverage.ts` (`npx tsx`) asserts every followable team in `teams.ts` resolves to a generation identity (club map OR rep map OR cricket-dynamic); mock leagues (NFL/MLB) are reported as intentionally unsupported. Run it after adding teams/maps; 0 GAPS required.
 
 **Faithfulness invariant:** generation, the sandbox route, and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext` and pass `[],[]` for positional results — so add new data to `PreviewContext`/`buildDataBlock`, never a parallel path, and prod/sandbox stay byte-identical.
 
@@ -79,4 +84,4 @@ Beyond standings/news, each preview's data block is enriched by `buildPreviewCon
 2. **Auth** — add NextAuth; protect `/dashboard` with a session check
 3. ~~**AI previews**~~ — DONE: local Ollama pipeline (`preview-generator.ts`), not the originally-planned OpenAI
 4. **More leagues** — Cricket next (sources are WAF-blocked server-side → keyed API/proxy); then NFL/MLB
-5. **Preview data follow-ons** — AFL lineups (Squiggle squads only → AFL.com/FootyWire); NRL injuries (ESPN `{}` → nrl.com)
+5. **Preview data follow-ons** — AFL lineups DONE (`afl-roster.ts`, AFL.com). NRL injuries investigated → **walled** (nrl.com casualty ward is editorial; no structured injury endpoint) — not wired; team-news headlines cover injuries editorially.
