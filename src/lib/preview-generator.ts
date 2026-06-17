@@ -26,19 +26,80 @@ export function aiLog(msg: string) {
 
 // ─── Points-claim validator ───────────────────────────────────────────────────
 
-function validatePointsClaims(output: AIPreview, prompt: string): string[] {
+const WORD_NUM: Record<string, string> = {
+  zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6',
+  seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12',
+  thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17',
+  eighteen: '18', nineteen: '19', twenty: '20',
+};
+const normNum = (s: string): string => WORD_NUM[s.toLowerCase()] ?? s;
+const NUM_TOKEN = `\\d+|${Object.keys(WORD_NUM).join('|')}`;
+
+export function validatePointsClaims(output: AIPreview, prompt: string): string[] {
   const violations: string[] = [];
   const outputText = JSON.stringify(output);
 
   const dfMatch = prompt.match(/DERIVED FACTS[\s\S]*?(?=\n\n[A-Z]|\n\n\n|$)/);
   if (dfMatch) {
+    const df = dfMatch[0];
     const derivedNums = new Set(
-      [...dfMatch[0].matchAll(/\b(\d+)\b/g)].map(m => m[1]),
+      [...df.matchAll(/\b(\d+)\b/g)].map(m => m[1]),
     );
-    const claimRe = /(\d+)\s+(?:competition\s+)?points?\s+(?:behind|ahead|adrift|clear|above|below|outside|inside)/gi;
+
+    // (1) Gap claims: "<N> points behind/ahead/inside/outside…" — number (digit
+    //     OR word) must appear in DERIVED FACTS.
+    const claimRe = new RegExp(
+      `(${NUM_TOKEN})[-\\s]+(?:competition\\s+)?points?\\s+(?:behind|ahead|adrift|clear|above|below|outside|inside)`,
+      'gi',
+    );
     for (const m of outputText.matchAll(claimRe)) {
-      if (!derivedNums.has(m[1])) {
-        violations.push(`standings gap "${m[0].slice(0, 60)}" — ${m[1]} not in DERIVED FACTS`);
+      const n = normNum(m[1]);
+      if (!derivedNums.has(n)) {
+        violations.push(`standings gap "${m[0].slice(0, 60)}" — ${n} not in DERIVED FACTS`);
+      }
+    }
+
+    // (2) Points-total claims: "level on/tied on/sit on <N> points" or
+    //     "<N> points each/apiece" — the total must appear in DERIVED FACTS
+    //     (catches reciting the round number as a points total).
+    const totalRe = new RegExp(
+      `(?:level(?:\\s+(?:on|with))?|tied(?:\\s+(?:on|at))?|sit(?:ting)?\\s+on|locked(?:\\s+(?:on|at))?)\\s+(${NUM_TOKEN})\\s+(?:competition\\s+)?points?`,
+      'gi',
+    );
+    const totalRe2 = new RegExp(
+      `(${NUM_TOKEN})\\s+(?:competition\\s+)?points?\\s+(?:each|apiece|respectively|both)`,
+      'gi',
+    );
+    for (const re of [totalRe, totalRe2]) {
+      for (const m of outputText.matchAll(re)) {
+        const n = normNum(m[1]);
+        if (!derivedNums.has(n)) {
+          violations.push(`points total "${m[0].slice(0, 60)}" — ${n} not in DERIVED FACTS`);
+        }
+      }
+    }
+
+    // (3) Direction inversion: DERIVED FACTS states "<N> points inside|outside the
+    //     finals places". If the output claims the SAME number with the OPPOSITE
+    //     direction (e.g. derived "2 inside", output "two points outside the top
+    //     eight"), that is a contradiction.
+    const derivedDir = new Map<string, Set<string>>(); // num → {inside,outside}
+    for (const m of df.matchAll(/(\d+)\s+points?\s+(inside|outside)\s+the\s+finals/gi)) {
+      const n = m[1];
+      if (!derivedDir.has(n)) derivedDir.set(n, new Set());
+      derivedDir.get(n)!.add(m[2].toLowerCase());
+    }
+    const outDirRe = new RegExp(
+      `(${NUM_TOKEN})\\s+points?\\s+(inside|outside)\\s+the\\s+(?:top\\s+\\w+|finals|eight)`,
+      'gi',
+    );
+    for (const m of outputText.matchAll(outDirRe)) {
+      const n   = normNum(m[1]);
+      const dir = m[2].toLowerCase();
+      const opp = dir === 'inside' ? 'outside' : 'inside';
+      const dd  = derivedDir.get(n);
+      if (dd && dd.has(opp) && !dd.has(dir)) {
+        violations.push(`standings direction "${m[0].slice(0, 60)}" — DERIVED FACTS says ${n} points ${opp}, not ${dir}`);
       }
     }
   }
