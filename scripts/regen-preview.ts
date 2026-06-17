@@ -46,6 +46,7 @@ try {
 const PREFIX_TO_LEAGUE: Record<string, string> = {
   afl:  'afl',
   nrl:  'nrl',
+  soo:  'nrl',   // State of Origin rep fixtures live in the NRL fixture list
   epl:  'epl',
   sru:  'super_rugby',
   wc:   'world_cup',
