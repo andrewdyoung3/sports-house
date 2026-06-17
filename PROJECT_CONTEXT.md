@@ -5,16 +5,6 @@
 > running log of decisions, the next build, and known limitations.
 >
 > Last updated: 2026-06-17
->
-> ⚠️ **MENTAL MODEL — the preview pipeline is NOT "done".** Earlier versions of this doc framed
-> it as "complete and running"; that assumption is the single biggest recurring bug source. The
-> pipeline is **continuously enriched**, and the recurring failure is: a team is made followable
-> in `teams.ts` but never wired into the generation-side identity maps, so it silently gets no
-> preview (State of Origin and `wc-iran` were exactly this). Treat any new followable team or data
-> source as **wire-it-AND-guard-it** work. The **coverage invariant** (§5a) and `npm`/`tsx` guard
-> `scripts/check-team-coverage.ts` exist to enforce this. Much of the enrichment below (form, H2H,
-> lineups, weather, cricket via cricketdata, AFL squads, State of Origin, the dev sandbox) lives on
-> branch `feat/preview-data-wiring` (PR #12, unmerged) — `main` predates it.
 
 ---
 
@@ -111,7 +101,9 @@ src/
       warm-team/route.ts      — GATED: enqueues a preview_jobs row (service-role insert)
                                 on team follow; returns 202; best-effort, hourly heartbeat
                                 is the backstop
-      weather/route.ts        — Venue weather for fixtures
+      weather/route.ts        — Venue weather for fixtures (thin wrapper over lib/weather.ts)
+      sandbox/                — DEV-ONLY: context (buildBlocks per-block) / models / generate —
+                                powers the /sandbox prompt inspector
   components/
     ui/                       — button, card, badge, input, skeleton, team-badge, empty-state
     layout/navbar.tsx         — Fixed top navbar; active-link detection; mounts <AccountMenu/>
@@ -144,17 +136,16 @@ src/
                                 REGEN_MARKS_HOURS=[48,24], LOOKAHEAD_DAYS=14, LOOKBACK_DAYS=3
     preview-generator.ts      — generateAndStorePreview(), callOllama(), upsertPreview(),
                                 isValidPreview(), validation (points/names/finals-imminence)
-    preview-prompt.ts         — SYSTEM_PROMPT + buildDataBlock() + buildBlocks() (byte-faithful
-                                sandbox twin) + collectPlayerWhitelist; the prompt assembly
-    preview-context.ts        — buildPreviewContext(): the ONE canonical context builder used by
-                                every generation path (heartbeat/poller/regen) and the sandbox
-    preview-fetchers.ts       — per-league context fetchers + fetchESPNMatchExtras (form/H2H/
-                                lineups), fetchCricketPreview, fetchSOOPreview, AFL squads
-    soo.ts                    — State of Origin: SOO_META + series-state derivation (shared by
-                                /api/fixtures display AND the generation path)
-    cricketdata.ts            — cricketdata.org/CricAPI client (token-free; 100/day; /tmp cache)
-    afl-roster.ts             — AFL.com/CFS named team lists (runtime WMCTok token; /tmp cache)
-    weather.ts                — Open-Meteo kickoff weather (shared by /api/weather + previews)
+    preview-prompt.ts         — prompt assembly: SYSTEM_PROMPT + buildDataBlock() + buildBlocks()
+                                (sandbox twin) + collectPlayerWhitelist()
+    preview-context.ts        — buildPreviewContext(): THE single context builder for all generation
+                                paths; delegates to preview-fetchers; adds weather + managers
+    preview-fetchers.ts       — shared per-league fetchers + fetchESPNMatchExtras() (form/H2H/lineups
+                                from ESPN summary) + fetchCricketPreview() + fetchSOOPreview()
+    cricketdata.ts            — cricketdata.org/CricAPI client (token-free; daily-quota cache, §5a)
+    afl-roster.ts             — AFL.com named team lists (runtime WMCTok token; /tmp cache)
+    weather.ts                — Open-Meteo kickoff weather (shared by /api/weather + generation)
+    soo.ts                    — State of Origin: SOO_META + series-state derivation (shared)
     generation-lock.ts        — acquireLock() / releaseLock() via /tmp/sporthouse-generation.lock;
                                 shared by heartbeat + poller to prevent concurrent Ollama calls
     followed-teams-server.ts  — getDistinctFollowedTeamIds(): admin client, unions ALL user_prefs
@@ -178,16 +169,15 @@ scripts/
   generate-previews.ts        — Hourly heartbeat: fetches fixtures for all LEAGUES, runs
                                 decideForTeam per followed team, calls generateAndStorePreview.
                                 LEAGUES = ['afl','nrl','epl','super_rugby','rugby_int','f1',
-                                'world_cup','nba']. --force flag bypasses lifecycle.
+                                'world_cup','nba','cricket_int','bbl']. --force bypasses lifecycle.
   poll-jobs.ts                — On-follow poller: BATCH=5, STALE_MINUTES=10, MAX_ATTEMPTS=3.
                                 Atomic claim → fixture lookup → existence-check dedup → generate.
   coverage-report.ts          — Read-only: classifies each followed team as covered / missing /
                                 no-upcoming. No writes, no generation.
-  check-team-coverage.ts      — Recurrence guard: every followable team must resolve to a
-                                generation identity (club/rep/dynamic); 0 GAPS required (§5a)
-  verify-sandbox-faithful.ts  — Proves sandbox buildBlocks == prod buildDataBlock byte-for-byte
-  regen-preview.ts            — On-demand single-game regen (npm run regen -- <gameId>)
-  dump-prompt.ts              — Prints the exact system+user prompt for a gameId
+  check-team-coverage.ts      — Recurrence guard: every followable team resolves to a generation
+                                identity (club/rep/dynamic); 0 GAPS required. NFL/MLB = unsupported.
+  verify-sandbox-faithful.ts  — Proves the sandbox (buildBlocks) == prod (buildDataBlock) byte-for-
+                                byte per fixture; covers afl/nrl/soo/epl/sru/rint/nba/wc/f1/cricket.
   eval-previews.ts            — DEV-ONLY: offline model comparison harness (Anthropic + Ollama).
                                 Not built or bundled.
   launchd/
@@ -266,16 +256,46 @@ pooled**, not per-user. This is intentional: generate what any real user might w
 **Leagues generated (heartbeat):**
 
 ```typescript
-// scripts/generate-previews.ts (current)
-const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'nba', 'cricket_int', 'bbl'];
+// scripts/generate-previews.ts
+const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'nba',
+                 'cricket_int', 'bbl'];
 ```
-
-All generation entry points (heartbeat, poller, regen) build context through the single canonical
-`buildPreviewContext()` in `src/lib/preview-context.ts` → `buildDataBlock()` in `preview-prompt.ts`.
-This is the faithfulness anchor (see §5a).
 
 `npm run warm:force` — bypasses `decideForTeam`, regenerates every followed team's next
 fixture regardless of freshness. Use after significant prompt changes (see §13).
+
+### Preview data block — the rich context (post-2026-06-12 enrichment)
+
+The data block fed to the model is no longer the thin standings+news prompt. `buildPreviewContext`
+(`src/lib/preview-context.ts`) is the **single context builder** used by all generation entry points,
+delegating to the shared fetchers in `src/lib/preview-fetchers.ts`. Each preview now carries, where
+available:
+
+- **Recent form, head-to-head, last lineups** — `fetchESPNMatchExtras()` reads ESPN's `summary?event=`
+  goldmine (`lastFiveGames` / `headToHeadGames` / `rosters[].roster`) for NRL/EPL/SRU/RINT/NBA/NHL/WC.
+  Lineups: `starter` flag for soccer/basketball, **jersey ≤13 (league) / ≤15 (union)** for rugby. AFL
+  form+H2H from the Squiggle `games` array.
+- **AFL squads/lineups** — `afl-roster.ts` (AFL.com / Telstra CFS; runtime `WMCTok` token, never
+  stored; `/tmp` cache). Named team lists once selected (~Thu); suppressed pre-naming.
+- **Cricket (BBL + internationals)** — `cricketdata.ts` (cricketdata.org / CricAPI); see §5.
+- **Weather at kickoff** — `weather.ts` (Open-Meteo, no key); outdoor leagues, only when notable.
+- **State of Origin** — rep teams `nrl-maroons`/`nrl-blues`; series state instead of a club ladder; see §5.
+
+**Output validators** (`preview-generator.ts`, retried once on violation): points-claim, finals-imminence,
+invented player names (whitelist from the data block), **invented per-player statlines**, **invented
+calendar years**.
+
+**Faithfulness invariant (non-negotiable):** generation, the dev sandbox route (`/api/sandbox/context`
+→ `buildBlocks`), and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext`
+and pass `[],[]` for positional results. Add new data to `PreviewContext`/`buildDataBlock` only — never
+a parallel path — so prod and the sandbox stay **byte-identical** (verified per fixture).
+
+**Dev prompt sandbox** — `/sandbox` page + `/api/sandbox/*` routes let you inspect/toggle the exact
+per-block prompt and run generations; `buildBlocks` decomposes `buildDataBlock` into the same blocks.
+
+**Recurrence guard** — `scripts/check-team-coverage.ts` asserts every followable team in `teams.ts`
+resolves to a generation identity (club map OR rep map OR cricket-dynamic); NFL/MLB reported as
+intentionally unsupported. Run after adding teams/maps; **0 GAPS required**.
 
 **On-follow ping:**
 
@@ -309,26 +329,29 @@ And set `WorkingDirectory` to the project root (required for `.env.local` loadin
 
 ## 5. Real data sources (live)
 
-| League | Fixtures / Results | Standings | News / Extras |
+| League | Fixtures / Results | Standings | News / Extras + preview enrichment |
 |--------|-------------------|-----------|----|
-| AFL | Squiggle `?q=games;year=YEAR` | Squiggle `?q=standings` | Squiggle tips + **named squads via AFL.com/CFS** (`afl-roster.ts`, runtime WMCTok token) |
-| NRL | ESPN rugby-league/3 | ESPN v2 rugby-league standings | ESPN news; **+ State of Origin rep teams** (nrl-maroons/nrl-blues — `soo.ts`) |
-| EPL | ESPN soccer scoreboard (5 comps fan-out) | ESPN v2 soccer standings | ESPN team news |
-| Super Rugby | ESPN `rugby/242041` | ESPN | ESPN |
-| Test Rugby | ESPN `rugby/{244293,180659,289234}` | ESPN | — |
-| F1 | Jolpi Ergast calendar | Jolpi Ergast results | grid data |
-| **BBL / Cricket Int** | **cricketdata.org / CricAPI** (`cricketdata.ts`) — ESPN/cricinfo cricket is WAF-blocked server-side | — | match context, squads, series form/H2H |
-| NBA | ESPN `basketball/nba` (`fetchNBAFixtures`) | — | real; dormant off-season |
-| FIFA World Cup | ESPN `soccer/fifa.world` | group table in context | 48 teams |
-| NHL / MLB / NFL | **mock** (`mock-data.ts`) | mock | not in `REAL_DATA_LEAGUES`; NHL has a preview-context fetcher but no fixtures source |
+| AFL | Squiggle `?q=games;year=YEAR` | Squiggle `?q=standings` | Squiggle tips; **squads/lineups via AFL.com** (`afl-roster.ts`); form+H2H from Squiggle games |
+| NRL | ESPN rugby-league scoreboard | ESPN v2 rugby-league standings | ESPN news + injuries; form/H2H/lineups via ESPN `summary` |
+| **State of Origin** | ESPN rugby-league (NSW/QLD) | — (no club ladder) | rep teams `nrl-maroons`/`nrl-blues`; **series state** + form/H2H/lineups; `soo.ts` |
+| EPL | ESPN soccer scoreboard (5 comps fan-out) | ESPN v2 soccer standings | ESPN news + injuries; form/H2H/lineups via ESPN `summary` |
+| Super Rugby / Test Rugby | ESPN | ESPN | injuries + form/H2H/lineups via ESPN `summary` |
+| F1 | Jolpi Ergast calendar | Jolpi Ergast results | grid / recent races (own data block) |
+| **BBL / Cricket Int** | **cricketdata.org / CricAPI** (`cricketdata.ts`) | series state | match context, toss, named squads, series form/H2H (ESPN/cricinfo cricket is WAF-blocked → keyed API) |
+| NBA | ESPN basketball/nba scoreboard | ESPN | news + injuries + key performers; form/H2H |
+| FIFA World Cup | ESPN soccer/fifa.world scoreboard | group table in context | form/H2H/lineups via ESPN `summary` |
+| NHL | ESPN hockey/nhl (offseason) | ESPN | form/H2H/lineups via ESPN `summary` |
+| MLB | **mock-data.ts** | mock | mock |
+| Weather | Open-Meteo (`weather.ts`) — outdoor leagues, kickoff hour, shown only when notable |
 
-- **AFL/Squiggle** matches by exact team name. All 18 names verified; `afl-giants` = "Greater
-  Western Sydney" (was wrongly "GWS Giants" → returned nothing; fixed previously).
-- **ESPN public API** — no key; EPL routes fan out across 5 competitions.
-- **NBA** is real ESPN data — `fetchNBAFixtures` exists in `league-fixtures.ts`, `nba` is in
-  `REAL_DATA_LEAGUES` and in the generator's `LEAGUES`. NHL/MLB have no fetcher and remain mock.
-- **World Cup** is real ESPN data — `fetchWorldCupFixtures` fetches from `soccer/fifa.world`
-  scoreboard; `world_cup` is in `REAL_DATA_LEAGUES` and the generator's `LEAGUES`.
+- **AFL/Squiggle** matches by exact team name (`afl-giants` = "Greater Western Sydney"). AFL **squads**
+  now come from AFL.com (Squiggle's squad feed returns null) — runtime token, named ~Thursday.
+- **Cricket = cricketdata.org**, not ESPN (every ESPN/cricinfo cricket endpoint is WAF-blocked
+  server-side). Free tier = 100 hits/DAY → aggressive in-process + cross-run `/tmp` caching + a
+  daily-quota circuit breaker. See §5a.
+- **ESPN `summary?event=`** is the shared enrichment source (form/H2H/lineups) across all ESPN sports.
+- **NBA / World Cup / NHL** are real ESPN data and in the generator's `LEAGUES`. Only **MLB** (and
+  effectively NFL, which has no fetcher) remain mock.
 - Caching: results routes set `Cache-Control: public, max-age=300, stale-while-revalidate=3600`
   and `next: { revalidate }` on upstream fetches. Scoreboard pre-warming runs at server startup
   via `instrumentation.ts` (same `revalidate: 3600` — shares cache entries with the results route).
@@ -337,38 +360,16 @@ And set `WorkingDirectory` to the project root (required for `.env.local` loadin
 - **AI reviews** are generated on-read by Ollama on Vercel (the review panel triggers generation;
   indefinitely cached per game key).
 
----
+### 5a. Cricket via cricketdata.org (CricAPI)
 
-## 5a. Preview-enrichment layer + invariants  *(post-thin-prompt; mostly on `feat/preview-data-wiring`)*
-
-The preview data block is far richer than the original thin prompt. Built by `buildPreviewContext`
-(`preview-context.ts`) → `buildDataBlock` (`preview-prompt.ts`), fed by `preview-fetchers.ts`:
-
-- **Recent form + head-to-head + lineups** — `fetchESPNMatchExtras()` reads ESPN `summary?event=`
-  (`lastFiveGames` / `headToHeadGames` / `rosters[].roster`) for NRL/EPL/SRU/RINT/NBA/NHL/WC.
-  `eventId = fixture.id.split('-').pop()`. Lineups: `starter` flag (soccer/basketball), **jersey ≤13
-  league / ≤15 union** for rugby. Name-matching uses exact/substring, never a last-word fallback
-  (the "* Women" cricket collision lesson).
-- **Cricket** — `fetchCricketPreview` (match context, toss, named squads, series form/H2H); dedicated
-  block (F1-style early return). cricketdata.org, 100 hits/day → in-process + cross-run `/tmp` caches
-  + quota circuit breaker.
-- **AFL squads** — `afl-roster.ts`. **State of Origin** — `soo.ts` shared meta + series state; the
-  SERIES STATE block replaces the (nonexistent) club ladder for rep teams; one generation upserts both
-  perspective keys (`soo-nrl-blues-…`, `soo-nrl-maroons-…`) via `fixture.mirrorGameIds`.
-- **Weather** — `weather.ts` (Open-Meteo), outdoor leagues, only when notable.
-- **Output guards** (`preview-generator.ts`) — validators reject invented player names / statlines /
-  years and unsupported points/finals claims; `collectPlayerWhitelist` gates names.
-- **Dev sandbox** — `/sandbox` + `/api/sandbox/*` inspect/toggle prompt blocks; `buildBlocks` is the
-  byte-faithful twin of `buildDataBlock`.
-
-**Faithfulness invariant** — generation, the sandbox route, and `scripts/verify-sandbox-faithful.ts`
-all build via `buildPreviewContext` and pass `[],[]` positionally. Add data to
-`PreviewContext`/`buildDataBlock`, never a parallel path, so prod == sandbox byte-for-byte.
-
-**Coverage invariant** — every followable team in `teams.ts` must resolve to a generation identity
-(club map, rep map, or cricket-dynamic). Enforced by `scripts/check-team-coverage.ts` (run after
-touching teams/maps; **0 GAPS required**; mock NFL/MLB reported as intentionally unsupported). This is
-the guard against the "made followable but unwired" bug class that hid the State of Origin gap.
+`CRICKETDATA_API_KEY` required. Free tier = **100 hits/DAY** (not feature-gated). `cricketdata.ts`
+caches every call in-process **and** cross-run on `/tmp` (currentMatches 3h, series_info 6h, match_info
+30m, squad 6h); a non-success quota status trips a circuit breaker. Fixtures: `buildCricketFixtures`
+(one shared `currentMatches` + bounded `series_info` expansion). Preview: `fetchCricketPreview`
+(match_info + match_squad + series_info) → dedicated cricket data block (F1-style early return). IDs:
+`cint-<matchId>` / `bbl-<matchId>` (cricketdata UUID). `fetchCricketFixtureById` resolves a single match
+for the sandbox/verifier. **Dormant for tracked teams off-season** (men's between series, BBL summer) —
+same as EPL/NBA/NHL off-season; the path is verified against live matches.
 
 ---
 
@@ -464,16 +465,20 @@ modal, opt-in only.
 
 ---
 
-## 9. Current focus
+## 9. Next build — design / QoL pass
 
 The auth roadmap (Phase 1 → Phase 2 → AI-route gating) is shipped. The preview generation
-**infrastructure** (local Ollama + Supabase + launchd) is running — but the **preview content
-pipeline is under active enrichment, not "done"** (§5a). Recent and ongoing:
+**infrastructure** (local Ollama + Supabase + launchd) is shipped and running — but it is **not
+"done"**: a substantial **preview-data enrichment cycle** has since landed on top of it (recent
+form, head-to-head, lineups, weather, cricket via cricketdata.org, AFL squads via AFL.com, State of
+Origin rep teams, the prompt sandbox + faithfulness invariant, and the team-coverage recurrence
+guard — see §4, §5, §12). Enrichment is ongoing as new sources are wired (per-source, behind the
+guard). The other current focus is a **design / QoL pass**:
 
-- **Preview data enrichment** *(branch `feat/preview-data-wiring`, PR #12, unmerged)* — form, H2H,
-  lineups, weather; cricket (cricketdata.org); AFL squads (AFL.com); State of Origin; dev sandbox;
-  output validators; the coverage guard. Wire-and-guard each new followable team/source.
-- **Design / QoL** — dashboard palette unification (§10); navbar `<img>` → `next/image`.
+- **Dashboard palette unification** — migrate the dashboard's legacy `zinc-*` palette to the
+  app's `white/glass` system (§10).
+- **Navbar account avatar `<img>` → `next/image`** (§10).
+- Other small polish surfaced along the way.
 
 ---
 
@@ -499,13 +504,13 @@ pipeline is under active enrichment, not "done"** (§5a). Recent and ongoing:
 - **Round-complete lifecycle gate deferred** — the settle buffer (`SETTLE_BUFFER_HOURS=4`)
   approximates "prior match has settled" by waiting N hours after the prior kickoff. A more
   precise gate would check `completed: true` on the prior fixture row. Not yet implemented.
-- **Cricket via cricketdata.org** — `cricket_int`/`bbl` now use cricketdata.org/CricAPI
-  (`cricketdata.ts`), NOT ESPN (cricket on ESPN/cricinfo is WAF-blocked server-side). Free tier =
-  100 hits/day, so calls are cached in-process and cross-run on `/tmp` with a quota breaker.
-  Dormant for tracked teams off-season (BBL summer; men's bilateral series between windows).
-- **NRL injuries — walled.** nrl.com's casualty ward is an editorial article; no structured injury
-  endpoint, so NRL injuries are not wired (ESPN's feed returns `{}`). Team-news headlines surface
-  injuries editorially. AFL squads, by contrast, ARE wired (AFL.com).
+- **Cricket coverage is quota-bounded** — cricketdata.org free tier is 100 hits/day; the client
+  caches hard (`/tmp`, per-type TTL) and a circuit breaker stops calls if the quota trips. Tracked
+  men's/BBL teams are dormant off-season (women's WC isn't a tracked team). Data/season limitation,
+  not a wiring bug — the path is verified against live matches.
+- **NRL injuries not wired (walled)** — nrl.com casualty ward is an editorial article; the
+  match-centre `/data` carries no injury fields and `/teamlist/data` returns the SPA shell. No clean
+  structured endpoint, so no scraper was shipped; team-news headlines surface injuries editorially.
 - **AI review 500 on non-JSON model output** — `ai-review/route.ts` parses the model's text;
   a malformed reply throws → 500 → "Review unavailable". Mitigated by a single retry in the
   route. Fix via structured output or assistant-prefill (`{`).
@@ -539,13 +544,22 @@ pipeline is under active enrichment, not "done"** (§5a). Recent and ongoing:
 
 ## 12. Resolved this cycle (done — not carried as debt)
 
-- **Preview enrichment shipped** *(branch `feat/preview-data-wiring`, PR #12 — unmerged into `main`)*
-  — recent form + head-to-head + lineups (ESPN summary extractor); kickoff weather (Open-Meteo);
-  cricket BBL + internationals (cricketdata.org, ESPN cricket is WAF-blocked); AFL named squads
-  (AFL.com); **State of Origin** rep-team previews (one generation, mirrored to both perspective
-  keys); dev **prompt sandbox** with a byte-faithful `buildBlocks` twin; output validators
-  (invented names/statlines/years); the **coverage guard** (`check-team-coverage.ts`); and the
-  `wc-iran` mapping fix. See the `project-preview-pipeline` memory for per-feature detail.
+### Preview-data enrichment cycle (2026-06-14 → 17, branch `feat/preview-data-wiring`)
+- **Rich context wired** — recent form, head-to-head, last lineups via one shared ESPN `summary`
+  extractor (NRL/EPL/SRU/RINT/NBA/NHL/WC); + kickoff weather (Open-Meteo). Replaced the thin
+  standings+news prompt. `preview-context.ts` is the single builder.
+- **Cricket (BBL + internationals)** — via cricketdata.org/CricAPI (ESPN cricket WAF-blocked);
+  daily-quota-aware caching; dedicated cricket data block.
+- **AFL squads/lineups** — via AFL.com (Telstra CFS) runtime token; Squiggle squads were null.
+- **State of Origin** — rep teams generate previews (series state, one generation mirrored to both
+  perspective keys); shared `soo.ts`; fixed the `wc-iran` mapping bug surfaced by the guard.
+- **Output guardrails** — invented-statline + invented-year validators; player-name whitelist
+  extended to lineups/squads/key-performers; prompt guidance for diversity + no-redundancy.
+- **Prompt sandbox + faithfulness** — `/sandbox` + `verify-sandbox-faithful.ts` prove sandbox ==
+  prod byte-for-byte; **recurrence guard** `check-team-coverage.ts` (0 GAPS) prevents followable
+  teams from silently lacking a generation identity.
+
+### Earlier this cycle
 - **Auth Phase 2 shipped** — Google OAuth + email magic-link; two-team-spaces model (no merge);
   query-less redirect; navbar account state + sign-out; modal portaled to body. Live in prod.
 - **AI-route gating shipped for reviews** — `/api/ai-review` gated behind any valid Supabase
@@ -574,6 +588,9 @@ pipeline is under active enrichment, not "done"** (§5a). Recent and ongoing:
 
 ## 13. Agent notes / preferences (from memory)
 
+- **This file is the canonical "project context".** When asked to "update project context", update
+  THIS file (`PROJECT_CONTEXT.md`) fully — all affected sections — and bump the `Last updated:` date.
+  Keep `CLAUDE.md` (build/run instructions) in sync too, but this doc is the one meant.
 - **AI previews:** don't acknowledge small sample size / early-season hedging — redirect to
   useful content instead.
 - **AI preview cache — two layers with different mechanics:**
