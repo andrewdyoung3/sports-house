@@ -53,6 +53,11 @@ export interface CompRules {
   relegationFrom?: number;
   /** EPL: number of positions that earn Champions League entry. */
   clSpots?: number;
+  /** F1: races / sprints on the season calendar (for points-still-available maths). */
+  racesTotal?: number;
+  sprintsTotal?: number;
+  raceWinPoints?: number;
+  sprintWinPoints?: number;
   /** Finals fixtures have no feed stage label — name the round by date window. */
   finalsSchedule?: FinalsRound[];
   /** Season this rule set was confirmed for. */
@@ -113,10 +118,17 @@ export const COMP_RULES: Record<string, CompRules> = {
     source: 'FIFA 2026 — 12 groups × 4, 3 games each, top 2 + 8 best thirds → R32',
   },
 
+  // ── CHAMPIONSHIP POINTS (Phase C) ────────────────────────────────────────
+  f1: {
+    archetype: 'championship',
+    // 2026: GP 25-18-15-12-10-8-6-4-2-1 (top 10); sprint 8-7-6-5-4-3-2-1 (top 8);
+    // NO fastest-lap point (abolished 2025+). 24 races + 6 sprints.
+    racesTotal: 24, sprintsTotal: 6, raceWinPoints: 25, sprintWinPoints: 8,
+    season: '2026',
+    source: 'formula1points.com / Motor Sport / Sky Sports — 24 races, 6 sprints, no fastest-lap point',
+  },
+
   // ── DEFERRED — config stubs, NO computation yet ──────────────────────────
-  // TODO(F1 — Phase C): championship type. GP 25-18-15-12-10-8-6-4-2-1; sprint
-  //   8-7-6-5-4-3-2-1; NO fastest-lap point (abolished 2025+); 24 races + 6 sprints.
-  //   Source: formula1points.com / Motor Sport / Sky Sports.
   // TODO(cricket — when BBL returns ~Dec): cricket type. BBL 2pts/win, NRR
   //   tiebreaker, top-N finals (re-confirm N at season start); internationals =
   //   series-state (mirror SOO). Source: ESPNcricinfo / Wikipedia BBL playoffs.

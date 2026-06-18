@@ -153,6 +153,28 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
  * claim in the context field is the all-competitions-form-conflation error (reading
  * the RECENT FORM line as the group record). Reject → retry.
  */
+/**
+ * F1 championship-gap binding: the model miscalculates points margins ("121-point
+ * lead over Red Bull" when the real gap is 173). When CHAMPIONSHIP DERIVED FACTS is
+ * present, any "<N> point(s) lead/gap/behind/ahead/clear" in the prose must cite a
+ * number that actually appears in the F1 data block (standings or derived gaps).
+ */
+export function validateF1ChampionshipClaims(output: AIPreview, prompt: string): string[] {
+  if (!/CHAMPIONSHIP DERIVED FACTS/.test(prompt)) return [];
+  const promptNums = new Set([...prompt.matchAll(/\b(\d+)\b/g)].map(m => m[1]));
+  const factual = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const gapRe = /(\d+)[-\s]?(?:point|pt|points)s?\s+(?:lead|gap|advantage|ahead|behind|clear|adrift|deficit)|(?:lead|ahead of|behind|trail\w*)\s+[^.]*?\bby\s+(\d+)\s*(?:point|pt|points)?/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(gapRe)) {
+    const n = m[1] ?? m[2];
+    if (!n || promptNums.has(n) || seen.has(n)) continue;
+    seen.add(n);
+    violations.push(`F1 championship gap "${m[0].slice(0, 50)}" — ${n} is not a figure in the data block; use the CHAMPIONSHIP DERIVED FACTS gaps verbatim`);
+  }
+  return violations;
+}
+
 export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): string[] {
   if (!/GROUP\s+\S+\s+DERIVED FACTS/.test(prompt)) return [];
   // team → group games played, parsed from the derived-facts lines.
@@ -160,16 +182,32 @@ export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): 
   for (const m of prompt.matchAll(/•\s*(.+?):\s*\d+ group points? from (\d+) game/gi)) {
     played.set(m[1].trim().toLowerCase(), parseInt(m[2], 10));
   }
-  if (![...played.values()].some(n => n <= 1)) return []; // nobody is at ≤1 game
   const ctx = output.context ?? '';
-  const twoResultRe = /\b(a win and a (?:draw|loss)|a (?:draw|loss) and a win|one win and one (?:loss|draw)|two wins|two draws|two losses|won (?:two|both)|with a win and a draw)\b/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
-  for (const m of ctx.matchAll(twoResultRe)) {
-    const hit = m[0].toLowerCase();
-    if (seen.has(hit)) continue;
-    seen.add(hit);
-    violations.push(`WC group-record conflation "${m[0]}" — a tracked team has played ≤1 group game; use the GROUP DERIVED FACTS record, not the all-competitions form line`);
+
+  // (a) Group-record conflation: a team at ≤1 game can't have a two-result record.
+  if ([...played.values()].some(n => n <= 1)) {
+    const twoResultRe = /\b(a win and a (?:draw|loss)|a (?:draw|loss) and a win|one win and one (?:loss|draw)|two wins|two draws|two losses|won (?:two|both)|with a win and a draw)\b/gi;
+    for (const m of ctx.matchAll(twoResultRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`WC group-record conflation "${m[0]}" — a tracked team has played ≤1 group game; use the GROUP DERIVED FACTS record, not the all-competitions form line`);
+    }
+  }
+
+  // (b) Over-claimed qualification: if the derived facts mark NO tracked team as
+  //     mathematically secured/through, prose must not assert qualification.
+  const someoneThrough = /(mathematically secured a top-2|through to the Round of 32|finished in the automatic top 2)/i.test(prompt);
+  if (!someoneThrough) {
+    const overclaimRe = /\b(guaranteed (?:a )?(?:top-two|top two|qualification|progression|advancement)|already qualified|assured of (?:qualification|a top-two|progression)|through to the (?:round of 32|knockout)|secured (?:qualification|a top-two|progression|their place)|no (?:immediate )?(?:impact|bearing) on (?:advancement|qualification)|nothing to play for)\b/gi;
+    for (const m of ctx.matchAll(overclaimRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`WC over-claim "${m[0]}" — no tracked team is mathematically through per GROUP DERIVED FACTS; a current top-2 position is NOT secured qualification`);
+    }
   }
   return violations;
 }
@@ -427,6 +465,7 @@ export async function callOllama(
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
     ...validateWorldCupGroupRecord(v, prompt),
+    ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
     ...validateInventedYears(v, prompt),

@@ -618,7 +618,7 @@ function buildWorldCupGroupFacts(
     } else if (alreadyBeyondMax >= 2) {
       stake = `can no longer finish in the automatic top 2 (already beyond their maximum of ${maxPts} pts); only a best-third-place path remains`;
     } else if (rank <= 2) {
-      stake = 'currently in the automatic top-2 places (top 2 of the group advance)';
+      stake = `currently in a qualifying position (the top 2 of the group go through) — but with ${remaining} game${remaining === 1 ? '' : 's'} still to play this is NOT yet secured; do not call them "qualified" or "through"`;
     } else if (rank === 3) {
       stake = 'currently 3rd — in contention for a best-third-place spot (the 8 best third-placed teams across the 12 groups also advance), NOT yet through';
     } else {
@@ -630,6 +630,21 @@ function buildWorldCupGroupFacts(
       `(${rec}, GD ${gd}), currently ${ordinalSuffix(rank)} of ${ranked.length} in Group ${group}; ` +
       `${remaining} group game${remaining === 1 ? '' : 's'} remaining — ${stake}.`,
     );
+  }
+
+  // Direct comparison of the two fixture teams — binds the DIRECTION (points and
+  // goal difference) so the model can't reverse who's ahead (a GD-direction slip).
+  const tRow = ranked.find(r => r.teamName === teamName);
+  const oRow = ranked.find(r => r.teamName === opponentName);
+  if (tRow && oRow) {
+    const [hi, lo] = rankOf(teamName) < rankOf(opponentName) ? [tRow, oRow] : [oRow, tRow];
+    const reason =
+      hi.points !== lo.points
+        ? `on points (${hi.points} vs ${lo.points})`
+        : hi.goalDifference !== lo.goalDifference
+          ? `on goal difference, level on points (${hi.teamName} GD ${hi.goalDifference >= 0 ? '+' : ''}${hi.goalDifference} vs ${lo.teamName} GD ${lo.goalDifference >= 0 ? '+' : ''}${lo.goalDifference})`
+          : `on goals scored, level on points and goal difference`;
+    lines.push(`  • Between the two: ${hi.teamName} are ahead of ${lo.teamName} in the group ${reason}.`);
   }
 
   // 2026 tiebreaker note — only when two teams are level on points (it reverses 2022).
@@ -647,6 +662,77 @@ function buildWorldCupGroupFacts(
   );
 
   return { ranked, lines };
+}
+
+/**
+ * CHAMPIONSHIP POINTS derived facts (F1). The model was computing its own gaps and
+ * getting them wrong (e.g. "121-point lead over Red Bull" when the real margin is
+ * 173) and inventing win counts ("two wins each"). Pre-compute every gap and win
+ * total from the standings so the model binds verbatim. Conservative on title
+ * status: points-still-available is an UPPER bound (assumes all sprints remain),
+ * which makes "eliminated"/"clinched" harder to assert in either direction.
+ */
+function buildF1DerivedFacts(context: PreviewContext): string[] {
+  const drivers      = context.f1DriverStandings ?? [];
+  const constructors = context.f1ConstructorStandings ?? [];
+  if (drivers.length === 0 && constructors.length === 0) return [];
+
+  const lines: string[] = [
+    "CHAMPIONSHIP DERIVED FACTS — pre-computed from the standings above. Use these gaps and win totals verbatim; do NOT compute your own championship arithmetic:",
+  ];
+
+  // Constructors — leader + each rival's gap to the leader (fixes the 121 error).
+  if (constructors.length > 0) {
+    const sorted = [...constructors].sort((a, b) => a.position - b.position);
+    const leader = sorted[0];
+    lines.push(`  Constructors' Championship:`);
+    lines.push(`  • ${leader.constructorName} lead on ${leader.points} pts (${leader.wins} win${leader.wins === 1 ? '' : 's'}).`);
+    for (const c of sorted.slice(1, 6)) {
+      const gap = leader.points - c.points;
+      const foll = c.constructorName === context.f1FollowedConstructorName ? ' ◄ followed' : '';
+      lines.push(`  • ${c.constructorName} (${ordinalSuffix(c.position)}) trail ${leader.constructorName} by ${gap} pt${gap === 1 ? '' : 's'} — ${c.points} pts, ${c.wins} win${c.wins === 1 ? '' : 's'}${foll}.`);
+    }
+  }
+
+  // Drivers — leader + followed driver's gaps (or the top three when none followed).
+  if (drivers.length > 0) {
+    const sorted = [...drivers].sort((a, b) => a.position - b.position);
+    const leader = sorted[0];
+    lines.push(`  Drivers' Championship:`);
+    lines.push(`  • ${leader.driverName} lead on ${leader.points} pts (${leader.wins} win${leader.wins === 1 ? '' : 's'}).`);
+    const followedIdx = sorted.findIndex(d => d.driverName === context.f1FollowedName);
+    const focus = followedIdx >= 0 ? [followedIdx] : [1, 2].filter(i => i < sorted.length);
+    for (const i of focus) {
+      const d = sorted[i];
+      if (!d || d === leader) continue;
+      const gapLeader = leader.points - d.points;
+      const ahead = sorted[i - 1];
+      const behind = sorted[i + 1];
+      const parts = [`${gapLeader} pt${gapLeader === 1 ? '' : 's'} behind the leader`];
+      if (ahead && ahead !== leader) parts.push(`${ahead.points - d.points} behind ${ahead.driverName} (${ordinalSuffix(ahead.position)})`);
+      if (behind) parts.push(`${d.points - behind.points} ahead of ${behind.driverName} (${ordinalSuffix(behind.position)})`);
+      const foll = followedIdx >= 0 ? ' ◄ followed' : '';
+      lines.push(`  • ${d.driverName} (${ordinalSuffix(d.position)}, ${d.points} pts, ${d.wins} win${d.wins === 1 ? '' : 's'})${foll}: ${parts.join('; ')}.`);
+    }
+  }
+
+  // Points still available + conservative title-status note.
+  const rules = COMP_RULES.f1;
+  const round = context.f1RoundNumber;
+  if (rules?.racesTotal && round) {
+    const completed = Math.max(0, round - 1);                 // races before this one
+    const racesLeft = Math.max(0, rules.racesTotal - completed); // includes this race
+    const avail = racesLeft * (rules.raceWinPoints ?? 25) + (rules.sprintsTotal ?? 0) * (rules.sprintWinPoints ?? 8);
+    const leadDrv = drivers.length ? [...drivers].sort((a, b) => a.position - b.position) : [];
+    const titleOpen = leadDrv.length >= 2 && (leadDrv[0].points - leadDrv[1].points) <= avail;
+    lines.push(
+      `  • Up to ~${avail} points are still available (about ${racesLeft} round${racesLeft === 1 ? '' : 's'} + up to ${rules.sprintsTotal} sprints remaining; ` +
+      `${rules.raceWinPoints} for a race win, ${rules.sprintWinPoints} for a sprint win)` +
+      (titleOpen ? ' — both championships are mathematically open; nothing is clinched.' : '.'),
+    );
+  }
+
+  return lines.length > 1 ? lines : [];
 }
 
 // ─── Player-name whitelist ────────────────────────────────────────────────────
@@ -992,6 +1078,7 @@ GROUNDING — construct grounded, specific reads; never fabricate facts:
   - Only name a coach/manager present in the HEAD COACHES line (see DATA INTEGRITY).
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
+• CHAMPIONSHIP POINTS (F1) — when the data block contains CHAMPIONSHIP DERIVED FACTS, every championship gap ("X points behind/ahead", "leads by Y", "Z clear") and every win count MUST be taken verbatim from there. Do NOT compute your own points gaps (a miscalculated margin is a grounding error) and do NOT invent win totals — use the exact wins stated in the standings/derived facts.
 • GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. NEVER describe a team's group record using the all-competitions RECENT FORM line (e.g. a team that has played one group game has NOT "won one and drawn one" — that conflates their tournament form with the group). The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
 • DERIVED FACTS BINDS THE "context" FIELD TOO — this is where standings errors slip in. Any points total, gap, or inside/outside-the-finals (top-eight) claim in the context field must come VERBATIM from DERIVED FACTS — including the DIRECTION. If DERIVED FACTS says a side is "N points inside the finals places", they are INSIDE — never write "outside". Never source a standings number from anywhere else: not the LEAGUE TABLE rows, not the SEASON STATE round number, not your own arithmetic. THE ROUND-NUMBER TRAP: "Round 13 of 27" is the ROUND, not a points total — never write "level on 13 points" off the round number. If DERIVED FACTS does not give the figure or direction you want, state it qualitatively ("both sides level and inside the eight") rather than inventing a number or a direction.
 • EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
@@ -1086,6 +1173,14 @@ function buildF1DataBlock(context: PreviewContext): string {
       const winsNote = c.wins > 0 ? `, ${c.wins} win${c.wins > 1 ? 's' : ''}` : '';
       lines.push(`  P${c.position}. ${c.constructorName} — ${c.points}pts${winsNote}${followedMarker}`);
     });
+    lines.push('');
+  }
+
+  // Pre-computed championship gaps + win totals (bind verbatim — fixes the
+  // miscalculated constructor gap and invented win counts).
+  const f1Facts = buildF1DerivedFacts(context);
+  if (f1Facts.length > 0) {
+    lines.push(...f1Facts);
     lines.push('');
   }
 
