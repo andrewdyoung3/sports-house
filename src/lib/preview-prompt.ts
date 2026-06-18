@@ -11,6 +11,7 @@ import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
+import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
 
@@ -170,18 +171,19 @@ const MAX_PTS_PER_GAME: Record<string, number> = {
                    // Conservative: assume opponents can earn max 5/game
 };
 
-/** Positions that earn finals / playoff qualification. */
-const FINALS_SPOTS: Record<string, number> = {
-  nrl:         8,
-  afl:         8,
-  super_rugby: 8,
-};
+/**
+ * Positions that earn finals / playoff qualification — derived from the single
+ * per-season config so cutoffs can't go stale silently (AFL 10, NRL 8, SRU 6).
+ */
+const FINALS_SPOTS: Record<string, number> = Object.fromEntries(
+  Object.entries(COMP_RULES)
+    .filter(([, r]) => r.archetype === 'ladder-finals' && r.finalsTeams)
+    .map(([lg, r]) => [lg, r.finalsTeams!]),
+);
 
-/** Position at which EPL relegation begins (inclusive — 18th, 19th, 20th go down). */
-const EPL_RELEGATION_FROM = 18;
-
-/** EPL: top-N positions earn Champions League group-stage entry next season. */
-const EPL_UCL_SPOTS = 4;
+/** EPL relegation / CL cutoffs — from config (re-checked per season). */
+const EPL_RELEGATION_FROM = COMP_RULES.epl?.relegationFrom ?? 18;
+const EPL_UCL_SPOTS       = COMP_RULES.epl?.clSpots ?? 4;
 
 /**
  * Derives mathematically confirmed competition outcomes from the full standings.
@@ -430,10 +432,35 @@ function buildDerivedFacts(
     }
   }
 
-  // ── Finals cutoff gap (AFL / NRL / Super Rugby — top 8) ──────────────────
-  const finalsSpot = FINALS_SPOTS[league];
+  // ── AFL: top-10 Wildcard tiers (top-6 direct / 7–10 wildcard / outside-10) ──
+  // AFL 2026 has THREE finals tiers, not one cutoff — handled separately below.
+  const aflDirect = COMP_RULES.afl?.directFinalsTeams;
+  if (league === 'afl' && aflDirect && FINALS_SPOTS.afl && sorted.length > FINALS_SPOTS.afl) {
+    const finalsN = FINALS_SPOTS.afl;                 // 10 — finals qualification line
+    const directRow = sorted[aflDirect - 1];          // 6th — direct cutoff
+    const wildcardRow = sorted[finalsN - 1];          // 10th — finals cutoff
+    const seventhRow  = sorted[aflDirect];            // 7th — top of wildcard zone
+    for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
+      if (!row || row.points === 0) continue;
+      const pos = row.position;
+      if (pos <= aflDirect) {
+        const gap = row.points - (seventhRow?.points ?? 0);
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — inside the top ${aflDirect} (direct to finals, with the week-one bye), ${gap} point${gap === 1 ? '' : 's'} clear of the wildcard zone (7th is ${seventhRow?.name ?? 'n/a'}).`);
+      } else if (pos <= finalsN) {
+        const insideTen = row.points - (wildcardRow?.points ?? 0);
+        const outsideSix = (directRow?.points ?? 0) - row.points;
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — in the wildcard zone (7th–10th, would play a wildcard final): ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
+      } else {
+        const gap = (wildcardRow?.points ?? 0) - row.points;
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — outside the top ${finalsN} (out of finals), ${gap} point${gap === 1 ? '' : 's'} behind the wildcard cutoff (${ordinalSuffix(finalsN)} is ${wildcardRow?.name ?? 'n/a'} with ${wildcardRow?.points ?? 0} pts).`);
+      }
+    }
+  }
+
+  // ── Finals cutoff gap (NRL top 8 / Super Rugby top 6) ────────────────────
+  const finalsSpot = (league === 'afl') ? undefined : FINALS_SPOTS[league];
   if (finalsSpot && sorted.length > finalsSpot) {
-    const cutoff    = sorted[finalsSpot - 1]; // 8th place
+    const cutoff    = sorted[finalsSpot - 1]; // Nth place (cutoff)
     const cutoffPts = cutoff.points;
     if (cutoffPts > 0) {
       // For AFL: find all teams tied on the cutoff points (percentage decides ordering)
@@ -1343,6 +1370,7 @@ export function buildDataBlock(
         opponentName,
         fixtureCtxPlayed,
         context.worldCup ?? undefined,
+        context.fixtureDate,
       );
       if (fixtureCtx.stakes !== 'STANDARD') {
         lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
@@ -1393,12 +1421,24 @@ export function buildDataBlock(
       if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
       if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
 
-      lines.push(
-        `SEASON STATE: Round ${played} of ${totalRounds} — ` +
-        `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
-        (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
-      );
-      if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
+      // Finals: name the round from the date (the feed carries no stage label) so
+      // the model never reads a knockout final as "Round N of N, regular season".
+      const finalsRound = isFinalsPhase ? finalsRoundForDate(league, context.fixtureDate) : null;
+      if (isFinalsPhase && finalsRound) {
+        const decider = finalsRound.decider ? ' — the championship decider' : '';
+        lines.push(
+          `SEASON STATE: FINALS SERIES — ${finalsRound.name}${decider}. ` +
+          `The ${totalRounds}-round regular season is COMPLETE; this is a knockout final, NOT a ladder fixture. ` +
+          `The ladder below shows regular-season finishing order (seeding only).`
+        );
+      } else {
+        lines.push(
+          `SEASON STATE: Round ${played} of ${totalRounds} — ` +
+          `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
+          (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
+        );
+        if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
+      }
     }
     if (context.teamManager || context.opponentManager) {
       const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
@@ -1501,26 +1541,47 @@ export function buildDataBlock(
           lines.push('');
         }
       } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
-        // Full table with mathematical status analysis
-        const statusNotes = computeCompetitionStatus(league, context.leagueTable);
-        const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
+        // Knockout final (Grand Final / Semi): the regular-season ladder is SEEDING
+        // only and actively misleads the model ("1st → minor premiership"). Replace
+        // the full table + derived-finals arithmetic with a one-line seeding note;
+        // FIXTURE CONTEXT + SEASON STATE carry the knockout-final framing.
+        const isFinalsKnockout = played !== undefined && played >= totalRounds
+          && !!finalsRoundForDate(league, context.fixtureDate);
+        if (isFinalsKnockout) {
+          const sorted   = [...context.leagueTable].sort((a, b) => a.position - b.position);
+          const tRow = sorted.find(r => rowMatchesTeam(r.name, teamName));
+          const oRow = sorted.find(r => rowMatchesTeam(r.name, opponentName));
+          const seedParts = [
+            tRow ? `${teamName} finished ${ordinalSuffix(tRow.position)}` : '',
+            oRow ? `${opponentName} finished ${ordinalSuffix(oRow.position)}` : '',
+          ].filter(Boolean);
+          if (seedParts.length > 0) {
+            lines.push('REGULAR-SEASON SEEDING (context only — this is a knockout final; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
+            lines.push(`  ${seedParts.join('; ')} in the regular season.`);
+            lines.push('');
+          }
+        } else {
+          // Full table with mathematical status analysis
+          const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+          const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
 
-        if (tableLines.length > 0) {
-          lines.push(...tableLines);
-          lines.push('');
-        }
+          if (tableLines.length > 0) {
+            lines.push(...tableLines);
+            lines.push('');
+          }
 
-        if (statusNotes.length > 0) {
-          lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
-          statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
-          lines.push('');
-        }
+          if (statusNotes.length > 0) {
+            lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
+            statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+            lines.push('');
+          }
 
-        // Derived standings arithmetic — pre-computed so the model never has to
-        const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
-        if (derivedFacts.length > 0) {
-          lines.push(...derivedFacts);
-          lines.push('');
+          // Derived standings arithmetic — pre-computed so the model never has to
+          const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
+          if (derivedFacts.length > 0) {
+            lines.push(...derivedFacts);
+            lines.push('');
+          }
         }
       } else if (context.teamStanding || context.opponentStanding) {
         // Fallback: just the two teams' rows (no full table available)

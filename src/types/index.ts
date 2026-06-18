@@ -266,6 +266,9 @@ export interface LeagueTableRow {
 export interface PreviewContext {
   teamStanding?: TeamStanding;
   opponentStanding?: TeamStanding;
+  /** Fixture kickoff (ISO) — used to infer the finals round (the feed carries no
+   *  stage label for finals games). Set by buildPreviewContext for every fixture. */
+  fixtureDate?: string;
   /**
    * Full league table — used server-side to compute mathematical clinching /
    * elimination facts before they reach Claude. Populated for EPL, NRL, AFL,

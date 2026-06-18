@@ -287,6 +287,10 @@ export async function buildPreviewContext(
     ? await _buildWorldCupContext(fixture, teamName)
     : { ...(await cachedRichContext(league, fixture, teamName)) };
 
+  // Fixture kickoff — lets the structure layer infer the finals round (the feed
+  // carries no stage label for finals games).
+  ctx.fixtureDate = fixture.date;
+
   // Verified head coaches — static map, never model-inferred.
   ctx.teamManager     = MANAGER[fixture.teamId];
   ctx.opponentManager = fixture.opponentId ? MANAGER[fixture.opponentId] : undefined;

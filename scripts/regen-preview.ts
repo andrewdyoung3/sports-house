@@ -153,6 +153,7 @@ async function main() {
       fixture.opponent,
       played,
       ctx.worldCup,
+      fixture.date,
     );
     console.log(`  FIXTURE CONTEXT:`);
     console.log(`    Phase:  ${fixtureCtx.phase}`);

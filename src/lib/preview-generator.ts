@@ -122,6 +122,30 @@ export function validatePointsClaims(output: AIPreview, prompt: string): string[
   return violations;
 }
 
+/**
+ * Phase/stakes binding: when the data block's FIXTURE CONTEXT declares a knockout
+ * final (GRAND FINAL / FINALS — e.g. the Super Rugby decider), the prose must not
+ * frame the game as a regular-season fixture, a dead rubber, or having "no bearing"
+ * — the phase line is authoritative. The feed gives no stage label for these games,
+ * so the model is prone to reading the regular-season ladder literally.
+ */
+function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
+  const isFinal = /Stakes:\s*(GRAND FINAL|FINALS)\b/.test(prompt)
+    || /SEASON STATE: FINALS SERIES —/.test(prompt);
+  if (!isFinal) return [];
+  const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round|dead rubber)|final regular[- ]season|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|minor premiership|end-of-season (?:fixture|clash))\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(badRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`phase contradiction "${m[0]}" — FIXTURE CONTEXT says this is a knockout final, not a regular-season/dead-rubber game`);
+  }
+  return violations;
+}
+
 function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const phaseMatch = prompt.match(/SEASON STATE:.*?\(phase:\s*([^)]+)\)/i);
   if (!phaseMatch) return [];
@@ -373,6 +397,7 @@ export async function callOllama(
   const allViolations = (v: AIPreview) => [
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
+    ...validatePhaseStakes(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
     ...validateInventedYears(v, prompt),
