@@ -569,6 +569,86 @@ function buildDerivedFacts(
   return facts;
 }
 
+/**
+ * GROUP TOURNAMENT derived facts (World Cup). The live feed's `position` is the
+ * DRAW/seeding order, NOT the live group rank — it lists 0-pt teams above 3-pt
+ * teams — so we recompute the standing from the rules (points → goal difference →
+ * goals scored). Emits each fixture team's GROUP record bound verbatim plus a
+ * conservative stake. The context field must use THIS group record, never the
+ * all-competitions RECENT FORM line (the source of the WC group-record error).
+ *
+ * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
+ */
+function buildWorldCupGroupFacts(
+  rows: WorldCupGroupRow[],
+  group: string,
+  teamName: string,
+  opponentName: string,
+): { ranked: WorldCupGroupRow[]; lines: string[] } {
+  const ranked = [...rows].sort((a, b) =>
+    b.points - a.points ||
+    b.goalDifference - a.goalDifference ||
+    b.goalsFor - a.goalsFor ||
+    a.teamName.localeCompare(b.teamName),
+  );
+  const rankOf = (name: string) => ranked.findIndex(r => r.teamName === name) + 1;
+
+  const lines: string[] = [
+    `GROUP ${group} DERIVED FACTS — computed from the live group table (ranked by points, then goal difference, then goals scored). Use these GROUP records verbatim; do NOT use the all-competitions RECENT FORM line for any group-standing or qualification claim:`,
+  ];
+
+  for (const name of [teamName, opponentName]) {
+    const row = ranked.find(r => r.teamName === name);
+    if (!row) continue;
+    const rank      = rankOf(name);
+    const remaining = Math.max(0, 3 - row.played);
+    const gd        = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
+    const rec       = `${row.wins}W-${row.draws}D-${row.losses}L`;
+    const maxPts    = row.points + 3 * remaining;
+    const others    = ranked.filter(r => r.teamName !== name);
+    // Conservative: only claim a strong stake when mathematically provable.
+    const canReachOrExceed = others.filter(r => (r.points + 3 * Math.max(0, 3 - r.played)) >= row.points).length;
+    const alreadyBeyondMax = others.filter(r => r.points > maxPts).length;
+
+    let stake: string;
+    if (row.played >= 3 && rank <= 2) {
+      stake = 'group complete — finished in the automatic top 2, through to the Round of 32';
+    } else if (rank <= 2 && remaining > 0 && canReachOrExceed <= 1) {
+      stake = 'have mathematically secured a top-2 finish — through to the Round of 32';
+    } else if (alreadyBeyondMax >= 2) {
+      stake = `can no longer finish in the automatic top 2 (already beyond their maximum of ${maxPts} pts); only a best-third-place path remains`;
+    } else if (rank <= 2) {
+      stake = 'currently in the automatic top-2 places (top 2 of the group advance)';
+    } else if (rank === 3) {
+      stake = 'currently 3rd — in contention for a best-third-place spot (the 8 best third-placed teams across the 12 groups also advance), NOT yet through';
+    } else {
+      stake = 'currently bottom of the group';
+    }
+
+    lines.push(
+      `  • ${name}: ${row.points} group point${row.points === 1 ? '' : 's'} from ${row.played} game${row.played === 1 ? '' : 's'} ` +
+      `(${rec}, GD ${gd}), currently ${ordinalSuffix(rank)} of ${ranked.length} in Group ${group}; ` +
+      `${remaining} group game${remaining === 1 ? '' : 's'} remaining — ${stake}.`,
+    );
+  }
+
+  // 2026 tiebreaker note — only when two teams are level on points (it reverses 2022).
+  const pts = ranked.map(r => r.points);
+  if (pts.some((p, i) => pts.indexOf(p) !== i)) {
+    lines.push(
+      '  • Tiebreaker (2026 rule): teams level on points are separated FIRST by head-to-head record ' +
+      '(H2H points → H2H goal difference → H2H goals), THEN overall goal difference, then overall goals scored ' +
+      '(this reverses the pre-2026 overall-goal-difference-first order).',
+    );
+  }
+  lines.push(
+    `  • Qualification: the top 2 of Group ${group} advance automatically; the 8 best third-placed teams ` +
+    'across all 12 groups also advance (32 of 48 reach the Round of 32).',
+  );
+
+  return { ranked, lines };
+}
+
 // ─── Player-name whitelist ────────────────────────────────────────────────────
 //
 // Parses a rendered data-block prompt string and returns:
@@ -912,6 +992,7 @@ GROUNDING — construct grounded, specific reads; never fabricate facts:
   - Only name a coach/manager present in the HEAD COACHES line (see DATA INTEGRITY).
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
+• GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. NEVER describe a team's group record using the all-competitions RECENT FORM line (e.g. a team that has played one group game has NOT "won one and drawn one" — that conflates their tournament form with the group). The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
 • DERIVED FACTS BINDS THE "context" FIELD TOO — this is where standings errors slip in. Any points total, gap, or inside/outside-the-finals (top-eight) claim in the context field must come VERBATIM from DERIVED FACTS — including the DIRECTION. If DERIVED FACTS says a side is "N points inside the finals places", they are INSIDE — never write "outside". Never source a standings number from anywhere else: not the LEAGUE TABLE rows, not the SEASON STATE round number, not your own arithmetic. THE ROUND-NUMBER TRAP: "Round 13 of 27" is the ROUND, not a points total — never write "level on 13 points" off the round number. If DERIVED FACTS does not give the figure or direction you want, state it qualitatively ("both sides level and inside the eight") rather than inventing a number or a direction.
 • EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
 
@@ -1466,21 +1547,27 @@ export function buildDataBlock(
       lines.push(`ADVANCEMENT NOTE: Top 2 from Group ${wc.group ?? ''} advance automatically; the best 8 third-placed teams across all 12 groups also advance.`);
       lines.push('DO NOT comment on the standings or points tally — no games have been played yet. Focus on the match itself: tactics, form, key players, and what each team needs to do to win.');
     } else {
-      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — top 2 advance automatically; best 8 third-placed teams also advance):`);
-      for (const row of wcGroupTable) {
+      // Recompute the live standing from the rules — the feed's `position` is the
+      // draw/seeding order (it ranks 0-pt teams above 3-pt teams), so render in
+      // corrected order and pre-compute the per-team group facts + stakes.
+      const { ranked: wcRanked, lines: wcFacts } =
+        buildWorldCupGroupFacts(wcGroupTable, wc.group ?? '', teamName, opponentName);
+
+      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — ranked by points, then goal difference, then goals scored; top 2 advance automatically, best 8 third-placed teams also advance):`);
+      wcRanked.forEach((row, i) => {
         const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
         const isTracked = row.teamName === teamName || row.teamName === opponentName;
         const marker = isTracked ? ' ◄' : '';
         lines.push(
-          `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
+          `  ${i + 1}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
           `${row.wins}W ${row.draws}D ${row.losses}L  ` +
           `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
         );
-      }
+      });
       lines.push('');
       // Spell out per-team match counts so the model cannot misread the table
       // and incorrectly claim all teams are "yet to play" when some have results.
-      const matchTally = wcGroupTable.map(r => `${r.teamName}: ${r.played}`).join('  ');
+      const matchTally = wcRanked.map(r => `${r.teamName}: ${r.played}`).join('  ');
       lines.push(`Matches played per team — ${matchTally}`);
       const teamRow2  = wcGroupTable.find(r => r.teamName === teamName);
       const oppRow2   = wcGroupTable.find(r => r.teamName === opponentName);
@@ -1495,9 +1582,11 @@ export function buildDataBlock(
         );
       }
       lines.push('');
-      if (wc.advancementScenario) {
-        lines.push(`ADVANCEMENT SCENARIO: ${wc.advancementScenario}`);
-      }
+      // GROUP DERIVED FACTS — authoritative per-team group records + stakes.
+      // (The feed's `advancementScenario` is built off the wrong seeding position,
+      // so it is intentionally NOT rendered — these computed facts replace it.)
+      lines.push(...wcFacts);
+      lines.push('');
       if (wc.gamesPlayed !== undefined) {
         lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
       }

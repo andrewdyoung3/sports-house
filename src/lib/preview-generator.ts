@@ -146,6 +146,34 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+/**
+ * World Cup group-record binding: the GROUP DERIVED FACTS block states each team's
+ * group games played. A team that has played ≤1 group game cannot have a two-result
+ * group record — so a "win and a draw" / "one win and one loss" / "two wins" style
+ * claim in the context field is the all-competitions-form-conflation error (reading
+ * the RECENT FORM line as the group record). Reject → retry.
+ */
+export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): string[] {
+  if (!/GROUP\s+\S+\s+DERIVED FACTS/.test(prompt)) return [];
+  // team → group games played, parsed from the derived-facts lines.
+  const played = new Map<string, number>();
+  for (const m of prompt.matchAll(/•\s*(.+?):\s*\d+ group points? from (\d+) game/gi)) {
+    played.set(m[1].trim().toLowerCase(), parseInt(m[2], 10));
+  }
+  if (![...played.values()].some(n => n <= 1)) return []; // nobody is at ≤1 game
+  const ctx = output.context ?? '';
+  const twoResultRe = /\b(a win and a (?:draw|loss)|a (?:draw|loss) and a win|one win and one (?:loss|draw)|two wins|two draws|two losses|won (?:two|both)|with a win and a draw)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of ctx.matchAll(twoResultRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`WC group-record conflation "${m[0]}" — a tracked team has played ≤1 group game; use the GROUP DERIVED FACTS record, not the all-competitions form line`);
+  }
+  return violations;
+}
+
 function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const phaseMatch = prompt.match(/SEASON STATE:.*?\(phase:\s*([^)]+)\)/i);
   if (!phaseMatch) return [];
@@ -398,6 +426,7 @@ export async function callOllama(
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
+    ...validateWorldCupGroupRecord(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
     ...validateInventedYears(v, prompt),

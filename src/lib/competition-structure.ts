@@ -265,7 +265,15 @@ function resolveWorldCupStakes(
   const groupTable = wc.groupTable;
   if (!groupTable || groupTable.length === 0) return null;
 
-  const sorted = [...groupTable].sort((a, b) => a.position - b.position);
+  // The feed's `position` is the draw/seeding order, not the live rank — recompute
+  // the standing from the rules (points → goal difference → goals scored) so the
+  // stakes below ("top 2", "3rd") reflect the real table, not the seeding.
+  const sorted = [...groupTable].sort((a, b) =>
+    b.points - a.points ||
+    b.goalDifference - a.goalDifference ||
+    b.goalsFor - a.goalsFor ||
+    a.teamName.localeCompare(b.teamName),
+  ).map((r, i) => ({ ...r, position: i + 1 }));
   // Match by exact name first, then by last word of teamName (e.g. "Socceroos" in "Australia")
   const lastWord = teamName.split(/\s+/).at(-1)?.toLowerCase() ?? '';
   const teamRow = sorted.find(r =>
