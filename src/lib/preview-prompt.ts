@@ -600,6 +600,31 @@ export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null
  * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
  * which preserves the prior behaviour exactly.
  */
+/**
+ * Build the head-to-head provider from completed intra-group results. Returns a
+ * function answering h2h(a, b) → their group meeting (a's perspective) or null if
+ * they have not met. Only COMPLETED matches are passed in, so a scheduled meeting
+ * is naturally "not met" (the not-met branch falls back to overall GD).
+ */
+export function makeWCH2H(
+  results?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>,
+): WCGroupH2H | undefined {
+  if (!results || results.length === 0) return undefined;
+  return (aName, bName) => {
+    for (const r of results) {
+      const aIsA = r.teamA === aName && r.teamB === bName;
+      const aIsB = r.teamA === bName && r.teamB === aName;
+      if (!aIsA && !aIsB) continue;
+      const aGF = aIsA ? r.goalsA : r.goalsB;
+      const bGF = aIsA ? r.goalsB : r.goalsA;
+      const aPts = aGF > bGF ? 3 : aGF === bGF ? 1 : 0;
+      const bPts = bGF > aGF ? 3 : aGF === bGF ? 1 : 0;
+      return { aPts, bPts, aGF, bGF };
+    }
+    return null;
+  };
+}
+
 export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
   const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
     b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
@@ -1737,8 +1762,9 @@ export function buildDataBlock(
       // Recompute the live standing from the rules — the feed's `position` is the
       // draw/seeding order (it ranks 0-pt teams above 3-pt teams), so render in
       // corrected order and pre-compute the per-team group facts + stakes.
+      const wcH2H = makeWCH2H(wc.groupResults);
       const { ranked: wcRanked, lines: wcFacts } =
-        buildWorldCupGroupFacts(wcGroupTable, wc.group ?? '', teamName, opponentName);
+        buildWorldCupGroupFacts(wcGroupTable, wc.group ?? '', teamName, opponentName, wcH2H);
 
       lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — ranked by points, then goal difference, then goals scored; top 2 advance automatically, best 8 third-placed teams also advance):`);
       wcRanked.forEach((row, i) => {
@@ -1886,7 +1912,16 @@ export function buildDataBlock(
   const tForm = context.teamRecentForm ?? teamResults;
   const oForm = context.opponentRecentForm ?? oppResults;
 
-  if (enabled('recentForm')) {
+  // World Cup GROUP stage: suppress the all-competitions RECENT FORM block. Its
+  // W-L-W-L letter string (qualifiers/friendlies) is the source of the group-record
+  // conflation ("level on 3 points, both with one win and one loss from their opening
+  // game" — impossible). The GROUP DERIVED FACTS record, the intra-group H2H, and the
+  // lineups carry the preview; the all-comps form is the least reliable signal here.
+  const wcGroupStage = league === 'world_cup'
+    && (context.worldCup?.stage ?? 'group') === 'group'
+    && (context.worldCup?.groupTable?.length ?? 0) > 0;
+
+  if (enabled('recentForm') && !wcGroupStage) {
     // Recent form — spans all competitions
     if (tForm.length > 0 || oForm.length > 0) {
       const isF1 = league === 'f1';

@@ -188,7 +188,7 @@ export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): 
 
   // (a) Group-record conflation: a team at ≤1 game can't have a two-result record.
   if ([...played.values()].some(n => n <= 1)) {
-    const twoResultRe = /\b(a win and a (?:draw|loss)|a (?:draw|loss) and a win|one win and one (?:loss|draw)|two wins|two draws|two losses|won (?:two|both)|with a win and a draw)\b/gi;
+    const twoResultRe = /\b((?:a|one|1)\s+win[,\s]+(?:and\s+)?(?:a|one|1)\s+(?:draw|loss)|(?:a|one|1)\s+(?:draw|loss)[,\s]+(?:and\s+)?(?:a|one|1)\s+win|two wins|two draws|two losses|won (?:two|both)|a win and a draw)\b/gi;
     for (const m of ctx.matchAll(twoResultRe)) {
       const hit = m[0].toLowerCase();
       if (seen.has(hit)) continue;

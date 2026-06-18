@@ -35,6 +35,10 @@ export interface WorldCupMatchContext {
   group?: string;
   /** Full group standings table (4 entries) — only for group-stage matches. */
   groupTable?: WorldCupGroupRow[];
+  /** Completed GROUP-STAGE results among this group's teams (who-beat-whom), for
+   *  the 2026 head-to-head-first tiebreaker. Only finished matches; a scheduled
+   *  meeting is absent (⇒ "not met"). Scores are from each listed team's view. */
+  groupResults?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>;
   /** How many group games the followed team has played (0–3). */
   gamesPlayed?: number;
   /** How many group games remain for the followed team (0–3). */
