@@ -1912,7 +1912,16 @@ export function buildDataBlock(
   const tForm = context.teamRecentForm ?? teamResults;
   const oForm = context.opponentRecentForm ?? oppResults;
 
-  if (enabled('recentForm')) {
+  // World Cup GROUP stage: suppress the all-competitions RECENT FORM block. Its
+  // W-L-W-L letter string (qualifiers/friendlies) is the source of the group-record
+  // conflation ("level on 3 points, both with one win and one loss from their opening
+  // game" — impossible). The GROUP DERIVED FACTS record, the intra-group H2H, and the
+  // lineups carry the preview; the all-comps form is the least reliable signal here.
+  const wcGroupStage = league === 'world_cup'
+    && (context.worldCup?.stage ?? 'group') === 'group'
+    && (context.worldCup?.groupTable?.length ?? 0) > 0;
+
+  if (enabled('recentForm') && !wcGroupStage) {
     // Recent form — spans all competitions
     if (tForm.length > 0 || oForm.length > 0) {
       const isF1 = league === 'f1';
