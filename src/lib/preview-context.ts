@@ -143,6 +143,49 @@ async function _fetchRawWC(): Promise<unknown> {
   return _wcRaw;
 }
 
+// Completed GROUP-STAGE results, cached per process. Sourced from the SAME ESPN
+// scoreboard endpoint already used for WC fixtures (not a new dependency). The
+// standings payload is aggregate-only, so who-beat-whom must come from here.
+let _wcScoreboard: unknown = null;
+async function _fetchWCScoreboard(): Promise<unknown> {
+  if (_wcScoreboard) return _wcScoreboard;
+  const now = new Date();
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const start = new Date(now.getTime() - 40 * 86400_000);
+  const end   = new Date(now.getTime() + 10 * 86400_000);
+  _wcScoreboard = await fetchJson(
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=300`,
+  ).catch(() => null);
+  return _wcScoreboard;
+}
+
+/**
+ * Completed group-stage results among a given set of group team names (who-beat-whom).
+ * Filters to season.slug==='group-stage' + completed; a scheduled meeting is omitted
+ * (⇒ "not met"). Goals taken from each listed competitor's score.
+ */
+async function _wcGroupResults(
+  groupTeams: Set<string>,
+): Promise<Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>> {
+  const sb = await _fetchWCScoreboard() as Record<string, unknown> | null;
+  const events = (sb?.events as Record<string, unknown>[]) ?? [];
+  const out: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }> = [];
+  for (const e of events) {
+    const slug = ((e.season as Record<string, unknown> | undefined)?.slug ?? '') as string;
+    if (slug !== 'group-stage') continue;
+    const completed = !!((e.status as Record<string, unknown> | undefined)?.type as Record<string, unknown> | undefined)?.completed;
+    if (!completed) continue;
+    const comp = ((e.competitions as Record<string, unknown>[]) ?? [])[0];
+    const cs   = (comp?.competitors as Record<string, unknown>[]) ?? [];
+    if (cs.length !== 2) continue;
+    const nm = (c: Record<string, unknown>) => String((c.team as Record<string, unknown> | undefined)?.displayName ?? '');
+    const a = nm(cs[0]), b = nm(cs[1]);
+    if (!groupTeams.has(a) || !groupTeams.has(b)) continue;
+    out.push({ teamA: a, teamB: b, goalsA: Number(cs[0].score ?? 0), goalsB: Number(cs[1].score ?? 0) });
+  }
+  return out;
+}
+
 interface WCGroupData { table: LeagueTableRow[]; wcRows: WorldCupGroupRow[] }
 
 async function _wcGroupForTeam(teamName: string): Promise<WCGroupData> {
@@ -206,12 +249,21 @@ async function _buildWCMatchContext(
     );
     const played         = ourRow?.played ?? 0;
     const gamesRemaining = Math.max(0, 3 - played);
+
+    // Completed intra-group results (who-beat-whom) for the 2026 H2H tiebreaker.
+    // Only fetched when the group has actually started (saves a call pre-tournament).
+    const groupTeams   = new Set(wcRows.map(r => r.teamName));
+    const groupResults = wcRows.some(r => r.played > 0)
+      ? await _wcGroupResults(groupTeams)
+      : [];
+
     return {
       stage:               (worldCupStage ?? 'group') as WorldCupStage,
       group,
       groupTable:          wcRows,
       gamesPlayed:         played,
       gamesRemaining,
+      groupResults,
       advancementScenario: ourRow
         ? computeGroupAdvancementScenario(teamName, ourRow.points, played, gamesRemaining, ourRow.position)
         : '',
@@ -309,4 +361,5 @@ export function clearPreviewContextCache(): void {
   _richCache.clear();
   _weatherCache.clear();
   _wcRaw = null;
+  _wcScoreboard = null;
 }
