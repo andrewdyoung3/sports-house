@@ -125,6 +125,10 @@ export interface UpcomingGame {
   completed?: boolean;
   /** NBA playoffs — official series score from ESPN (e.g. "NY leads series 3-1") */
   seriesSummary?: string;
+  /** Extra game_previews keys to upsert the SAME generated payload under.
+   *  Used for representative games (State of Origin) whose display layer keys per
+   *  perspective (soo-nrl-blues-… AND soo-nrl-maroons-…) — one generation, both keys. */
+  mirrorGameIds?: string[];
 }
 
 // ─── Results ──────────────────────────────────────────────────────────────────
@@ -215,6 +219,20 @@ export interface TipSummary {
   avgMargin: number;
 }
 
+/** One past meeting between the two fixture teams, from the followed team's perspective. */
+export interface HeadToHeadMeeting {
+  /** ISO date of the meeting. Kept for ordering only — NEVER surfaced as a year in the prompt. */
+  date: string;
+  /** Followed team's score. */
+  teamScore: number;
+  /** Opponent's score. */
+  opponentScore: number;
+  /** Result from the followed team's perspective. */
+  result: 'W' | 'L' | 'D';
+  /** Whether the followed team was at home for this meeting (best-effort from ESPN's atVs). */
+  teamWasHome?: boolean;
+}
+
 export interface CompetitionStage {
   /** Human-readable stage label — e.g. "Round of 16", "Quarter-finals", "Group A" */
   roundName: string;
@@ -248,6 +266,9 @@ export interface LeagueTableRow {
 export interface PreviewContext {
   teamStanding?: TeamStanding;
   opponentStanding?: TeamStanding;
+  /** Fixture kickoff (ISO) — used to infer the finals round (the feed carries no
+   *  stage label for finals games). Set by buildPreviewContext for every fixture. */
+  fixtureDate?: string;
   /**
    * Full league table — used server-side to compute mathematical clinching /
    * elimination facts before they reach Claude. Populated for EPL, NRL, AFL,
@@ -257,6 +278,20 @@ export interface PreviewContext {
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
   tips?: TipSummary;
+  /**
+   * Each side's recent results (most recent first), sourced from ESPN's
+   * `lastFiveGames` summary block. When present, the RECENT FORM block reads from
+   * here; otherwise it falls back to the positional results passed to buildDataBlock.
+   */
+  teamRecentForm?: GameResult[];
+  opponentRecentForm?: GameResult[];
+  /** Recent meetings between the two fixture teams (most recent first), team perspective. */
+  headToHead?: HeadToHeadMeeting[];
+  /**
+   * Forecast at kickoff for outdoor fixtures (Open-Meteo). When present, the WEATHER
+   * block reads from here; otherwise it falls back to the positional weather arg.
+   */
+  weather?: WeatherData;
   /** Cup/European competitions — current stage info and optional group standings. */
   competitionStage?: CompetitionStage;
   /** Head coach / manager name, used to inform tactical analysis. */
@@ -281,6 +316,9 @@ export interface PreviewContext {
   keyPlayersGameLabel?: string;
   /** For two-legged knockout ties: score from the first leg (team's perspective). */
   firstLegResult?: { teamScore: number; opponentScore: number };
+  /** Representative-series state (State of Origin) — replaces the club ladder.
+   *  e.g. "Game 2 of 3 — New South Wales lead the series 1-0; a win here clinches it." */
+  seriesState?: string;
   /** For English cup fixtures: the division the opponent currently plays in (e.g. "Championship", "League One") — only set when they are not in the top flight. */
   opponentLeague?: string;
 
@@ -318,6 +356,25 @@ export interface PreviewContext {
   f1FollowedConstructorName?: string;
   /** World Cup structural context — assembled by /api/preview for world_cup league. */
   worldCup?: WorldCupMatchContext;
+
+  /** Cricket (BBL / internationals) — match + series context from cricketdata.org.
+   *  Rendered by the dedicated cricket data block. Squads use teamSquad/opponentSquad. */
+  cricketContext?: {
+    format?: string;          // "T20" | "ODI" | "Test"
+    seriesName?: string;
+    matchDesc?: string;       // e.g. "18th Match, Group A"
+    venue?: string;
+    status?: string;          // cricketdata status line (started/result/"not started")
+    started?: boolean;
+    ended?: boolean;
+    toss?: string;            // e.g. "India won the toss and chose to bat"
+    teamScoreLine?: string;   // followed team's innings, e.g. "170/6 (20 ov)" — only if started
+    opponentScoreLine?: string;
+    /** Qualitative recent results for the followed team in this series (most recent first). */
+    teamRecentResults?: string[];
+    /** Qualitative head-to-head note between the two sides in this series. */
+    h2hNote?: string;
+  };
 
   f1SessionType?: string;   // "Race", "Qualifying", "Practice 1", etc.
   f1RaceName?: string;      // "Japanese Grand Prix"
@@ -380,6 +437,14 @@ export interface AIPreview {
   verdict: string;
   /** 3–4 short punchy tactical or contextual insights. */
   keyInsights: string[];
+  /**
+   * "From the media" — attributed editorial talking points sourced from the
+   * fetched news headlines, model tips, and expected-lineup framing. Every entry
+   * is presented as reporting or opinion ("[Outlet] reports…", "The tipsters
+   * lean…"), never as the model's own factual claim. Omitted when there is no
+   * editorial data for the fixture.
+   */
+  mediaWatch?: string[];
 }
 
 // ─── Weather ─────────────────────────────────────────────────────────────────

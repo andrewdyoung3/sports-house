@@ -15,6 +15,7 @@
  */
 
 import type { LeagueTableRow, WorldCupMatchContext } from '@/types';
+import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -32,37 +33,40 @@ export interface CompetitionContext {
 
 // ─── Per-competition structure reference ──────────────────────────────────────
 
+/**
+ * Local view of a competition's structure used by the predicates below. Built
+ * from the single-source per-season config (`COMP_RULES`) — these are no longer
+ * hardcoded here. Adding/changing a rule is a `competition-rules.ts` edit.
+ */
 interface StructureDef {
   archetype: 'ladder-finals' | 'table-no-finals' | 'group-knockout';
-  /** Regular-season rounds (undefined for tournament competitions). */
   totalRounds?: number;
-  /** Top-N teams qualify for finals/playoffs. */
   finalsTeams?: number;
-  /** Points awarded for a win. */
+  /** AFL: top-N go direct; (N+1 … finalsTeams) play a wildcard round. */
+  directFinalsTeams?: number;
   winsPoints: number;
-  /**
-   * Conservative max points per game (includes bonus points).
-   * Super Rugby uses 5 (4-win + 1 try bonus) so clinching maths are conservative.
-   */
   maxPpg: number;
-  /** EPL: position at which relegation begins (18 → 18th, 19th, 20th go down). */
   relegationFrom?: number;
-  /** EPL: positions that earn Champions League entry. */
   clSpots?: number;
 }
 
-const STRUCTURE: Record<string, StructureDef> = {
-  // Ladder → finals
-  afl:         { archetype: 'ladder-finals',   totalRounds: 23, finalsTeams: 8, winsPoints: 4, maxPpg: 4 },
-  nrl:         { archetype: 'ladder-finals',   totalRounds: 27, finalsTeams: 8, winsPoints: 2, maxPpg: 2 },
-  super_rugby: { archetype: 'ladder-finals',   totalRounds: 14, finalsTeams: 8, winsPoints: 4, maxPpg: 5 },
-
-  // Table, no finals
-  epl: { archetype: 'table-no-finals', totalRounds: 38, winsPoints: 3, maxPpg: 3, relegationFrom: 18, clSpots: 4 },
-
-  // Group → knockout tournament
-  world_cup: { archetype: 'group-knockout', winsPoints: 3, maxPpg: 3 },
-};
+const STRUCTURE: Record<string, StructureDef> = Object.fromEntries(
+  Object.entries(COMP_RULES)
+    .filter(([, r]) =>
+      r.archetype === 'ladder-finals' ||
+      r.archetype === 'table-no-finals' ||
+      r.archetype === 'group-knockout')
+    .map(([league, r]) => [league, {
+      archetype:         r.archetype as StructureDef['archetype'],
+      totalRounds:       r.totalRounds,
+      finalsTeams:       r.finalsTeams,
+      directFinalsTeams: r.directFinalsTeams,
+      winsPoints:        r.winsPoints ?? 0,
+      maxPpg:            r.maxPpg ?? 0,
+      relegationFrom:    r.relegationFrom,
+      clSpots:           r.clSpots,
+    }]),
+);
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -261,7 +265,15 @@ function resolveWorldCupStakes(
   const groupTable = wc.groupTable;
   if (!groupTable || groupTable.length === 0) return null;
 
-  const sorted = [...groupTable].sort((a, b) => a.position - b.position);
+  // The feed's `position` is the draw/seeding order, not the live rank — recompute
+  // the standing from the rules (points → goal difference → goals scored) so the
+  // stakes below ("top 2", "3rd") reflect the real table, not the seeding.
+  const sorted = [...groupTable].sort((a, b) =>
+    b.points - a.points ||
+    b.goalDifference - a.goalDifference ||
+    b.goalsFor - a.goalsFor ||
+    a.teamName.localeCompare(b.teamName),
+  ).map((r, i) => ({ ...r, position: i + 1 }));
   // Match by exact name first, then by last word of teamName (e.g. "Socceroos" in "Australia")
   const lastWord = teamName.split(/\s+/).at(-1)?.toLowerCase() ?? '';
   const teamRow = sorted.find(r =>
@@ -349,9 +361,36 @@ export function resolveCompetitionContext(
   opponentName: string,
   played: number | undefined,
   worldCupCtx?: WorldCupMatchContext,
+  fixtureDate?: string,
 ): CompetitionContext {
   const def = STRUCTURE[league];
   if (!def) return { phase: 'standard', stakes: 'STANDARD' };
+
+  // ── Finals round (ladder comps) ─────────────────────────────────────────
+  // The feed carries no stage label for these finals (ESPN tags every Super
+  // Rugby finals game seasonType=1), so the round is inferred from the fixture
+  // DATE against the per-season finals schedule. When the regular season is
+  // complete AND the date lands in a finals window, this is authoritative — a
+  // knockout final, NOT a ladder fixture. It overrides the ladder-based stakes
+  // (a Grand Final must never read as a regular-season dead rubber).
+  if (def.archetype === 'ladder-finals' && def.totalRounds) {
+    const regularSeasonDone = played !== undefined && played >= def.totalRounds;
+    const round = finalsRoundForDate(league, fixtureDate);
+    if (regularSeasonDone && round) {
+      if (round.decider) {
+        return {
+          phase: round.name, // e.g. 'Grand Final'
+          stakes: 'GRAND FINAL',
+          explanation: `the ${round.name} — winner-takes-all for the championship; the regular-season ladder no longer applies`,
+        };
+      }
+      return {
+        phase: round.name, // e.g. 'Semi-Final'
+        stakes: 'FINALS',
+        explanation: `a knockout ${round.name} in the finals series — win and advance; the regular-season ladder no longer applies`,
+      };
+    }
+  }
 
   // ── Phase ─────────────────────────────────────────────────────────────────
   let phase = 'standard';

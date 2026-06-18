@@ -11,6 +11,50 @@ import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
+import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
+
+// ─── Block types ──────────────────────────────────────────────────────────────
+
+export type BlockId =
+  | 'matchFacts'        // FIXTURE + VENUE + COMPETITION + WC tournament stage + cup stage (always-on anchor)
+  | 'fixtureContext'    // DOMESTIC COMPETITION STATUS + FIXTURE CONTEXT block
+  | 'competitionProfile' // COMPETITION PROFILE text
+  | 'sportContext'      // SPORT vocab + SEASON STATE + HEAD COACHES (with trailing blank)
+  | 'worldCupGroup'     // GROUP X STANDINGS (WC only)
+  | 'standings'         // cup group standings + LEAGUE TABLE + COMPETITION STATUS + DERIVED FACTS
+  | 'recentForm'        // RECENT FORM
+  | 'headToHead'        // HEAD-TO-HEAD — recent meetings between the two sides
+  | 'personnel'         // LINEUP + SQUAD SUBMISSION + INJURY REPORT + KEY PERFORMERS
+  | 'mediaWatch'        // FROM THE MEDIA — attributed news headlines + model tips (editorial)
+  | 'weather';          // WEATHER AT KICKOFF
+
+export const BLOCK_ORDER: readonly BlockId[] = [
+  'matchFacts', 'fixtureContext', 'competitionProfile', 'sportContext',
+  'worldCupGroup', 'standings', 'recentForm', 'headToHead', 'personnel', 'mediaWatch', 'weather',
+] as const;
+
+export const ALL_BLOCKS: ReadonlySet<BlockId> = new Set(BLOCK_ORDER);
+
+export const BLOCK_LABELS: Record<BlockId, string> = {
+  matchFacts:          'Fixture & venue',
+  fixtureContext:      'Fixture context (stakes / phase)',
+  competitionProfile:  'Competition profile',
+  sportContext:        'Sport vocab + season state + coaches',
+  worldCupGroup:       'World Cup group standings',
+  standings:           'League table & derived facts',
+  recentForm:          'Recent form',
+  headToHead:          'Head-to-head meetings',
+  personnel:           'Lineups, squads & injuries',
+  mediaWatch:          'From the media (news, tips, angles)',
+  weather:             'Weather at kickoff',
+};
+
+export interface BlockResult {
+  id: BlockId;
+  label: string;
+  /** The lines this block contributes to the full prompt, joined by '\n'. May be empty if no data. */
+  text: string;
+}
 
 // ─── Team home-venue lookup ───────────────────────────────────────────────────
 // Built once at module load; maps teamId → registered home venue string.
@@ -80,6 +124,8 @@ NEW POWER UNITS (2026 spec): Approximately 50/50 split between ICE and electrica
 PERFORMANCE IMPLICATIONS: The reset creates uncertainty — teams that excelled under 2022–2025 ground-effect aero may not retain their positions. Active aero compliance, MO energy efficiency, and PU deployment strategy are the new differentiating factors. Use this context when discussing team performance trajectories and constructor competitiveness.
 
 Championship points: 25/18/15/12/10/8/6/4/2/1 for positions 1–10, plus 1 point for fastest lap. The standings are called "the Championship". Use F1 terminology: active aero, Manual Override (MO), undercut, overcut, pit window, soft/medium/hard compounds, safety car, VSC, parc fermé, setup, downforce, tyre deg. Do NOT reference DRS as a current system — it does not exist in 2026.`,
+  cricket_int: `International Cricket. Match the analysis to the FORMAT given (T20: powerplay, death overs, pinch-hitting, matchups; ODI: building partnerships, the middle overs, death bowling; Test: new-ball spells, sessions, declarations, follow-on, batting/bowling collapses, the fourth-innings chase). Use cricket terminology: top order, middle order, the tail, powerplay, spin vs pace, swing/seam, reverse swing, the new ball, run rate, required rate, strike rate, economy, partnerships, the toss (bat/bowl decision), pitch/wicket conditions (green, dry, turning, flat deck). Refer to the standings as a "series" or "tournament" — there is no week-to-week ladder for a bilateral series. Use "side" or "team".`,
+  bbl: `Big Bash League (BBL) — Australian domestic men's T20 franchise cricket. T20-specific: the powerplay, pinch-hitting up top, the death overs, matchup bowling, spin in the middle overs, big hitting, the run chase, net run rate for the table. Use cricket terminology: top order, finisher, the tail, strike rate, economy, the toss, pitch conditions. The competition has a league table then finals. Use "side" or "team".`,
 };
 
 const LEAGUE_LABELS: Record<string, string> = {
@@ -90,6 +136,8 @@ const LEAGUE_LABELS: Record<string, string> = {
   rugby_int:   'International Rugby Union',
   f1:          'Formula 1',
   world_cup:   'FIFA World Cup 2026',
+  bbl:         'Big Bash League',
+  cricket_int: 'International Cricket',
 };
 
 /** Total regular-season rounds for each league — used to compute season phase. */
@@ -123,18 +171,19 @@ const MAX_PTS_PER_GAME: Record<string, number> = {
                    // Conservative: assume opponents can earn max 5/game
 };
 
-/** Positions that earn finals / playoff qualification. */
-const FINALS_SPOTS: Record<string, number> = {
-  nrl:         8,
-  afl:         8,
-  super_rugby: 8,
-};
+/**
+ * Positions that earn finals / playoff qualification — derived from the single
+ * per-season config so cutoffs can't go stale silently (AFL 10, NRL 8, SRU 6).
+ */
+const FINALS_SPOTS: Record<string, number> = Object.fromEntries(
+  Object.entries(COMP_RULES)
+    .filter(([, r]) => r.archetype === 'ladder-finals' && r.finalsTeams)
+    .map(([lg, r]) => [lg, r.finalsTeams!]),
+);
 
-/** Position at which EPL relegation begins (inclusive — 18th, 19th, 20th go down). */
-const EPL_RELEGATION_FROM = 18;
-
-/** EPL: top-N positions earn Champions League group-stage entry next season. */
-const EPL_UCL_SPOTS = 4;
+/** EPL relegation / CL cutoffs — from config (re-checked per season). */
+const EPL_RELEGATION_FROM = COMP_RULES.epl?.relegationFrom ?? 18;
+const EPL_UCL_SPOTS       = COMP_RULES.epl?.clSpots ?? 4;
 
 /**
  * Derives mathematically confirmed competition outcomes from the full standings.
@@ -383,10 +432,35 @@ function buildDerivedFacts(
     }
   }
 
-  // ── Finals cutoff gap (AFL / NRL / Super Rugby — top 8) ──────────────────
-  const finalsSpot = FINALS_SPOTS[league];
+  // ── AFL: top-10 Wildcard tiers (top-6 direct / 7–10 wildcard / outside-10) ──
+  // AFL 2026 has THREE finals tiers, not one cutoff — handled separately below.
+  const aflDirect = COMP_RULES.afl?.directFinalsTeams;
+  if (league === 'afl' && aflDirect && FINALS_SPOTS.afl && sorted.length > FINALS_SPOTS.afl) {
+    const finalsN = FINALS_SPOTS.afl;                 // 10 — finals qualification line
+    const directRow = sorted[aflDirect - 1];          // 6th — direct cutoff
+    const wildcardRow = sorted[finalsN - 1];          // 10th — finals cutoff
+    const seventhRow  = sorted[aflDirect];            // 7th — top of wildcard zone
+    for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
+      if (!row || row.points === 0) continue;
+      const pos = row.position;
+      if (pos <= aflDirect) {
+        const gap = row.points - (seventhRow?.points ?? 0);
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — inside the top ${aflDirect} (direct to finals, with the week-one bye), ${gap} point${gap === 1 ? '' : 's'} clear of the wildcard zone (7th is ${seventhRow?.name ?? 'n/a'}).`);
+      } else if (pos <= finalsN) {
+        const insideTen = row.points - (wildcardRow?.points ?? 0);
+        const outsideSix = (directRow?.points ?? 0) - row.points;
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — in the wildcard zone (7th–10th, would play a wildcard final): ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
+      } else {
+        const gap = (wildcardRow?.points ?? 0) - row.points;
+        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — outside the top ${finalsN} (out of finals), ${gap} point${gap === 1 ? '' : 's'} behind the wildcard cutoff (${ordinalSuffix(finalsN)} is ${wildcardRow?.name ?? 'n/a'} with ${wildcardRow?.points ?? 0} pts).`);
+      }
+    }
+  }
+
+  // ── Finals cutoff gap (NRL top 8 / Super Rugby top 6) ────────────────────
+  const finalsSpot = (league === 'afl') ? undefined : FINALS_SPOTS[league];
   if (finalsSpot && sorted.length > finalsSpot) {
-    const cutoff    = sorted[finalsSpot - 1]; // 8th place
+    const cutoff    = sorted[finalsSpot - 1]; // Nth place (cutoff)
     const cutoffPts = cutoff.points;
     if (cutoffPts > 0) {
       // For AFL: find all teams tied on the cutoff points (percentage decides ordering)
@@ -495,6 +569,234 @@ function buildDerivedFacts(
   return facts;
 }
 
+/**
+ * GROUP TOURNAMENT derived facts (World Cup). The live feed's `position` is the
+ * DRAW/seeding order, NOT the live group rank — it lists 0-pt teams above 3-pt
+ * teams — so we recompute the standing from the rules (points → goal difference →
+ * goals scored). Emits each fixture team's GROUP record bound verbatim plus a
+ * conservative stake. The context field must use THIS group record, never the
+ * all-competitions RECENT FORM line (the source of the WC group-record error).
+ *
+ * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
+ */
+/**
+ * Result of a played group match between two teams, both from the FIRST team's
+ * perspective. `null` from the provider means the two teams have not met. Used to
+ * apply the 2026 head-to-head-first tiebreaker among teams level on points.
+ */
+export interface WCGroupMeeting { aPts: number; bPts: number; aGF: number; bGF: number }
+export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null;
+
+/**
+ * Rank a World Cup group applying the 2026 in-group order: points first, then —
+ * among teams LEVEL on points — head-to-head (H2H points → H2H GD → H2H goals),
+ * then overall goal difference, then overall goals scored. (Reverses the pre-2026
+ * overall-GD-first rule.)
+ *
+ * Conservatism: H2H is applied to a level cluster ONLY when EVERY pair in that
+ * cluster has been played (the mini-table is complete). If any pair has not met
+ * (e.g. teams level on points who have not yet played, or a partially-played 3-way
+ * tie), it falls back to overall GD provisionally — never asserting an order it
+ * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
+ * which preserves the prior behaviour exactly.
+ */
+export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
+  const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
+    b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
+
+  const orderCluster = (cluster: WorldCupGroupRow[]): WorldCupGroupRow[] => {
+    if (cluster.length <= 1 || !h2h) return [...cluster].sort(byOverall);
+    const names = cluster.map(r => r.teamName);
+    const mini = new Map(names.map(n => [n, { pts: 0, gd: 0, gf: 0 }]));
+    let allPairsMet = true;
+    for (let a = 0; a < names.length; a++) {
+      for (let b = a + 1; b < names.length; b++) {
+        const r = h2h(names[a], names[b]);
+        if (!r) { allPairsMet = false; continue; }
+        const A = mini.get(names[a])!, B = mini.get(names[b])!;
+        A.pts += r.aPts; B.pts += r.bPts;
+        A.gd  += r.aGF - r.bGF; B.gd += r.bGF - r.aGF;
+        A.gf  += r.aGF; B.gf += r.bGF;
+      }
+    }
+    // Incomplete mini-table ⇒ no confident H2H order; fall back to overall GD.
+    if (!allPairsMet) return [...cluster].sort(byOverall);
+    return [...cluster].sort((a, b) => {
+      const A = mini.get(a.teamName)!, B = mini.get(b.teamName)!;
+      return (B.pts - A.pts) || (B.gd - A.gd) || (B.gf - A.gf) || byOverall(a, b);
+    });
+  };
+
+  const byPoints = [...rows].sort((a, b) => b.points - a.points);
+  const out: WorldCupGroupRow[] = [];
+  for (let i = 0; i < byPoints.length;) {
+    let j = i;
+    while (j + 1 < byPoints.length && byPoints[j + 1].points === byPoints[i].points) j++;
+    out.push(...orderCluster(byPoints.slice(i, j + 1)));
+    i = j + 1;
+  }
+  return out;
+}
+
+function buildWorldCupGroupFacts(
+  rows: WorldCupGroupRow[],
+  group: string,
+  teamName: string,
+  opponentName: string,
+  h2h?: WCGroupH2H,
+): { ranked: WorldCupGroupRow[]; lines: string[] } {
+  const ranked = rankWorldCupGroup(rows, h2h);
+  const rankOf = (name: string) => ranked.findIndex(r => r.teamName === name) + 1;
+
+  const lines: string[] = [
+    `GROUP ${group} DERIVED FACTS — computed from the live group table (ranked by points, then goal difference, then goals scored). Use these GROUP records verbatim; do NOT use the all-competitions RECENT FORM line for any group-standing or qualification claim:`,
+  ];
+
+  for (const name of [teamName, opponentName]) {
+    const row = ranked.find(r => r.teamName === name);
+    if (!row) continue;
+    const rank      = rankOf(name);
+    const remaining = Math.max(0, 3 - row.played);
+    const gd        = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
+    const rec       = `${row.wins}W-${row.draws}D-${row.losses}L`;
+    const maxPts    = row.points + 3 * remaining;
+    const others    = ranked.filter(r => r.teamName !== name);
+    // Conservative: only claim a strong stake when mathematically provable.
+    const canReachOrExceed = others.filter(r => (r.points + 3 * Math.max(0, 3 - r.played)) >= row.points).length;
+    const alreadyBeyondMax = others.filter(r => r.points > maxPts).length;
+
+    let stake: string;
+    if (row.played >= 3 && rank <= 2) {
+      stake = 'group complete — finished in the automatic top 2, through to the Round of 32';
+    } else if (rank <= 2 && remaining > 0 && canReachOrExceed <= 1) {
+      stake = 'have mathematically secured a top-2 finish — through to the Round of 32';
+    } else if (alreadyBeyondMax >= 2) {
+      stake = `can no longer finish in the automatic top 2 (already beyond their maximum of ${maxPts} pts); only a best-third-place path remains`;
+    } else if (rank <= 2) {
+      stake = `currently in a qualifying position (the top 2 of the group go through) — but with ${remaining} game${remaining === 1 ? '' : 's'} still to play this is NOT yet secured; do not call them "qualified" or "through"`;
+    } else if (rank === 3) {
+      stake = 'currently 3rd — in contention for a best-third-place spot (the 8 best third-placed teams across the 12 groups also advance), NOT yet through';
+    } else {
+      stake = 'currently bottom of the group';
+    }
+
+    lines.push(
+      `  • ${name}: ${row.points} group point${row.points === 1 ? '' : 's'} from ${row.played} game${row.played === 1 ? '' : 's'} ` +
+      `(${rec}, GD ${gd}), currently ${ordinalSuffix(rank)} of ${ranked.length} in Group ${group}; ` +
+      `${remaining} group game${remaining === 1 ? '' : 's'} remaining — ${stake}.`,
+    );
+  }
+
+  // Direct comparison of the two fixture teams — binds the DIRECTION (points and
+  // goal difference) so the model can't reverse who's ahead (a GD-direction slip).
+  const tRow = ranked.find(r => r.teamName === teamName);
+  const oRow = ranked.find(r => r.teamName === opponentName);
+  if (tRow && oRow) {
+    const [hi, lo] = rankOf(teamName) < rankOf(opponentName) ? [tRow, oRow] : [oRow, tRow];
+    const meeting = h2h?.(hi.teamName, lo.teamName);
+    const fmtGD = (r: WorldCupGroupRow) => `${r.goalDifference >= 0 ? '+' : ''}${r.goalDifference}`;
+    let reason: string;
+    if (hi.points !== lo.points) {
+      reason = `on points (${hi.points} vs ${lo.points})`;
+    } else if (meeting && meeting.aPts !== meeting.bPts) {
+      reason = `on the head-to-head result (they have met in the group; this is the FIRST tiebreaker for teams level on points, ahead of goal difference)`;
+    } else if (hi.goalDifference !== lo.goalDifference) {
+      const prov = meeting ? '' : ' (provisional separator — they have not met yet; if they finish level having met, head-to-head decides first)';
+      reason = `on goal difference, level on points (${hi.teamName} GD ${fmtGD(hi)} vs ${lo.teamName} GD ${fmtGD(lo)})${prov}`;
+    } else {
+      reason = `on goals scored, level on points and goal difference`;
+    }
+    lines.push(`  • Between the two: ${hi.teamName} are ahead of ${lo.teamName} in the group ${reason}.`);
+  }
+
+  // 2026 tiebreaker note — only when two teams are level on points (it reverses 2022).
+  const pts = ranked.map(r => r.points);
+  if (pts.some((p, i) => pts.indexOf(p) !== i)) {
+    lines.push(
+      '  • Tiebreaker (2026 rule): teams level on points are separated FIRST by head-to-head record ' +
+      '(H2H points → H2H goal difference → H2H goals), THEN overall goal difference, then overall goals scored ' +
+      '(this reverses the pre-2026 overall-goal-difference-first order).',
+    );
+  }
+  lines.push(
+    `  • Qualification: the top 2 of Group ${group} advance automatically; the 8 best third-placed teams ` +
+    'across all 12 groups also advance (32 of 48 reach the Round of 32).',
+  );
+
+  return { ranked, lines };
+}
+
+/**
+ * CHAMPIONSHIP POINTS derived facts (F1). The model was computing its own gaps and
+ * getting them wrong (e.g. "121-point lead over Red Bull" when the real margin is
+ * 173) and inventing win counts ("two wins each"). Pre-compute every gap and win
+ * total from the standings so the model binds verbatim. Conservative on title
+ * status: points-still-available is an UPPER bound (assumes all sprints remain),
+ * which makes "eliminated"/"clinched" harder to assert in either direction.
+ */
+function buildF1DerivedFacts(context: PreviewContext): string[] {
+  const drivers      = context.f1DriverStandings ?? [];
+  const constructors = context.f1ConstructorStandings ?? [];
+  if (drivers.length === 0 && constructors.length === 0) return [];
+
+  const lines: string[] = [
+    "CHAMPIONSHIP DERIVED FACTS — pre-computed from the standings above. Use these gaps and win totals verbatim; do NOT compute your own championship arithmetic:",
+  ];
+
+  // Constructors — leader + each rival's gap to the leader (fixes the 121 error).
+  if (constructors.length > 0) {
+    const sorted = [...constructors].sort((a, b) => a.position - b.position);
+    const leader = sorted[0];
+    lines.push(`  Constructors' Championship:`);
+    lines.push(`  • ${leader.constructorName} lead on ${leader.points} pts (${leader.wins} win${leader.wins === 1 ? '' : 's'}).`);
+    for (const c of sorted.slice(1, 6)) {
+      const gap = leader.points - c.points;
+      const foll = c.constructorName === context.f1FollowedConstructorName ? ' ◄ followed' : '';
+      lines.push(`  • ${c.constructorName} (${ordinalSuffix(c.position)}) trail ${leader.constructorName} by ${gap} pt${gap === 1 ? '' : 's'} — ${c.points} pts, ${c.wins} win${c.wins === 1 ? '' : 's'}${foll}.`);
+    }
+  }
+
+  // Drivers — leader + followed driver's gaps (or the top three when none followed).
+  if (drivers.length > 0) {
+    const sorted = [...drivers].sort((a, b) => a.position - b.position);
+    const leader = sorted[0];
+    lines.push(`  Drivers' Championship:`);
+    lines.push(`  • ${leader.driverName} lead on ${leader.points} pts (${leader.wins} win${leader.wins === 1 ? '' : 's'}).`);
+    const followedIdx = sorted.findIndex(d => d.driverName === context.f1FollowedName);
+    const focus = followedIdx >= 0 ? [followedIdx] : [1, 2].filter(i => i < sorted.length);
+    for (const i of focus) {
+      const d = sorted[i];
+      if (!d || d === leader) continue;
+      const gapLeader = leader.points - d.points;
+      const ahead = sorted[i - 1];
+      const behind = sorted[i + 1];
+      const parts = [`${gapLeader} pt${gapLeader === 1 ? '' : 's'} behind the leader`];
+      if (ahead && ahead !== leader) parts.push(`${ahead.points - d.points} behind ${ahead.driverName} (${ordinalSuffix(ahead.position)})`);
+      if (behind) parts.push(`${d.points - behind.points} ahead of ${behind.driverName} (${ordinalSuffix(behind.position)})`);
+      const foll = followedIdx >= 0 ? ' ◄ followed' : '';
+      lines.push(`  • ${d.driverName} (${ordinalSuffix(d.position)}, ${d.points} pts, ${d.wins} win${d.wins === 1 ? '' : 's'})${foll}: ${parts.join('; ')}.`);
+    }
+  }
+
+  // Points still available + conservative title-status note.
+  const rules = COMP_RULES.f1;
+  const round = context.f1RoundNumber;
+  if (rules?.racesTotal && round) {
+    const completed = Math.max(0, round - 1);                 // races before this one
+    const racesLeft = Math.max(0, rules.racesTotal - completed); // includes this race
+    const avail = racesLeft * (rules.raceWinPoints ?? 25) + (rules.sprintsTotal ?? 0) * (rules.sprintWinPoints ?? 8);
+    const leadDrv = drivers.length ? [...drivers].sort((a, b) => a.position - b.position) : [];
+    const titleOpen = leadDrv.length >= 2 && (leadDrv[0].points - leadDrv[1].points) <= avail;
+    lines.push(
+      `  • Up to ~${avail} points are still available (about ${racesLeft} round${racesLeft === 1 ? '' : 's'} + up to ${rules.sprintsTotal} sprints remaining; ` +
+      `${rules.raceWinPoints} for a race win, ${rules.sprintWinPoints} for a sprint win)` +
+      (titleOpen ? ' — both championships are mathematically open; nothing is clinched.' : '.'),
+    );
+  }
+
+  return lines.length > 1 ? lines : [];
+}
+
 // ─── Player-name whitelist ────────────────────────────────────────────────────
 //
 // Parses a rendered data-block prompt string and returns:
@@ -540,10 +842,85 @@ export function collectPlayerWhitelist(prompt: string): {
     for (const line of squadText.split('\n')) addNamesFromLine(line);
   }
 
+  // Cricket named squad (cricketdata.org) — the only player-name source for cricket.
+  const cricketSquadText = extractSection(/ANNOUNCED SQUAD/);
+  if (cricketSquadText) {
+    hasPlayerData = true;
+    for (const line of cricketSquadText.split('\n')) addNamesFromLine(line);
+  }
+
   const injuryText = extractSection(/INJURY REPORT/);
   if (injuryText) {
     hasPlayerData = true;
     for (const line of injuryText.split('\n')) addNamesFromLine(line);
+  }
+
+  // F1 — drivers and constructors from the championship standings/grid are the
+  // grounded name source (the F1 path has no LINEUP block). Seed them so legitimate
+  // names pass; a driver/constructor NOT in the standings is still rejected.
+  // NOTE: F1 has no lineup, so we do NOT set hasPlayerData (which would switch the
+  // validator to whole-output scanning and flag F1 structural terms). We only SEED
+  // the whitelist with grounded driver/constructor/circuit/race names so they pass;
+  // a fabricated driver (2+ unknown words in the spotlight) is still rejected.
+  const f1DriverText      = extractSection(/DRIVERS' CHAMPIONSHIP/);
+  const f1ConstructorText = extractSection(/CONSTRUCTORS' CHAMPIONSHIP/);
+  const f1GridText        = extractSection(/STARTING GRID/);
+  if (f1DriverText || f1ConstructorText) {
+    // Driver lines: "  P1. <Driver> [<Constructor>] — ..."
+    for (const text of [f1DriverText, f1GridText]) {
+      for (const line of (text ?? '').split('\n')) {
+        const dm = line.match(/P\d+[.:]\s*(.+?)\s*[[(](.+?)[\])]/);
+        if (dm) { whitelist.add(dm[1].trim().toLowerCase()); whitelist.add(dm[2].trim().toLowerCase()); }
+      }
+    }
+    // Constructor lines: "  P1. <Constructor> — ..."
+    for (const line of (f1ConstructorText ?? '').split('\n')) {
+      const cm = line.match(/P\d+\.\s*(.+?)\s*(?:—|-|$)/);
+      if (cm) whitelist.add(cm[1].trim().toLowerCase());
+    }
+    // Circuit (e.g. "Red Bull Ring") and the race name (e.g. "Austrian Grand Prix").
+    const circuitM = prompt.match(/^Circuit:\s*(.+)$/m);
+    if (circuitM) whitelist.add(circuitM[1].trim().toLowerCase());
+    const raceM = prompt.match(/^FORMULA 1 — (.+?)\s*\(/m);
+    if (raceM) whitelist.add(raceM[1].trim().toLowerCase());
+  }
+
+  // KEY PERFORMERS — "Name 28 pts/5 reb/3 ast, Name2 19 pts/..." (stats are not
+  // parenthesised, so take the text before the first digit as the player name).
+  const keyPerfText = extractSection(/KEY PERFORMERS/);
+  if (keyPerfText) {
+    hasPlayerData = true;
+    for (const line of keyPerfText.split('\n')) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      for (const raw of line.slice(colonIdx + 1).split(',')) {
+        const m = raw.match(/^\s*([^\d]+?)\s+\d/);
+        const name = (m ? m[1] : raw).trim();
+        if (name && name.length > 1) whitelist.add(name.toLowerCase());
+      }
+    }
+  }
+
+  // FROM THE MEDIA — attributed news/tips. Names here come from REAL fetched
+  // headlines, so they are allowed in the output (mediaWatch). Free text, so we
+  // scan for capitalised multi-word names rather than a comma list. This does NOT
+  // set hasPlayerData — media is editorial, not a confirmed lineup.
+  const mediaText = extractSection(/FROM THE MEDIA/);
+  if (mediaText) {
+    const nameRe = /\b[A-ZÀ-Þ][a-zà-ÿ'’\-]+(?:\s+[A-ZÀ-Þ][a-zà-ÿ'’\-]+)+\b/g;
+    for (const m of mediaText.matchAll(nameRe)) whitelist.add(m[0].toLowerCase());
+  }
+
+  // RECENT FORM / HEAD-TO-HEAD — these blocks list OTHER team names (past
+  // opponents, e.g. "United States", "South Africa"). They are legitimate grounded
+  // references, so whitelist multi-word team names here to avoid the player-name
+  // validator flagging them. Does NOT set hasPlayerData — these are teams.
+  const formText = extractSection(/RECENT FORM/);
+  const h2hText  = extractSection(/HEAD-TO-HEAD/);
+  const teamNameRe = /\b[A-ZÀ-Þ][a-zà-ÿ'’\-]+(?:\s+[A-ZÀ-Þ][a-zà-ÿ'’\-]+)+\b/g;
+  for (const section of [formText, h2hText]) {
+    if (!section) continue;
+    for (const m of section.matchAll(teamNameRe)) whitelist.add(m[0].toLowerCase());
   }
 
   // Also whitelist coach names from HEAD COACHES line (they may be named in output)
@@ -587,7 +964,7 @@ VENUE AWARENESS — read the label, do not infer:
 
 DATA INTEGRITY — non-negotiable:
 • Use ONLY the data provided. Do NOT invent statistics, player names, scorelines, or results not mentioned.
-• Player names: only name a specific player if they appear in the MOST RECENT STARTING LINEUP or TEAM NEWS data. Do not name players drawn from your own training knowledge — this produces confident-sounding claims that may be outdated or simply wrong (e.g. a player transferred, dropped, or injured since your training cutoff).
+• Player names: only name a specific player if they appear in the MOST RECENT STARTING LINEUP or TEAM NEWS data. Do not name players drawn from your own training knowledge — this produces confident-sounding claims that may be outdated or simply wrong (e.g. a player transferred, dropped, or injured since your training cutoff). But the players who ARE listed are yours to reason about freely — naming them and reading their matchups is required, not risky (see GROUNDING).
 • Coach/manager names: only name a coach or manager if their name appears in the HEAD COACHES line of the data block. Do not use training knowledge to supply a coaching name — coaching staff changes frequently, and inventing or misidentifying a name is worse than omitting it entirely. When HEAD COACHES is absent from the data, ALL tactical observations must use team-level attribution ("Australia press high and exploit channels", "their compact defensive block") — never a named individual. Using a coaching name not in HEAD COACHES is a grounding violation.
 • If team news mentions injuries or absences, state their structural impact on the side — who covers that role, how it changes the setup.
 • If a section has insufficient data to say something specific, write less — compress the section rather than filling it with generic observations. A short precise sentence is better than two vague ones.
@@ -596,6 +973,8 @@ DATA INTEGRITY — non-negotiable:
 INFORMATION ECONOMY — no redundant data:
 • The user already sees W/D/L form icons, ladder positions, exact scores, points totals, and win/loss records displayed in the app. Repeating any of this is redundant and wastes the available space.
 • The core rule: never state a number (wins, losses, draws, points, scorelines, positions) that the user can already read on screen. Every sentence must add something the data display cannot show — interpretation, cause, consequence, structural pattern.
+• RECITE vs INTERPRET — the line that reconciles this with STATISTICAL ANGLE: RESTATING a visible number is banned; INTERPRETING one is required where the figure carries the analysis. "They sit on 147.9%" recites (banned). "Their 147.9% is the best in the league by a distance — they win by margins, not by grinding out tight ones" interprets (this IS the statistical angle). A figure may appear in your prose only when it is the SUBJECT of a conclusion, never as a standalone readout. The test before writing any number: am I restating what's on screen, or drawing a conclusion FROM it?
+• INTERPRET ≠ INVENT — the number you interpret MUST already be present in the data block (a ladder figure, a percentage, a DERIVED FACT, the model tip). "Interpret a number" is NEVER licence to manufacture one to sound analytical. Concretely forbidden because they are NOT in the data: invented percentages ("a 73% retention rate", "2.13% advantage in inside 50s"), made-up possession/clearance/efficiency rates, fabricated "X of their last Y" splits ("lost three of their last four when leading at the half"). If no number in the data is worth interpreting, write the angle qualitatively or omit it — the statistical angle is optional, fabricating one is not allowed.
 • This applies broadly. All of the following are forbidden regardless of phrasing:
   - Win/loss tallies in any form: "won four of their last five", "a record of five wins and two losses", "they've won three straight", "lost just once in eight"
   - Exact scorelines from past results: "beat Arsenal 2–1 last week", "a 3–0 win over City"
@@ -609,13 +988,20 @@ INFORMATION ECONOMY — no redundant data:
 • FORM RESULT RECENCY — the form data shows results in sequence (most recent first) but contains NO round numbers or dates. Do not use time-anchored language ("last round", "last week", "last month", "recently", "just last week") for any specific result unless you are certain it was the most recent game (first in the sequence). For results in positions 2–5, use neutral phrases: "in their loss to the Sharks", "when they faced City", "against the Broncos earlier this season". Calling a third-game-ago result "last round" is factually wrong — the form data does not tell you when that game was played.
 • RESULT ORDERING — when describing results in chronological narrative order ("they lost to X before beating Y"), you MUST reflect the array sequence accurately: the first item in the form list is the MOST RECENT game; later items happened EARLIER. So if results are [win vs A, loss vs B], chronologically the loss to B came first and the win over A came second. Getting this backwards produces factually wrong statements — double-check the sequence before using any "before/after/following/then" language.
 • Forbidden vague momentum phrases — these assert something without saying anything: "building momentum", "hitting their stride", "finding their form", "growing in confidence", "on the rise", "firing on all cylinders", "clicking into gear". If form is genuinely positive, state the specific structural reason — what is working and why it matters for this fixture.
-• For standings: state the stakes and what they mean structurally — not the coordinates that produced them.
+• For standings: state the stakes and what they mean structurally — not the coordinates that produced them. Point gaps and DERIVED FACTS exist to inform your REASONING; translate them into stakes ("effectively safe", "a converted try covers the gap", "still within touching distance of the eight") rather than quoting the raw figure ("leads by four points", "a 14-point buffer"). Quote an exact gap only when that single number is itself the decisive point of a sentence — and then it must match DERIVED FACTS verbatim.
 • POSITION vs POINTS — understand the model, then use it correctly:
   HOW IT WORKS: Each result earns competition points (e.g. 2 pts for a win, 1 for a draw, 0 for a loss in most leagues). The total of those points determines a team's ordinal position on the ladder/table — 1st = most points, last = fewest. Position and points are two different things derived from the same underlying results; never conflate them.
   TALKING ABOUT THE POINTS TOTAL — acceptable phrases: "league points", "points on the table", "points tally", "competition points". Example: "Brisbane sit on 10 points" or "12 points from eight games".
   TALKING ABOUT THE ORDINAL RANK — acceptable phrases: "league position", "ladder position", "Xth on the ladder", "Xth on the table", "sitting in Xth". Example: "Brisbane sit 13th on the ladder".
   FORBIDDEN: "ladder points" — this phrase conflates the two concepts and is meaningless. Never use it. Never write "13 ladder points" when you mean 13th place. Never write "6 table points" when you mean 6th on the table.
 • Defensive/offensive records: never cite a raw total in isolation ("52 points conceded", "14 goals scored"). A raw number is meaningless without context. Instead, express the record as a league rank — "the tightest defence in the competition", "conceding the fewest points of any side", "the second-highest scoring attack". If the data doesn't tell you where they rank, describe the quality directionally ("among the better defensive sides") rather than quoting a figure. The analytical question is always: where do they sit relative to the rest of the league?
+
+INFORMATION BREADTH — use the whole data block, not just the ladder:
+• The data block may carry several independent signals: recent form, head-to-head history, confirmed/likely lineups and injuries, key performers, league position and stakes, weather, and media. A strong preview is built on the MOST DECISIVE two-to-four of these for THIS specific fixture — it does not lean on the same one (usually the table) in every section.
+• Vary the angle across the sections. If "context" is built on stakes/standings, then "tacticalBattle", "playerSpotlight" and "verdict" should each pull from a DIFFERENT signal — a personnel change or return, a head-to-head pattern, a stylistic mismatch, a weather factor, a key performer's role. Three sections that all restate the ladder position is a weak preview.
+• keyInsights must each cover a DIFFERENT dimension wherever the data allows (e.g. one personnel/availability, one tactical matchup, one form or head-to-head trend) — never three rephrasings of the same point, and never three points all derived from the table.
+• GRACEFUL OMISSION — if a signal is absent for this fixture (no head-to-head, no lineup, no weather, no media), simply say nothing about it and lean harder on the signals that ARE present. NEVER announce the absence ("no head-to-head data is available", "lineup unconfirmed", "weather unknown"), and NEVER invent the missing piece to fill the gap. Missing data narrows the available angles; it does not lower the bar for specificity on the angles you do have.
+• RELEVANCE OVER COMPLETENESS — do not mechanically tour every available signal. Bring in a signal only when it changes how you read this fixture. An unremarkable, neutral data point is better left out entirely (see NO FILLER). Breadth means choosing the most telling signals, not listing all of them.
 
 SCORING MARGIN CALIBRATION — interpret margins relative to the sport's scoring range:
 • NRL Rugby League: scores routinely reach 30–50 pts per side. ≤10 pts margin = competitive; 11–20 pts = clear defeat; 21–30 pts = comfortable; 31+ pts = heavy/hammering. A 32–40 loss is an 8-point margin — that is a competitive defeat, NOT a heavy loss.
@@ -682,7 +1068,8 @@ HISTORICAL ACCURACY — year-specific claims are the risk, not historical contex
 • The constraint is specificity without verification: NEVER cite a specific year, season, scoreline, or result unless the data block explicitly states it. Year-specific claims are a known hallucination failure mode.
 • Forbidden patterns: "their 2024 Grand Final rematch", "last season's title fight (2025)", "the 2023 decider", "they met in the 2024 semi-final" — any claim that pins history to a specific date you cannot verify.
 • Acceptable: "two clubs with a genuine finals rivalry", "a fixture that has defined the competition in recent seasons", "these sides have met at the business end before" — general historical framing grounded in knowledge you are confident about.
-• If the data block provides an explicit head-to-head result, reproduce it accurately and do not embellish.
+• HEAD-TO-HEAD DATA — when the data block contains a HEAD-TO-HEAD section, use it for the matchup TREND only: which side has tended to come out on top, whether recent meetings have been tight or one-sided, any home/away pattern. Do NOT recite the raw win-draw-loss record (a bare tally adds no insight), do NOT list past scorelines, and NEVER attach a year or date to any meeting — the data deliberately omits them. You may characterise the single most recent meeting qualitatively ("their last meeting was a tight, low-scoring affair") but only when you tie it to something tactical about THIS fixture. If there is no HEAD-TO-HEAD section, omit historical comparison entirely.
+• NEVER state or imply a calendar year or season-year anywhere in the output (e.g. "winless in 2024", "since the 2025 season"). You do not know the current date. Describe timeframes only in relative, data-grounded terms ("winless so far this season", "across their recent run").
 • Do NOT infer what "last season" means — you don't know the current date unless it is stated in the data.
 
 COMPETITION CONTEXT — critical:
@@ -734,7 +1121,8 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
 • Keep coach references analytical, not biographical. "Dyche's side will be compact and physical from the first whistle" is useful. "Dyche, who was appointed in January 2023..." is not.
 
 LINEUP AND AVAILABILITY ANALYSIS:
-• PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, or INJURY REPORT. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, INJURY REPORT, or KEY PERFORMERS. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• PLAYER-TEAM ATTRIBUTION: A named player belongs ONLY to the team whose lineup/squad/injury/key-performer list contains them. Never attribute a player to the opponent, and never to a third team that appears only as a PAST OPPONENT in the RECENT FORM or HEAD-TO-HEAD data. Check which side's list a name came from before describing them.
 • MOST RECENT STARTING LINEUP (when provided): Use as the baseline for predicting selection, adjusted for availability data. Focus on players in structurally important roles — the first-choice goalkeeper, the main ball-carrier, the primary playmaker, the key defensive pairing. Do not list every player; name only those whose presence or absence materially changes how the team sets up.
 • SQUAD SUBMISSION (AFL — when SQUAD SUBMISSION FOR THIS GAME is provided): The "Absent vs last lineup" list shows players who were in the last game but are NOT in the 26-man submission — they are definitively unavailable. Assess each absent player's structural role and what the team loses. The "possible returns/inclusions" list shows players in the squad who weren't in the last lineup. Cross-reference with team news — if news confirms a player is returning from injury, state the positional and structural impact of their return. Player returns are analytically significant, especially when they restore a role that has been structurally weaker without them.
 • INJURY REPORT (NRL/EPL/SRU — when INJURY REPORT is provided): "Out" = confirmed unavailable. "Doubtful" = significant doubt, likely to miss. Only name an injured player if they hold an important structural role (regular starter, key specialist). Do not list every injury; filter to the ones that materially affect the team's attacking or defensive capability. For key absences, explain who fills that role and whether it represents a genuine structural downgrade.
@@ -771,24 +1159,41 @@ F1 RACE PREVIEW — SECTION GUIDE (applies when the data block begins with "FORM
 • "playerSpotlight" (labelled "Focus: {followed name}" in F1): At least 80% of this section must be directly about the FOLLOWED ENTITY named in the data block — their specific strengths/weaknesses at this circuit, how their car handles active aero and MO deployment, their championship trajectory, what this race means for them. Brief mention of rivals is only permitted when directly relevant to the followed entity's own situation (e.g. a points gap to their nearest rival). Do NOT lead with or centre on any other driver.
 • "verdict": Key things to watch in this race weekend — specific overtaking opportunities, strategic scenarios (undercut/overcut windows, safety car beneficiaries, tyre strategy), weather factors, and what would constitute a successful weekend for the followed entity.
 
-GROUNDING — absolute constraint, no exceptions:
-• Only cite statistics, percentages, rankings, or records that are explicitly present in the data block below. Never invent numbers. If a stat is not in the data, do not state it.
-• Only name individual players whose names appear in the provided STARTING LINEUP or TEAM NEWS sections. If no player data is provided, do not name any player — describe roles and patterns instead.
+GROUNDING — construct grounded, specific reads; never fabricate facts:
+• WHAT YOU SHOULD DO (this is the core of a good preview, not an afterthought): Reason about the players and teams THAT APPEAR IN THE DATA using your general understanding of the sport — their usual roles, playing styles, and how two named players' roles clash. Naming a concrete contest between listed participants ("the halfback duel: <A> vs <B>", "<X> at fullback against <Y>'s kicking game", "<striker>'s pace at <centre-back>'s recovery") is exactly what KEY MATCHUP wants and is NOT a grounding violation. A qualitative read of how one listed player matches up against another listed player is ANALYSIS, not fabrication — provided you invent no numbers and name no one outside the data.
+• THE PLAIN-ENGLISH LINE: Inventing FACTS is forbidden; reasoning about the named participants is REQUIRED. Do not retreat to abstract positional groups ("the middle forwards", "their midfield engine", "the back three") when the lineup hands you actual names to build the contest around — that under-uses the data and produces identical boilerplate for every fixture. Pick the names and read the clash.
+• COUCH SPECULATION: any read that extends beyond what the data literally states must be couched as a tendency ("tends to", "on recent evidence", "likely", "usually") — never asserted as established fact. A couched, specific read is far better than a hedge-free generic one.
+• HARD BANS — unchanged, no exceptions:
+  - Only cite statistics, percentages, rankings, or records explicitly present in the data block below. Never invent numbers. If a stat is not in the data, do not state it.
+  - Do NOT attach a specific per-player statline to any player unless those exact figures appear in a KEY PERFORMERS line. This covers both raw counts (tackle counts, turnovers, goals, metres, points, assists) AND narrative-stat claims ("hasn't missed a tackle in two games", "has scored in every match", "averaging 30 touches"). Describing a listed player's ROLE and STYLE qualitatively is required and fine; attaching ANY number or quantified streak to them without KEY PERFORMERS data is a grounding violation — the most common one. If there is no KEY PERFORMERS data, reason about the player purely in qualitative terms.
+  - Only name individual players whose names appear in the provided STARTING LINEUP, SQUAD, TEAM NEWS, INJURY REPORT or KEY PERFORMERS sections. If no player data is provided, name no player — describe roles and patterns instead.
+  - Only name a coach/manager present in the HEAD COACHES line (see DATA INTEGRITY).
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
+• CHAMPIONSHIP POINTS (F1) — when the data block contains CHAMPIONSHIP DERIVED FACTS, every championship gap ("X points behind/ahead", "leads by Y", "Z clear") and every win count MUST be taken verbatim from there. Do NOT compute your own points gaps (a miscalculated margin is a grounding error) and do NOT invent win totals — use the exact wins stated in the standings/derived facts. State each rival's gap to the leader SEPARATELY, per rival (e.g. "Ferrari 72, McLaren 121, Red Bull 173 behind") — never collapse differently-placed rivals under one number ("72 points ahead of Ferrari, McLaren and Red Bull" is wrong; only Ferrari is 72 behind).
+• GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. NEVER describe a team's group record using the all-competitions RECENT FORM line (e.g. a team that has played one group game has NOT "won one and drawn one" — that conflates their tournament form with the group). The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
+• DERIVED FACTS BINDS THE "context" FIELD TOO — this is where standings errors slip in. Any points total, gap, or inside/outside-the-finals (top-eight) claim in the context field must come VERBATIM from DERIVED FACTS — including the DIRECTION. If DERIVED FACTS says a side is "N points inside the finals places", they are INSIDE — never write "outside". Never source a standings number from anywhere else: not the LEAGUE TABLE rows, not the SEASON STATE round number, not your own arithmetic. THE ROUND-NUMBER TRAP: "Round 13 of 27" is the ROUND, not a points total — never write "level on 13 points" off the round number. If DERIVED FACTS does not give the figure or direction you want, state it qualitatively ("both sides level and inside the eight") rather than inventing a number or a direction.
 • EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
 
 STRUCTURE — four elements required in every preview, distributed naturally across the sections:
-• KEY MATCHUP: Name the single most decisive tactical or personnel contest — the specific duel where the fixture will be decided. One concrete clash, not a general overview.
+• KEY MATCHUP: Name the single most decisive tactical or personnel contest — the specific duel where the fixture will be decided. Build it from ACTUAL NAMED PARTICIPANTS in the data wherever a lineup/squad is supplied (a real halfback-vs-halfback or striker-vs-defender read), not abstract positional groups. One concrete clash, not a general overview.
 • RECENT FORM: What each side's last few results reveal structurally — pattern and cause, not scorelines. Connect it directly to this fixture.
-• STATISTICAL ANGLE: One meaningful number or comparative record that frames the game (ranked in the league where possible). Only include it if it adds genuine analytical weight.
+• STATISTICAL ANGLE: One meaningful number or comparative record that frames the game (ranked in the league where possible), used by INTERPRETATION not recitation — state the conclusion the figure supports, not the figure as a scoreboard readout (see RECITE vs INTERPRET under INFORMATION ECONOMY). The number must be one that ACTUALLY APPEARS in the data block — never invent a statistic to interpret. Only include it if it adds genuine analytical weight; if the data carries no number worth interpreting, omit this element rather than fabricating one.
 • REASONED PREDICTION: The most probable outcome with specific reasoning. Name the decisive factor. No hedged non-answers.
 
 These four elements must appear across the response — they do not need to be labelled separately.
 
+FROM THE MEDIA — the "mediaWatch" field (attributed editorial, strict rules):
+• "mediaWatch" is an array of short talking points (0–4 items) sourced ONLY from the FROM THE MEDIA block in the data — the fetched news headlines and the model tip. It is rendered to readers under a "From the media" heading, clearly separated from your own analysis.
+• Everything in mediaWatch must be ATTRIBUTED as reporting or opinion, never stated as fact: "Reports suggest…", "[Side] are reportedly…", "The tipsters lean toward…", "Local press flag…", "Expected to start as per last week…". Never present a media item as your own factual claim.
+• Sources must be REAL. Paraphrase the gist of an actual provided headline or the actual tip figures. Do NOT fabricate quotes, invent outlet names, or attribute words to a named outlet that it did not say. If the data names no outlet, attribute generically ("reports", "the tipsters") — do not invent one.
+• This is the ONLY place news, tips, and expected-lineup ("likely XI per last match") framing may appear. Do NOT let news headlines or the model tip leak into "context", "tacticalBattle", "playerSpotlight", "verdict", or "keyInsights" as if they were established fact — those fields use only the structured data (standings, derived facts, lineups, injuries).
+• If the data block contains no FROM THE MEDIA block, OMIT the mediaWatch field entirely (do not output an empty array, do not invent talking points).
+• Player names appearing in a real provided headline MAY be named in mediaWatch (with attribution) even if they are not in the lineup/squad data — they came from a real source. Do not introduce names that appear nowhere in the data.
+
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
-  "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
+  "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). Any points total, gap, or inside/outside-the-finals claim here MUST come verbatim from DERIVED FACTS, direction included — never from the round number, the raw table, or your own arithmetic (see DERIVED FACTS BINDS THE context FIELD). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
   "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided in the data block, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). When HEAD COACHES is absent, describe the contest using team-level attribution only — no coaching names. Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically.",
   "playerSpotlight": "REQUIRED — never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: if player data appears in the data block (lineup/squad/injury report/team news), name the single most analytically compelling player from that data and connect them to the specific gamestate. If the data block contains a NO PLAYER DATA notice, describe the decisive tactical unit or positional role instead — never invent or assume a player name from training knowledge, even if you are confident about the squad.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
@@ -796,6 +1201,10 @@ OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No ex
     "Specific analytical point grounded in the data (max ~12 words)",
     "Specific analytical point grounded in the data (max ~12 words)",
     "Specific analytical point grounded in the data (max ~12 words)"
+  ],
+  "mediaWatch": [
+    "Attributed talking point sourced from the FROM THE MEDIA block — e.g. 'Reports suggest…', 'The tipsters lean toward…', 'Expected to line up as per last week…' (max ~20 words)",
+    "Another attributed angle, only if the data supports it"
   ]
 }`;
 
@@ -859,6 +1268,14 @@ function buildF1DataBlock(context: PreviewContext): string {
     lines.push('');
   }
 
+  // Pre-computed championship gaps + win totals (bind verbatim — fixes the
+  // miscalculated constructor gap and invented win counts).
+  const f1Facts = buildF1DerivedFacts(context);
+  if (f1Facts.length > 0) {
+    lines.push(...f1Facts);
+    lines.push('');
+  }
+
   if (context.f1RecentRaceResults && context.f1RecentRaceResults.length > 0) {
     lines.push('RECENT RACE RESULTS:');
     // Show most recent first
@@ -903,6 +1320,84 @@ function buildF1DataBlock(context: PreviewContext): string {
   }
 
   lines.push(`Generate the race preview using only the data provided above. Do not invent statistics, driver names not mentioned, or historical records not given.`);
+  return lines.join('\n');
+}
+
+// ─── Cricket data block ───────────────────────────────────────────────────────
+
+function buildCricketDataBlock(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  venue?: string,
+): string {
+  const c = context.cricketContext ?? {};
+  const lines: string[] = [];
+
+  lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
+  const venueStr = c.venue || venue;
+  if (venueStr) lines.push(`VENUE: ${venueStr} (cricket — treat as a neutral tournament/host venue unless the side is the designated host)`);
+  lines.push(`COMPETITION: ${c.seriesName || LEAGUE_LABELS[league] || league}`);
+  lines.push('');
+
+  // Match context — format is authoritative for how the game is played.
+  lines.push('CRICKET MATCH CONTEXT:');
+  if (c.format)    lines.push(`  Format: ${c.format}${c.matchDesc ? ` — ${c.matchDesc}` : ''}`);
+  else if (c.matchDesc) lines.push(`  ${c.matchDesc}`);
+  if (c.seriesName) lines.push(`  Series/Tournament: ${c.seriesName}`);
+  if (c.status) {
+    const stage = c.ended ? 'completed result' : c.started ? 'in progress' : 'scheduled — not yet started';
+    lines.push(`  Match status: ${c.status} (${stage})`);
+  }
+  if (c.toss)    lines.push(`  Toss: ${c.toss}`);
+  if (c.started && (c.teamScoreLine || c.opponentScoreLine)) {
+    if (c.teamScoreLine)     lines.push(`  ${teamName}: ${c.teamScoreLine}`);
+    if (c.opponentScoreLine) lines.push(`  ${opponentName}: ${c.opponentScoreLine}`);
+  }
+  lines.push('');
+
+  // Recent form (this series/tournament) — qualitative, no scorelines.
+  if (c.teamRecentResults && c.teamRecentResults.length > 0) {
+    lines.push('RECENT FORM (this series/tournament, most recent first):');
+    lines.push(`  ${teamName}: ${c.teamRecentResults.join('; ')}`);
+    lines.push('');
+  }
+  if (c.h2hNote) {
+    lines.push('HEAD-TO-HEAD (matchup trend only — no scores, years or dates):');
+    lines.push(`  ${c.h2hNote}.`);
+    lines.push('');
+  }
+
+  // Named squad — the ONLY source of player names for cricket (provenance label).
+  const teamSquad = context.teamSquad ?? [];
+  const oppSquad  = context.opponentSquad ?? [];
+  const hasPlayerData = teamSquad.length > 0 || oppSquad.length > 0;
+  if (hasPlayerData) {
+    lines.push('ANNOUNCED SQUAD (named players in the official squad for this fixture — a selection guide, not a confirmed XI; may change at the toss):');
+    if (teamSquad.length > 0) lines.push(`  ${teamName}: ${teamSquad.join(', ')}`);
+    if (oppSquad.length  > 0) lines.push(`  ${opponentName}: ${oppSquad.join(', ')}`);
+    lines.push('');
+  }
+
+  // Sport vocabulary + coaches.
+  lines.push(`SPORT: ${SPORT_CONTEXT[league] ?? ''}`);
+  if (context.teamManager || context.opponentManager) {
+    const t = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
+    const o = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
+    lines.push(`HEAD COACHES: ${[t, o].filter(Boolean).join(' | ')}`);
+  }
+  lines.push('');
+
+  // Trailing player-data sentinel (mirrors the generic block so the validators behave).
+  if (hasPlayerData) {
+    lines.push('PLAYER NAMING CONSTRAINT: Only name players listed in the ANNOUNCED SQUAD section above (plus any names in a FROM THE MEDIA block, with attribution). Any player name from outside the data is forbidden — even if you know the side from your training data. Do NOT attach a statline (runs, wickets, strike rate, average) to any player — no per-player numbers are provided.');
+  } else {
+    lines.push('NO PLAYER DATA: No squad has been published for this fixture yet. Do NOT name any individual player; describe roles and units (top order, the spinners, the death bowlers) instead. Inventing player names from training knowledge is a grounding violation.');
+  }
+  lines.push('');
+  lines.push('Generate the cricket match preview using only the data provided above. Do not invent statistics, scorelines, player names, or historical records not given.');
+
   return lines.join('\n');
 }
 
@@ -979,11 +1474,19 @@ export function buildDataBlock(
   teamId?: string,
   opponentId?: string,
   seriesSummary?: string,
+  enabledBlocks?: Set<BlockId>,
 ): string {
   // ─── F1 — completely different data model ────────────────────────────────
   if (league === 'f1' && context.f1RaceName) {
     return buildF1DataBlock(context);
   }
+
+  // ─── Cricket — its own data model (innings/squads, no league ladder) ──────
+  if ((league === 'bbl' || league === 'cricket_int') && context.cricketContext) {
+    return buildCricketDataBlock(league, teamName, opponentName, context, venue);
+  }
+
+  const enabled = (id: BlockId): boolean => !enabledBlocks || enabledBlocks.has(id);
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
@@ -1001,6 +1504,10 @@ export function buildDataBlock(
       /\bfinal\b/i.test(cs.roundName) && !/semi/i.test(cs.roundName);
   })();
   const lines: string[] = [];
+
+  // Compute totalRounds and played early — used by both sportContext and standings blocks
+  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
+  const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
   // World Cup: only the three host nations (USA, Canada, Mexico) have home advantage.
@@ -1096,97 +1603,121 @@ export function buildDataBlock(
     lines.push('');
   }
 
-  // For finals: surface domestic competition status (title clinched, etc.) even though
-  // the full league table is suppressed as irrelevant to the cup fixture.
-  // This gives Claude the "double" narrative context when a team has already won the league.
-  if (isFinal && context.leagueTable && context.leagueTable.length > 0) {
-    const domTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
-    if (domTotalRounds) {
-      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
-      if (statusNotes.length > 0) {
-        lines.push('DOMESTIC COMPETITION STATUS (key context for this fixture — informs the "double" narrative; the final itself is independent of league position):');
-        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+  if (enabled('fixtureContext')) {
+    // Representative-series state (State of Origin) — replaces the club ladder,
+    // which doesn't apply to rep teams. Authoritative, derived from the live series.
+    if (context.seriesState) {
+      lines.push(`SERIES STATE (authoritative — this is a representative series, NOT a club ladder fixture): ${context.seriesState}`);
+      lines.push('');
+    }
+
+    // For finals: surface domestic competition status (title clinched, etc.) even though
+    // the full league table is suppressed as irrelevant to the cup fixture.
+    // This gives Claude the "double" narrative context when a team has already won the league.
+    if (isFinal && context.leagueTable && context.leagueTable.length > 0) {
+      const domTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
+      if (domTotalRounds) {
+        const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+        if (statusNotes.length > 0) {
+          lines.push('DOMESTIC COMPETITION STATUS (key context for this fixture — informs the "double" narrative; the final itself is independent of league position):');
+          statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+          lines.push('');
+        }
+      }
+    }
+
+    // ── Fixture context (deterministic phase + stakes label) ────────────────────
+    // Resolves a Phase and Stakes label from live standings and tournament state.
+    // Only injected for first-wave leagues; omitted when stakes = STANDARD.
+    if (!isOffLeague) {
+      const fixtureCtxPlayed = context.teamStanding?.played ?? context.opponentStanding?.played;
+      const fixtureCtx = resolveCompetitionContext(
+        league,
+        context.leagueTable ?? [],
+        teamName,
+        opponentName,
+        fixtureCtxPlayed,
+        context.worldCup ?? undefined,
+        context.fixtureDate,
+      );
+      if (fixtureCtx.stakes !== 'STANDARD') {
+        lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
+        lines.push(`  Phase: ${fixtureCtx.phase}`);
+        const stakesLine = fixtureCtx.explanation
+          ? `  Stakes: ${fixtureCtx.stakes} — ${fixtureCtx.explanation}`
+          : `  Stakes: ${fixtureCtx.stakes}`;
+        lines.push(stakesLine);
         lines.push('');
       }
     }
   }
 
-  // ── Fixture context (deterministic phase + stakes label) ────────────────────
-  // Resolves a Phase and Stakes label from live standings and tournament state.
-  // Only injected for first-wave leagues; omitted when stakes = STANDARD.
-  if (!isOffLeague) {
-    const fixtureCtxPlayed = context.teamStanding?.played ?? context.opponentStanding?.played;
-    const fixtureCtx = resolveCompetitionContext(
-      league,
-      context.leagueTable ?? [],
-      teamName,
-      opponentName,
-      fixtureCtxPlayed,
-      context.worldCup ?? undefined,
-    );
-    if (fixtureCtx.stakes !== 'STANDARD') {
-      lines.push('FIXTURE CONTEXT (authoritative — derived from live standings):');
-      lines.push(`  Phase: ${fixtureCtx.phase}`);
-      const stakesLine = fixtureCtx.explanation
-        ? `  Stakes: ${fixtureCtx.stakes} — ${fixtureCtx.explanation}`
-        : `  Stakes: ${fixtureCtx.stakes}`;
-      lines.push(stakesLine);
+  if (enabled('competitionProfile')) {
+    // ── Competition profile (static) ────────────────────────────────────────────
+    // Injected for primary-league fixtures so the model knows exactly how the
+    // competition works — format, finals structure, qualification cutoffs.
+    const compProfile = !isOffLeague ? getCompetitionProfile(league) : null;
+    if (compProfile) {
+      lines.push(`COMPETITION PROFILE — ${compProfile.name} (authoritative — use this for all season-structure, finals, qualification, and relegation statements):`);
+      lines.push(compProfile.profile);
       lines.push('');
     }
   }
 
-  // ── Competition profile (static) ────────────────────────────────────────────
-  // Injected for primary-league fixtures so the model knows exactly how the
-  // competition works — format, finals structure, qualification cutoffs.
-  const compProfile = !isOffLeague ? getCompetitionProfile(league) : null;
-  if (compProfile) {
-    lines.push(`COMPETITION PROFILE — ${compProfile.name} (authoritative — use this for all season-structure, finals, qualification, and relegation statements):`);
-    lines.push(compProfile.profile);
+  if (enabled('sportContext')) {
+    lines.push(`SPORT: ${sportCtx}`);
+
+    // ── Season state (computed) ──────────────────────────────────────────────────
+    if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
+      const quarter   = Math.ceil(totalRounds / 4);
+      const third     = Math.ceil(totalRounds / 3);
+      const runHomeCutoff = Math.floor(totalRounds * 0.65);
+      const isFinalsPhase = played >= totalRounds; // regular season complete
+      const phase =
+        isFinalsPhase      ? 'finals series'
+        : played <= quarter    ? 'early season'
+        : played <= runHomeCutoff ? 'mid-season'
+        : 'run home — final stretch of the regular season';
+      const roundsRemaining = totalRounds - played;
+
+      const teamRemaining = context.teamStanding?.played !== undefined
+        ? Math.max(0, totalRounds - context.teamStanding.played) : undefined;
+      const oppRemaining  = context.opponentStanding?.played !== undefined
+        ? Math.max(0, totalRounds - context.opponentStanding.played) : undefined;
+
+      const remParts: string[] = [];
+      if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
+      if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
+
+      // Finals: name the round from the date (the feed carries no stage label) so
+      // the model never reads a knockout final as "Round N of N, regular season".
+      const finalsRound = isFinalsPhase ? finalsRoundForDate(league, context.fixtureDate) : null;
+      if (isFinalsPhase && finalsRound) {
+        const decider = finalsRound.decider ? ' — the championship decider' : '';
+        lines.push(
+          `SEASON STATE: FINALS SERIES — ${finalsRound.name}${decider}. ` +
+          `The ${totalRounds}-round regular season is COMPLETE; this is a knockout final, NOT a ladder fixture. ` +
+          `The ladder below shows regular-season finishing order (seeding only).`
+        );
+      } else {
+        lines.push(
+          `SEASON STATE: Round ${played} of ${totalRounds} — ` +
+          `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
+          (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
+        );
+        if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
+      }
+    }
+    if (context.teamManager || context.opponentManager) {
+      const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
+      const oppMgr  = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
+      lines.push(`HEAD COACHES: ${[teamMgr, oppMgr].filter(Boolean).join(' | ')}`);
+    }
     lines.push('');
   }
 
-  lines.push(`SPORT: ${sportCtx}`);
-
-  // ── Season state (computed) ──────────────────────────────────────────────────
-  const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
-  const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
-  if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
-    const quarter   = Math.ceil(totalRounds / 4);
-    const third     = Math.ceil(totalRounds / 3);
-    const runHomeCutoff = Math.floor(totalRounds * 0.65);
-    const isFinalsPhase = played >= totalRounds; // regular season complete
-    const phase =
-      isFinalsPhase      ? 'finals series'
-      : played <= quarter    ? 'early season'
-      : played <= runHomeCutoff ? 'mid-season'
-      : 'run home — final stretch of the regular season';
-    const roundsRemaining = totalRounds - played;
-
-    const teamRemaining = context.teamStanding?.played !== undefined
-      ? Math.max(0, totalRounds - context.teamStanding.played) : undefined;
-    const oppRemaining  = context.opponentStanding?.played !== undefined
-      ? Math.max(0, totalRounds - context.opponentStanding.played) : undefined;
-
-    const remParts: string[] = [];
-    if (teamRemaining !== undefined) remParts.push(`${teamName}: ${teamRemaining} remaining`);
-    if (oppRemaining  !== undefined) remParts.push(`${opponentName}: ${oppRemaining} remaining`);
-
-    lines.push(
-      `SEASON STATE: Round ${played} of ${totalRounds} — ` +
-      `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
-      (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
-    );
-    if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
-  }
-  if (context.teamManager || context.opponentManager) {
-    const teamMgr = context.teamManager ? `${teamName}: ${context.teamManager}` : '';
-    const oppMgr  = context.opponentManager ? `${opponentName}: ${context.opponentManager}` : '';
-    lines.push(`HEAD COACHES: ${[teamMgr, oppMgr].filter(Boolean).join(' | ')}`);
-  }
-  lines.push('');
-
   // World Cup: group standings table + advancement scenario
-  if (league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
     const wc = context.worldCup;
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
     const groupNotStarted = wcGroupTable.every(r => r.played === 0);
@@ -1203,21 +1734,27 @@ export function buildDataBlock(
       lines.push(`ADVANCEMENT NOTE: Top 2 from Group ${wc.group ?? ''} advance automatically; the best 8 third-placed teams across all 12 groups also advance.`);
       lines.push('DO NOT comment on the standings or points tally — no games have been played yet. Focus on the match itself: tactics, form, key players, and what each team needs to do to win.');
     } else {
-      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — top 2 advance automatically; best 8 third-placed teams also advance):`);
-      for (const row of wcGroupTable) {
+      // Recompute the live standing from the rules — the feed's `position` is the
+      // draw/seeding order (it ranks 0-pt teams above 3-pt teams), so render in
+      // corrected order and pre-compute the per-team group facts + stakes.
+      const { ranked: wcRanked, lines: wcFacts } =
+        buildWorldCupGroupFacts(wcGroupTable, wc.group ?? '', teamName, opponentName);
+
+      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — ranked by points, then goal difference, then goals scored; top 2 advance automatically, best 8 third-placed teams also advance):`);
+      wcRanked.forEach((row, i) => {
         const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
         const isTracked = row.teamName === teamName || row.teamName === opponentName;
         const marker = isTracked ? ' ◄' : '';
         lines.push(
-          `  ${row.position}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
+          `  ${i + 1}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
           `${row.wins}W ${row.draws}D ${row.losses}L  ` +
           `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
         );
-      }
+      });
       lines.push('');
       // Spell out per-team match counts so the model cannot misread the table
       // and incorrectly claim all teams are "yet to play" when some have results.
-      const matchTally = wcGroupTable.map(r => `${r.teamName}: ${r.played}`).join('  ');
+      const matchTally = wcRanked.map(r => `${r.teamName}: ${r.played}`).join('  ');
       lines.push(`Matches played per team — ${matchTally}`);
       const teamRow2  = wcGroupTable.find(r => r.teamName === teamName);
       const oppRow2   = wcGroupTable.find(r => r.teamName === opponentName);
@@ -1232,9 +1769,11 @@ export function buildDataBlock(
         );
       }
       lines.push('');
-      if (wc.advancementScenario) {
-        lines.push(`ADVANCEMENT SCENARIO: ${wc.advancementScenario}`);
-      }
+      // GROUP DERIVED FACTS — authoritative per-team group records + stakes.
+      // (The feed's `advancementScenario` is built off the wrong seeding position,
+      // so it is intentionally NOT rendered — these computed facts replace it.)
+      lines.push(...wcFacts);
+      lines.push('');
       if (wc.gamesPlayed !== undefined) {
         lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
       }
@@ -1242,221 +1781,286 @@ export function buildDataBlock(
     }
   }
 
-  // Cup/European competition group/league-phase standings (highest relevance)
-  const cs = context.competitionStage;
-  if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
-    lines.push(`${(competition ?? 'COMPETITION').toUpperCase()} STANDINGS (${cs.groupName ?? 'League Phase'}):`);
-    for (const [name, s] of [
-      [teamName, cs.teamStanding],
-      [opponentName, cs.opponentStanding],
-    ] as const) {
-      if (!s) continue;
-      const draws = s.draws > 0 ? ` ${s.draws}D` : '';
-      const record = `${s.wins}W${draws} ${s.losses}L`;
-      lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}, competition points: ${s.points ?? 0}`);
-    }
-    lines.push('');
-  }
-
-  // Ladder/Table positions — suppressed for cup/off-league fixtures and knockout-phase ties.
-  // When a game is in any non-primary competition (isOffLeague=true), the domestic
-  // league table has zero bearing on the cup result; including it only invites the
-  // model to misuse it. Exception: F1 driver championship standing is always relevant.
-  const isKnockoutTie = !!cs && !cs.isGroupPhase;
-  const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
-  if (!suppressStandings) {
-    const isF1Standing = league === 'f1';
-
-    if (isF1Standing) {
-      // F1: show driver championship standing only
-      if (context.teamStanding) {
-        lines.push('DRIVERS\' CHAMPIONSHIP STANDING:');
-        const s = context.teamStanding;
-        const constructor = s.constructorName ? ` (${s.constructorName})` : '';
-        lines.push(`  ${teamName}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
-        lines.push('');
-      }
-    } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
-      // Full table with mathematical status analysis
-      const statusNotes = computeCompetitionStatus(league, context.leagueTable);
-      const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
-
-      if (tableLines.length > 0) {
-        lines.push(...tableLines);
-        lines.push('');
-      }
-
-      if (statusNotes.length > 0) {
-        lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
-        statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
-        lines.push('');
-      }
-
-      // Derived standings arithmetic — pre-computed so the model never has to
-      const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
-      if (derivedFacts.length > 0) {
-        lines.push(...derivedFacts);
-        lines.push('');
-      }
-    } else if (context.teamStanding || context.opponentStanding) {
-      // Fallback: just the two teams' rows (no full table available)
-      lines.push('CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):');
+  if (enabled('standings')) {
+    // Cup/European competition group/league-phase standings (highest relevance)
+    const cs = context.competitionStage;
+    if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
+      lines.push(`${(competition ?? 'COMPETITION').toUpperCase()} STANDINGS (${cs.groupName ?? 'League Phase'}):`);
       for (const [name, s] of [
-        [teamName, context.teamStanding],
-        [opponentName, context.opponentStanding],
-      ] as [string, typeof context.teamStanding][]) {
+        [teamName, cs.teamStanding],
+        [opponentName, cs.opponentStanding],
+      ] as const) {
         if (!s) continue;
         const draws = s.draws > 0 ? ` ${s.draws}D` : '';
         const record = `${s.wins}W${draws} ${s.losses}L`;
-        const extra = s.points !== undefined
-          ? `, competition points: ${s.points}`
-          : s.percentage !== undefined
-            ? `, percentage: ${s.percentage.toFixed(1)}%`
-            : '';
-        lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
+        lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}, competition points: ${s.points ?? 0}`);
+      }
+      lines.push('');
+    }
+
+    // Ladder/Table positions — suppressed for cup/off-league fixtures and knockout-phase ties.
+    // When a game is in any non-primary competition (isOffLeague=true), the domestic
+    // league table has zero bearing on the cup result; including it only invites the
+    // model to misuse it. Exception: F1 driver championship standing is always relevant.
+    const isKnockoutTie = !!cs && !cs.isGroupPhase;
+    const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
+    if (!suppressStandings) {
+      const isF1Standing = league === 'f1';
+
+      if (isF1Standing) {
+        // F1: show driver championship standing only
+        if (context.teamStanding) {
+          lines.push('DRIVERS\' CHAMPIONSHIP STANDING:');
+          const s = context.teamStanding;
+          const constructor = s.constructorName ? ` (${s.constructorName})` : '';
+          lines.push(`  ${teamName}${constructor}: ${ordinalSuffix(s.position)} in Championship — ${s.wins} wins, ${s.points ?? 0} pts`);
+          lines.push('');
+        }
+      } else if (context.leagueTable && context.leagueTable.length > 0 && totalRounds) {
+        // Knockout final (Grand Final / Semi): the regular-season ladder is SEEDING
+        // only and actively misleads the model ("1st → minor premiership"). Replace
+        // the full table + derived-finals arithmetic with a one-line seeding note;
+        // FIXTURE CONTEXT + SEASON STATE carry the knockout-final framing.
+        const isFinalsKnockout = played !== undefined && played >= totalRounds
+          && !!finalsRoundForDate(league, context.fixtureDate);
+        if (isFinalsKnockout) {
+          const sorted   = [...context.leagueTable].sort((a, b) => a.position - b.position);
+          const tRow = sorted.find(r => rowMatchesTeam(r.name, teamName));
+          const oRow = sorted.find(r => rowMatchesTeam(r.name, opponentName));
+          const seedParts = [
+            tRow ? `${teamName} finished ${ordinalSuffix(tRow.position)}` : '',
+            oRow ? `${opponentName} finished ${ordinalSuffix(oRow.position)}` : '',
+          ].filter(Boolean);
+          if (seedParts.length > 0) {
+            lines.push('REGULAR-SEASON SEEDING (context only — this is a knockout final; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
+            lines.push(`  ${seedParts.join('; ')} in the regular season.`);
+            lines.push('');
+          }
+        } else {
+          // Full table with mathematical status analysis
+          const statusNotes = computeCompetitionStatus(league, context.leagueTable);
+          const tableLines  = buildTableSection(league, context.leagueTable, teamName, opponentName, totalRounds);
+
+          if (tableLines.length > 0) {
+            lines.push(...tableLines);
+            lines.push('');
+          }
+
+          if (statusNotes.length > 0) {
+            lines.push('COMPETITION STATUS (mathematically confirmed — non-negotiable facts):');
+            statusNotes.forEach(n => lines.push(`  ⚠ ${n}`));
+            lines.push('');
+          }
+
+          // Derived standings arithmetic — pre-computed so the model never has to
+          const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
+          if (derivedFacts.length > 0) {
+            lines.push(...derivedFacts);
+            lines.push('');
+          }
+        }
+      } else if (context.teamStanding || context.opponentStanding) {
+        // Fallback: just the two teams' rows (no full table available)
+        lines.push('CURRENT LADDER/TABLE POSITIONS (rank = place in competition, 1st = top):');
+        for (const [name, s] of [
+          [teamName, context.teamStanding],
+          [opponentName, context.opponentStanding],
+        ] as [string, typeof context.teamStanding][]) {
+          if (!s) continue;
+          const draws = s.draws > 0 ? ` ${s.draws}D` : '';
+          const record = `${s.wins}W${draws} ${s.losses}L`;
+          const extra = s.points !== undefined
+            ? `, competition points: ${s.points}`
+            : s.percentage !== undefined
+              ? `, percentage: ${s.percentage.toFixed(1)}%`
+              : '';
+          lines.push(`  ${name}: rank ${s.position} — played ${s.played}, ${record}${extra}`);
+        }
+        lines.push('');
+      }
+    }
+  }
+
+  // Recent form prefers the context fields (populated from ESPN's lastFiveGames /
+  // Squiggle games by the fetchers); falls back to positional results otherwise.
+  const tForm = context.teamRecentForm ?? teamResults;
+  const oForm = context.opponentRecentForm ?? oppResults;
+
+  if (enabled('recentForm')) {
+    // Recent form — spans all competitions
+    if (tForm.length > 0 || oForm.length > 0) {
+      const isF1 = league === 'f1';
+      const formHeading = isF1
+        ? 'RECENT FORM — Race Results (most recent first):'
+        : isOffLeague
+          ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
+          : 'RECENT FORM (last 5 fixtures, most recent first):';
+      lines.push(formHeading);
+      if (tForm.length > 0) {
+        if (isF1) {
+          // For F1: format as "P{position} — {race name}" instead of W/L score
+          const f1FormStr = tForm.map(r => `P${r.teamScore} — ${r.opponent}`).join('; ');
+          lines.push(`  ${teamName}: ${f1FormStr}`);
+        } else {
+          lines.push(`  ${teamName}: ${formString(tForm)} — ${formDetail(tForm)}`);
+        }
+      }
+      if (oForm.length > 0 && league !== 'f1') {
+        lines.push(`  ${opponentName}: ${formString(oForm)} — ${formDetail(oForm)}`);
       }
       lines.push('');
     }
   }
 
-  // Recent form — spans all competitions
-  if (teamResults.length > 0 || oppResults.length > 0) {
-    const isF1 = league === 'f1';
-    const formHeading = isF1
-      ? 'RECENT FORM — Race Results (most recent first):'
-      : isOffLeague
-        ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
-        : 'RECENT FORM (last 5 fixtures, most recent first):';
-    lines.push(formHeading);
-    if (teamResults.length > 0) {
-      if (isF1) {
-        // For F1: format as "P{position} — {race name}" instead of W/L score
-        const f1FormStr = teamResults.map(r => `P${r.teamScore} — ${r.opponent}`).join('; ');
-        lines.push(`  ${teamName}: ${f1FormStr}`);
-      } else {
-        lines.push(`  ${teamName}: ${formString(teamResults)} — ${formDetail(teamResults)}`);
+  // Head-to-head — recent meetings between the two sides. Deliberately omits years
+  // (the system prompt forbids citing specific years) and presents an aggregate
+  // plus the most recent margin as analytical context, not a recitable record.
+  if (enabled('headToHead')) {
+    const h2h = context.headToHead ?? [];
+    if (h2h.length >= 2 && league !== 'f1') {
+      const w = h2h.filter(m => m.result === 'W').length;
+      const l = h2h.filter(m => m.result === 'L').length;
+      // Qualitative only — no raw scorelines (the model must not recite them) and
+      // no years/dates. A trend descriptor + the most-recent outcome (W/L/D + venue).
+      const trend = w > l ? `${teamName} have had the better of recent meetings`
+        : l > w ? `${opponentName} have had the better of recent meetings`
+        : 'recent meetings have been evenly split';
+      const last = h2h[0];
+      const venueNote = last.teamWasHome === true ? ' at home'
+        : last.teamWasHome === false ? ' away' : '';
+      const lastVerb = last.result === 'D' ? 'drew' : last.result === 'W' ? 'won' : 'lost';
+      lines.push(`HEAD-TO-HEAD (matchup trend only — no scores, years or dates are given; use for context, do NOT recite a record):`);
+      lines.push(`  Over the last ${h2h.length} meetings, ${trend}.`);
+      lines.push(`  Most recently, ${teamName} ${lastVerb}${venueNote}.`);
+      lines.push('');
+    }
+  }
+
+  if (enabled('personnel')) {
+    // Recent starting lineups
+    const teamLineup = context.teamLastLineup ?? [];
+    const oppLineup  = context.opponentLastLineup ?? [];
+    if (teamLineup.length > 0 || oppLineup.length > 0) {
+      lines.push('MOST RECENT STARTING LINEUP (from each side\'s last completed game — a likely-selection guide, NOT a confirmed teamsheet for this fixture):');
+      if (teamLineup.length > 0)
+        lines.push(`  ${teamName}: ${teamLineup.join(', ')}`);
+      if (oppLineup.length > 0)
+        lines.push(`  ${opponentName}: ${oppLineup.join(', ')}`);
+      lines.push('');
+    }
+
+    // Player availability — squad (AFL) and injury report (NRL/EPL/SRU)
+    const teamSquad = context.teamSquad ?? [];
+    const oppSquad  = context.opponentSquad ?? [];
+    const teamInj   = context.teamInjuryReport ?? [];
+    const oppInj    = context.opponentInjuryReport ?? [];
+
+    if (teamSquad.length > 0 || oppSquad.length > 0) {
+      // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
+      lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
+      const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
+      const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
+
+      for (const [name, squad, lineupSet] of [
+        [teamName,     teamSquad, teamLineupSet],
+        [opponentName, oppSquad,  oppLineupSet],
+      ] as [string, string[], Set<string>][]) {
+        if (squad.length === 0) continue;
+        const squadSet = new Set(squad.map((n: string) => n.toLowerCase()));
+        // Players in last lineup but NOT in current squad → likely absent
+        const absent   = (lineupSet.size > 0)
+          ? Array.from(lineupSet).filter((n: string) => !squadSet.has(n)).map((n: string) =>
+              squad.find((s: string) => s.toLowerCase() === n) ?? n,
+            )
+          : [];
+        // Players in current squad NOT in last lineup → possible return or new inclusion
+        const returns  = (lineupSet.size > 0)
+          ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
+          : [];
+
+        lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
+        if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
+        if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
       }
+      lines.push('');
     }
-    if (oppResults.length > 0 && league !== 'f1') {
-      lines.push(`  ${opponentName}: ${formString(oppResults)} — ${formDetail(oppResults)}`);
+
+    if (teamInj.length > 0 || oppInj.length > 0) {
+      lines.push('INJURY REPORT (confirmed/likely unavailable for this fixture):');
+      const fmtInjuries = (injuries: Array<{ name: string; status: string }>) =>
+        injuries.map(i => `${i.name} (${i.status})`).join(', ');
+      if (teamInj.length > 0) lines.push(`  ${teamName}: ${fmtInjuries(teamInj)}`);
+      if (oppInj.length > 0)  lines.push(`  ${opponentName}: ${fmtInjuries(oppInj)}`);
+      lines.push('');
     }
-    lines.push('');
-  }
 
-  // Team news and headlines
-  const teamNews = context.teamNews ?? [];
-  const oppNews  = context.opponentNews ?? [];
-  if (teamNews.length > 0 || oppNews.length > 0) {
-    lines.push('TEAM NEWS & RECENT HEADLINES:');
-    teamNews.slice(0, 3).forEach(n => {
-      const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-      lines.push(`  ${teamName}: "${n.headline}"${desc}`);
-    });
-    oppNews.slice(0, 3).forEach(n => {
-      const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-      lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
-    });
-    lines.push('');
-  }
-
-  // Recent starting lineups
-  const teamLineup = context.teamLastLineup ?? [];
-  const oppLineup  = context.opponentLastLineup ?? [];
-  if (teamLineup.length > 0 || oppLineup.length > 0) {
-    lines.push('MOST RECENT STARTING LINEUP (use to infer likely selection for this fixture):');
-    if (teamLineup.length > 0)
-      lines.push(`  ${teamName}: ${teamLineup.join(', ')}`);
-    if (oppLineup.length > 0)
-      lines.push(`  ${opponentName}: ${oppLineup.join(', ')}`);
-    lines.push('');
-  }
-
-  // Player availability — squad (AFL) and injury report (NRL/EPL/SRU)
-  const teamSquad = context.teamSquad ?? [];
-  const oppSquad  = context.opponentSquad ?? [];
-  const teamInj   = context.teamInjuryReport ?? [];
-  const oppInj    = context.opponentInjuryReport ?? [];
-
-  if (teamSquad.length > 0 || oppSquad.length > 0) {
-    // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
-    lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
-    const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
-    const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
-
-    for (const [name, squad, lineupSet] of [
-      [teamName,     teamSquad, teamLineupSet],
-      [opponentName, oppSquad,  oppLineupSet],
-    ] as [string, string[], Set<string>][]) {
-      if (squad.length === 0) continue;
-      const squadSet = new Set(squad.map((n: string) => n.toLowerCase()));
-      // Players in last lineup but NOT in current squad → likely absent
-      const absent   = (lineupSet.size > 0)
-        ? Array.from(lineupSet).filter((n: string) => !squadSet.has(n)).map((n: string) =>
-            squad.find((s: string) => s.toLowerCase() === n) ?? n,
-          )
-        : [];
-      // Players in current squad NOT in last lineup → possible return or new inclusion
-      const returns  = (lineupSet.size > 0)
-        ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
-        : [];
-
-      lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
-      if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
-      if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
+    // Key players from the most recent game (basketball / any sport that supplies them)
+    const teamKP = context.teamKeyPlayers ?? [];
+    const oppKP  = context.opponentKeyPlayers ?? [];
+    if (teamKP.length > 0 || oppKP.length > 0) {
+      const gameLabel = context.keyPlayersGameLabel ? ` (${context.keyPlayersGameLabel})` : '';
+      lines.push(`KEY PERFORMERS — most recent game${gameLabel}:`);
+      if (teamKP.length > 0)
+        lines.push(`  ${teamName}: ${teamKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+      if (oppKP.length > 0)
+        lines.push(`  ${opponentName}: ${oppKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
+      lines.push('');
     }
-    lines.push('');
   }
 
-  if (teamInj.length > 0 || oppInj.length > 0) {
-    lines.push('INJURY REPORT (confirmed/likely unavailable for this fixture):');
-    const fmtInjuries = (injuries: Array<{ name: string; status: string }>) =>
-      injuries.map(i => `${i.name} (${i.status})`).join(', ');
-    if (teamInj.length > 0) lines.push(`  ${teamName}: ${fmtInjuries(teamInj)}`);
-    if (oppInj.length > 0)  lines.push(`  ${opponentName}: ${fmtInjuries(oppInj)}`);
-    lines.push('');
+  // Player-data availability — reflects the actual fixture data, independent of the
+  // personnel toggle. (Block-independent so the trailing sentinel below stays
+  // invariant across the sandbox's block-decomposition; see the sentinel note.)
+  const hasPlayerData = (
+    (context.teamLastLineup?.length ?? 0) > 0 || (context.opponentLastLineup?.length ?? 0) > 0 ||
+    (context.teamSquad?.length ?? 0) > 0 || (context.opponentSquad?.length ?? 0) > 0 ||
+    (context.teamInjuryReport?.length ?? 0) > 0 || (context.opponentInjuryReport?.length ?? 0) > 0 ||
+    (context.teamKeyPlayers?.length ?? 0) > 0 || (context.opponentKeyPlayers?.length ?? 0) > 0
+  );
+
+  if (enabled('mediaWatch')) {
+    // FROM THE MEDIA — attributed editorial source material (news headlines + model
+    // tips). This is the ONLY home for subjective/predictive content; it feeds the
+    // "mediaWatch" output field, never the factual prose. Suppressed when empty.
+    const teamNews = context.teamNews ?? [];
+    const oppNews  = context.opponentNews ?? [];
+    const hasNews  = teamNews.length > 0 || oppNews.length > 0;
+    const hasTips  = !!context.tips;
+    if (hasNews || hasTips) {
+      lines.push('FROM THE MEDIA (attributed editorial source material — present these as reporting or opinion with attribution, NEVER as your own factual claim; paraphrase, do not fabricate quotes):');
+      if (hasNews) {
+        lines.push('  RECENT HEADLINES (may be speculative or outdated):');
+        teamNews.slice(0, 3).forEach(n => {
+          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
+          lines.push(`    ${teamName}: "${n.headline}"${desc}`);
+        });
+        oppNews.slice(0, 3).forEach(n => {
+          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
+          lines.push(`    ${opponentName}: "${n.headline}"${desc}`);
+        });
+      }
+      if (hasTips) {
+        const t = context.tips!;
+        // Keep the exact "average predicted winning margin: N points" phrasing —
+        // validatePointsClaims keys off it to bound any margin claim in the output.
+        lines.push(`  MODEL TIP (a prediction, not a result): ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
+      }
+      lines.push('');
+    }
   }
 
-  // Key players from the most recent game (basketball / any sport that supplies them)
-  const teamKP = context.teamKeyPlayers ?? [];
-  const oppKP  = context.opponentKeyPlayers ?? [];
-  if (teamKP.length > 0 || oppKP.length > 0) {
-    const gameLabel = context.keyPlayersGameLabel ? ` (${context.keyPlayersGameLabel})` : '';
-    lines.push(`KEY PERFORMERS — most recent game${gameLabel}:`);
-    if (teamKP.length > 0)
-      lines.push(`  ${teamName}: ${teamKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
-    if (oppKP.length > 0)
-      lines.push(`  ${opponentName}: ${oppKP.map(p => `${p.name} ${p.stats}`).join(', ')}`);
-    lines.push('');
-  }
-
-  // Player-data availability sentinel — must appear AFTER all lineup/squad/injury blocks
-  // so the model has a clear, final signal before it generates.
-  const hasPlayerData = teamLineup.length > 0 || oppLineup.length > 0 ||
-    teamSquad.length > 0 || oppSquad.length > 0 ||
-    teamInj.length > 0  || oppInj.length > 0 ||
-    teamKP.length > 0   || oppKP.length > 0;
-  if (hasPlayerData) {
-    lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or TEAM NEWS sections above. Any player name not in those sections is forbidden — even if you know who plays for the team from your training data.');
-    lines.push('');
-  } else {
-    lines.push('NO PLAYER DATA: No lineup, squad, or injury report is available for this fixture. Do NOT name any individual player in any field. The playerSpotlight field must describe a tactical unit, position group, or system — never a named individual. Inventing player names from training knowledge is a grounding violation.');
-    lines.push('');
-  }
-
-  // Model tips (AFL Squiggle)
-  if (context.tips) {
-    const t = context.tips;
-    lines.push(`EXPERT MODEL PREDICTIONS: ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
-    lines.push('');
-  }
-
-  // Weather at kickoff — only included when conditions are notable
-  if (weather && weather.isNotable) {
-    lines.push(`WEATHER AT KICKOFF: ${weather.icon} ${weather.description}`);
-    lines.push(`  Temperature: ${weather.tempC}°C`);
-    if (weather.precipMm > 0.5)    lines.push(`  Precipitation: ${weather.precipMm}mm (${weather.precipProbability}% chance)`);
-    if (weather.windKmh > 25)      lines.push(`  Wind: ${weather.windKmh} km/h`);
-    lines.push('');
+  if (enabled('weather')) {
+    // Weather at kickoff — only included when conditions are notable. Prefers the
+    // context field (populated by buildPreviewContext for outdoor leagues); falls
+    // back to the positional weather arg.
+    const wx = context.weather ?? weather;
+    if (wx && wx.isNotable) {
+      lines.push(`WEATHER AT KICKOFF: ${wx.icon} ${wx.description}`);
+      lines.push(`  Temperature: ${wx.tempC}°C`);
+      if (wx.precipMm > 0.5)    lines.push(`  Precipitation: ${wx.precipMm}mm (${wx.precipProbability}% chance)`);
+      if (wx.windKmh > 25)      lines.push(`  Wind: ${wx.windKmh} km/h`);
+      lines.push('');
+    }
   }
 
   if (compact) {
@@ -1469,12 +2073,153 @@ export function buildDataBlock(
     lines.push('• "verdict": ONE sentence, max 20 words. Most likely outcome and why.');
     lines.push('• "keyInsights": exactly TWO specific, grounded points, max 8 words each — no filler.');
   }
+  // Player-data availability sentinel — emitted AFTER every data block so it is the
+  // model's final signal, and so it always sits in the trailing footer (invariant
+  // across block toggles, which keeps the sandbox decomposition byte-faithful).
+  if (hasPlayerData) {
+    lines.push('PLAYER NAMING CONSTRAINT: Only name players explicitly listed in the MOST RECENT STARTING LINEUP, SQUAD SUBMISSION, INJURY REPORT, or KEY PERFORMERS sections above (plus any names in the FROM THE MEDIA block, with attribution). Any player name from outside the data is forbidden — even if you know who plays for the team from your training data.');
+    lines.push('');
+  } else {
+    lines.push('NO PLAYER DATA: No lineup, squad, or injury report is available for this fixture. Do NOT name any individual player in any field. The playerSpotlight field must describe a tactical unit, position group, or system — never a named individual. Inventing player names from training knowledge is a grounding violation. (Names appearing in the FROM THE MEDIA block may be cited in mediaWatch with attribution.)');
+    lines.push('');
+  }
+
   lines.push(hasPlayerData
     ? 'Generate the match preview using the data provided above. Do not invent statistics, historical records, or player names not in the sections above.'
     : 'Generate the match preview using the data provided above. Do not invent statistics or historical records not given. IMPORTANT: no player data was provided — the playerSpotlight field must describe a tactical role or positional unit, never a named individual player.'
   );
 
   return lines.join('\n');
+}
+
+/**
+ * Assembles the LLM user-message from the fixture context.
+ *
+ * @param enabledBlocks - when provided, only these blocks are included. When omitted, all blocks
+ *   are included and the output is byte-identical to buildDataBlock with the same args.
+ */
+export function assemblePrompt(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  teamResults: GameResult[],
+  oppResults: GameResult[],
+  competition?: string,
+  compact?: boolean,
+  weather?: WeatherData,
+  venue?: string,
+  isHome?: boolean,
+  teamId?: string,
+  opponentId?: string,
+  seriesSummary?: string,
+  enabledBlocks?: Set<BlockId>,
+): string {
+  return buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+    enabledBlocks,
+  );
+}
+
+/** Finds lines present in `full` but absent in `without` (preserving order). */
+function diffRemoved(full: string, without: string): string {
+  const fullLines  = full.split('\n');
+  const withLines  = without.split('\n');
+  const removed: string[] = [];
+  let j = 0;
+  for (const line of fullLines) {
+    if (j < withLines.length && line === withLines[j]) {
+      j++;
+    } else {
+      removed.push(line);
+    }
+  }
+  return removed.join('\n');
+}
+
+/** Longest common trailing line-run shared by two assembled prompts. */
+function commonSuffix(a: string, b: string): string {
+  const al = a.split('\n');
+  const bl = b.split('\n');
+  let i = al.length - 1;
+  let j = bl.length - 1;
+  const suffix: string[] = [];
+  while (i >= 0 && j >= 0 && al[i] === bl[j]) {
+    suffix.unshift(al[i]);
+    i--; j--;
+  }
+  return suffix.join('\n');
+}
+
+/** Removes a known trailing line-run from a prompt. */
+function stripSuffix(full: string, suffix: string): string {
+  if (!suffix) return full;
+  const fl = full.split('\n');
+  const sl = suffix.split('\n');
+  return fl.slice(0, fl.length - sl.length).join('\n');
+}
+
+/**
+ * Decomposes the assembled prompt into per-block text plus a shared footer, for
+ * sandbox use. The footer (player-data sentinel + closing instruction) is always
+ * appended last by buildDataBlock regardless of which blocks are enabled, so it
+ * is extracted separately rather than folded into matchFacts.
+ *
+ * Faithfulness contract: with every block enabled,
+ *   [matchFacts, ...toggleableBlocks].map(b => b.text).filter(Boolean).join('\n')
+ *   + '\n' + footer
+ * reproduces buildDataBlock(...) byte-for-byte. (Verified by diff in
+ * scripts/verify-sandbox-faithful.ts.)
+ */
+export function buildBlocks(
+  league: string,
+  teamName: string,
+  opponentName: string,
+  context: PreviewContext,
+  teamResults: GameResult[],
+  oppResults: GameResult[],
+  competition?: string,
+  compact?: boolean,
+  weather?: WeatherData,
+  venue?: string,
+  isHome?: boolean,
+  teamId?: string,
+  opponentId?: string,
+  seriesSummary?: string,
+): { blocks: BlockResult[]; footer: string } {
+  const full = buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+  );
+
+  // matchFacts is always-on; the matchFacts-only prompt is matchFacts text + footer.
+  const matchFactsOnly = buildDataBlock(
+    league, teamName, opponentName, context, teamResults, oppResults,
+    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+    new Set<BlockId>(['matchFacts']),
+  );
+
+  // Footer = the trailing lines shared by the full prompt and the matchFacts-only
+  // prompt — i.e. the part that belongs to no toggleable block.
+  const footer = commonSuffix(full, matchFactsOnly);
+
+  const blocks = BLOCK_ORDER.map(id => {
+    if (id === 'matchFacts') {
+      // matchFacts text = the matchFacts-only prompt with the shared footer removed.
+      return { id, label: BLOCK_LABELS[id], text: stripSuffix(matchFactsOnly, footer) };
+    }
+    // For toggleable blocks: build without this block, diff to find what it contributes.
+    const others = new Set(BLOCK_ORDER.filter(b => b !== id));
+    const without = buildDataBlock(
+      league, teamName, opponentName, context, teamResults, oppResults,
+      competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
+      others,
+    );
+    return { id, label: BLOCK_LABELS[id], text: diffRemoved(full, without) };
+  });
+
+  return { blocks, footer };
 }
 
 export function buildUpdatePrompt(

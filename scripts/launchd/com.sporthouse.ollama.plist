@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent — runs the Ollama server as a managed user service with num_ctx pinned.
+
+  WHY THIS EXISTS:
+    Ollama on this Mac was previously started by hand in a Terminal (no launchd plist,
+    no login item, not the menu-bar app). That meant (a) it did NOT survive a reboot,
+    and (b) num_ctx was whatever Ollama's built-in default happened to be (currently
+    32K, but unpinned and env-overridable). The enriched preview prompt is ~11K tokens,
+    so an unpinned context length is a latent silent-truncation risk.
+
+    This agent owns `ollama serve` and bakes OLLAMA_CONTEXT_LENGTH=32768 into the process
+    environment by construction, so every loaded model reports CONTEXT 32768. It also
+    auto-starts Ollama at login, which the preview LaunchAgents (previews / previewjobs)
+    implicitly depend on.
+
+  INSTALL:
+    1. Stop any hand-started server so this agent can bind :11434:
+         pkill -f 'ollama serve' 2>/dev/null
+    2. Copy this file to ~/Library/LaunchAgents/:
+         cp scripts/launchd/com.sporthouse.ollama.plist ~/Library/LaunchAgents/
+    3. Load it (RunAtLoad starts it immediately; KeepAlive restarts on crash/boot):
+         launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.sporthouse.ollama.plist
+
+  VERIFY:
+    launchctl list | grep com.sporthouse.ollama   # PID present, status 0
+    curl -s localhost:11434/api/version
+    ollama run qwen3:30b-a3b-instruct-2507-q4_K_M '' </dev/null  # force a load
+    ollama ps                                      # CONTEXT column must read 32768
+
+  UNLOAD / REVERT:
+    launchctl bootout gui/$(id -u)/com.sporthouse.ollama
+    rm ~/Library/LaunchAgents/com.sporthouse.ollama.plist
+    # then start Ollama however you prefer again
+
+  NOTE — menu-bar Ollama.app:
+    Do not also run the menu-bar Ollama.app while this agent is loaded; both would try
+    to bind :11434. This agent is the single owner of the server.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sporthouse.ollama</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/andreasjenkins/.local/bin/ollama</string>
+    <string>serve</string>
+  </array>
+
+  <!-- The whole point of this file: pin the context window explicitly so it never
+       silently falls back to a smaller default across Ollama upgrades/restarts. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_CONTEXT_LENGTH</key>
+    <string>32768</string>
+    <key>PATH</key>
+    <string>/Users/andreasjenkins/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <!-- Start immediately on load, and keep the server up (restart on crash / at boot). -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/sporthouse-ollama.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sporthouse-ollama.log</string>
+
+  <!-- Don't crash-loop hard if something transiently holds the port. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

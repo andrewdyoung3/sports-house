@@ -14,6 +14,7 @@ import type { AIPreview, UpcomingGame, PreviewContext } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, collectPlayerWhitelist } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
+import { buildPreviewContext } from '@/lib/preview-context';
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 
@@ -25,19 +26,80 @@ export function aiLog(msg: string) {
 
 // ─── Points-claim validator ───────────────────────────────────────────────────
 
-function validatePointsClaims(output: AIPreview, prompt: string): string[] {
+const WORD_NUM: Record<string, string> = {
+  zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6',
+  seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12',
+  thirteen: '13', fourteen: '14', fifteen: '15', sixteen: '16', seventeen: '17',
+  eighteen: '18', nineteen: '19', twenty: '20',
+};
+const normNum = (s: string): string => WORD_NUM[s.toLowerCase()] ?? s;
+const NUM_TOKEN = `\\d+|${Object.keys(WORD_NUM).join('|')}`;
+
+export function validatePointsClaims(output: AIPreview, prompt: string): string[] {
   const violations: string[] = [];
   const outputText = JSON.stringify(output);
 
   const dfMatch = prompt.match(/DERIVED FACTS[\s\S]*?(?=\n\n[A-Z]|\n\n\n|$)/);
   if (dfMatch) {
+    const df = dfMatch[0];
     const derivedNums = new Set(
-      [...dfMatch[0].matchAll(/\b(\d+)\b/g)].map(m => m[1]),
+      [...df.matchAll(/\b(\d+)\b/g)].map(m => m[1]),
     );
-    const claimRe = /(\d+)\s+(?:competition\s+)?points?\s+(?:behind|ahead|adrift|clear|above|below|outside|inside)/gi;
+
+    // (1) Gap claims: "<N> points behind/ahead/inside/outside…" — number (digit
+    //     OR word) must appear in DERIVED FACTS.
+    const claimRe = new RegExp(
+      `(${NUM_TOKEN})[-\\s]+(?:competition\\s+)?points?\\s+(?:behind|ahead|adrift|clear|above|below|outside|inside)`,
+      'gi',
+    );
     for (const m of outputText.matchAll(claimRe)) {
-      if (!derivedNums.has(m[1])) {
-        violations.push(`standings gap "${m[0].slice(0, 60)}" — ${m[1]} not in DERIVED FACTS`);
+      const n = normNum(m[1]);
+      if (!derivedNums.has(n)) {
+        violations.push(`standings gap "${m[0].slice(0, 60)}" — ${n} not in DERIVED FACTS`);
+      }
+    }
+
+    // (2) Points-total claims: "level on/tied on/sit on <N> points" or
+    //     "<N> points each/apiece" — the total must appear in DERIVED FACTS
+    //     (catches reciting the round number as a points total).
+    const totalRe = new RegExp(
+      `(?:level(?:\\s+(?:on|with))?|tied(?:\\s+(?:on|at))?|sit(?:ting)?\\s+on|locked(?:\\s+(?:on|at))?)\\s+(${NUM_TOKEN})\\s+(?:competition\\s+)?points?`,
+      'gi',
+    );
+    const totalRe2 = new RegExp(
+      `(${NUM_TOKEN})\\s+(?:competition\\s+)?points?\\s+(?:each|apiece|respectively|both)`,
+      'gi',
+    );
+    for (const re of [totalRe, totalRe2]) {
+      for (const m of outputText.matchAll(re)) {
+        const n = normNum(m[1]);
+        if (!derivedNums.has(n)) {
+          violations.push(`points total "${m[0].slice(0, 60)}" — ${n} not in DERIVED FACTS`);
+        }
+      }
+    }
+
+    // (3) Direction inversion: DERIVED FACTS states "<N> points inside|outside the
+    //     finals places". If the output claims the SAME number with the OPPOSITE
+    //     direction (e.g. derived "2 inside", output "two points outside the top
+    //     eight"), that is a contradiction.
+    const derivedDir = new Map<string, Set<string>>(); // num → {inside,outside}
+    for (const m of df.matchAll(/(\d+)\s+points?\s+(inside|outside)\s+the\s+finals/gi)) {
+      const n = m[1];
+      if (!derivedDir.has(n)) derivedDir.set(n, new Set());
+      derivedDir.get(n)!.add(m[2].toLowerCase());
+    }
+    const outDirRe = new RegExp(
+      `(${NUM_TOKEN})\\s+points?\\s+(inside|outside)\\s+the\\s+(?:top\\s+\\w+|finals|eight)`,
+      'gi',
+    );
+    for (const m of outputText.matchAll(outDirRe)) {
+      const n   = normNum(m[1]);
+      const dir = m[2].toLowerCase();
+      const opp = dir === 'inside' ? 'outside' : 'inside';
+      const dd  = derivedDir.get(n);
+      if (dd && dd.has(opp) && !dd.has(dir)) {
+        violations.push(`standings direction "${m[0].slice(0, 60)}" — DERIVED FACTS says ${n} points ${opp}, not ${dir}`);
       }
     }
   }
@@ -60,6 +122,96 @@ function validatePointsClaims(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+/**
+ * Phase/stakes binding: when the data block's FIXTURE CONTEXT declares a knockout
+ * final (GRAND FINAL / FINALS — e.g. the Super Rugby decider), the prose must not
+ * frame the game as a regular-season fixture, a dead rubber, or having "no bearing"
+ * — the phase line is authoritative. The feed gives no stage label for these games,
+ * so the model is prone to reading the regular-season ladder literally.
+ */
+function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
+  const isFinal = /Stakes:\s*(GRAND FINAL|FINALS)\b/.test(prompt)
+    || /SEASON STATE: FINALS SERIES —/.test(prompt);
+  if (!isFinal) return [];
+  const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round|dead rubber)|final regular[- ]season|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|minor premiership|end-of-season (?:fixture|clash))\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(badRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`phase contradiction "${m[0]}" — FIXTURE CONTEXT says this is a knockout final, not a regular-season/dead-rubber game`);
+  }
+  return violations;
+}
+
+/**
+ * World Cup group-record binding: the GROUP DERIVED FACTS block states each team's
+ * group games played. A team that has played ≤1 group game cannot have a two-result
+ * group record — so a "win and a draw" / "one win and one loss" / "two wins" style
+ * claim in the context field is the all-competitions-form-conflation error (reading
+ * the RECENT FORM line as the group record). Reject → retry.
+ */
+/**
+ * F1 championship-gap binding: the model miscalculates points margins ("121-point
+ * lead over Red Bull" when the real gap is 173). When CHAMPIONSHIP DERIVED FACTS is
+ * present, any "<N> point(s) lead/gap/behind/ahead/clear" in the prose must cite a
+ * number that actually appears in the F1 data block (standings or derived gaps).
+ */
+export function validateF1ChampionshipClaims(output: AIPreview, prompt: string): string[] {
+  if (!/CHAMPIONSHIP DERIVED FACTS/.test(prompt)) return [];
+  const promptNums = new Set([...prompt.matchAll(/\b(\d+)\b/g)].map(m => m[1]));
+  const factual = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const gapRe = /(\d+)[-\s]?(?:point|pt|points)s?\s+(?:lead|gap|advantage|ahead|behind|clear|adrift|deficit)|(?:lead|ahead of|behind|trail\w*)\s+[^.]*?\bby\s+(\d+)\s*(?:point|pt|points)?/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(gapRe)) {
+    const n = m[1] ?? m[2];
+    if (!n || promptNums.has(n) || seen.has(n)) continue;
+    seen.add(n);
+    violations.push(`F1 championship gap "${m[0].slice(0, 50)}" — ${n} is not a figure in the data block; use the CHAMPIONSHIP DERIVED FACTS gaps verbatim`);
+  }
+  return violations;
+}
+
+export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): string[] {
+  if (!/GROUP\s+\S+\s+DERIVED FACTS/.test(prompt)) return [];
+  // team → group games played, parsed from the derived-facts lines.
+  const played = new Map<string, number>();
+  for (const m of prompt.matchAll(/•\s*(.+?):\s*\d+ group points? from (\d+) game/gi)) {
+    played.set(m[1].trim().toLowerCase(), parseInt(m[2], 10));
+  }
+  const ctx = output.context ?? '';
+  const violations: string[] = [];
+  const seen = new Set<string>();
+
+  // (a) Group-record conflation: a team at ≤1 game can't have a two-result record.
+  if ([...played.values()].some(n => n <= 1)) {
+    const twoResultRe = /\b(a win and a (?:draw|loss)|a (?:draw|loss) and a win|one win and one (?:loss|draw)|two wins|two draws|two losses|won (?:two|both)|with a win and a draw)\b/gi;
+    for (const m of ctx.matchAll(twoResultRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`WC group-record conflation "${m[0]}" — a tracked team has played ≤1 group game; use the GROUP DERIVED FACTS record, not the all-competitions form line`);
+    }
+  }
+
+  // (b) Over-claimed qualification: if the derived facts mark NO tracked team as
+  //     mathematically secured/through, prose must not assert qualification.
+  const someoneThrough = /(mathematically secured a top-2|through to the Round of 32|finished in the automatic top 2)/i.test(prompt);
+  if (!someoneThrough) {
+    const overclaimRe = /\b(guaranteed (?:a )?(?:top-two|top two|qualification|progression|advancement)|already qualified|assured of (?:qualification|a top-two|progression)|through to the (?:round of 32|knockout)|secured (?:qualification|a top-two|progression|their place)|no (?:immediate )?(?:impact|bearing) on (?:advancement|qualification)|nothing to play for)\b/gi;
+    for (const m of ctx.matchAll(overclaimRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`WC over-claim "${m[0]}" — no tracked team is mathematically through per GROUP DERIVED FACTS; a current top-2 position is NOT secured qualification`);
+    }
+  }
+  return violations;
+}
+
 function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const phaseMatch = prompt.match(/SEASON STATE:.*?\(phase:\s*([^)]+)\)/i);
   if (!phaseMatch) return [];
@@ -71,6 +223,54 @@ function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const violations: string[] = [];
   for (const m of outputText.matchAll(imminenceRe)) {
     violations.push(`finals-imminence language "${m[0].slice(0, 80)}" in ${phase} phase`);
+  }
+  return violations;
+}
+
+/**
+ * Catches invented per-player statlines. When the data block contains NO KEY
+ * PERFORMERS section, the model has no grounded per-player numbers, so any stat
+ * like "two tries", "18 tackles", "3 turnovers" attached in the factual fields is
+ * fabricated. Scans only the factual fields (mediaWatch is attributed editorial
+ * and may legitimately echo a real headline's numbers). Excludes "points"/"goals"
+ * — those collide with competition points and team scorelines.
+ */
+function validateInventedStatlines(output: AIPreview, prompt: string): string[] {
+  if (/^KEY PERFORMERS/m.test(prompt)) return []; // grounded stats may be present
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const statRe = /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(tries|try|assists?|tackles?|turnovers?|line[\s-]?breaks?|tackle[\s-]?busts?|carries|offloads?|rebounds?|steals?|blocks?|interceptions?)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(statRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`invented player statline "${m[0]}" — no KEY PERFORMERS data provided for this fixture`);
+  }
+  return violations;
+}
+
+/**
+ * Catches invented calendar years. The data block deliberately omits past years
+ * (form/H2H carry no dates), so any year in the factual fields that does NOT appear
+ * in the prompt (e.g. competition labels like "World Cup 2026") is fabricated —
+ * the classic "winless in 2024" failure. Scans factual fields only.
+ */
+function validateInventedYears(output: AIPreview, prompt: string): string[] {
+  const promptYears = new Set([...prompt.matchAll(/\b(?:19|20)\d{2}\b/g)].map(m => m[0]));
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(/\b(?:19|20)\d{2}\b/g)) {
+    if (promptYears.has(m[0]) || seen.has(m[0])) continue;
+    seen.add(m[0]);
+    violations.push(`invented year "${m[0]}" — not present in the data block`);
   }
   return violations;
 }
@@ -96,7 +296,7 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
   'between', 'within', 'beyond', 'before', 'after', 'during', 'through',
 ]);
 
-function validatePlayerNames(output: AIPreview, prompt: string): string[] {
+export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
 
   const fixtureM = prompt.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
@@ -106,24 +306,45 @@ function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const compM = prompt.match(/^COMPETITION:\s*(.+)$/m);
   const competition = compM?.[1]?.trim() ?? '';
 
+  // The VENUE line carries a stadium name (e.g. "McDonald Jones Stadium") that the
+  // model legitimately references; its words must not be flagged as player names.
+  const venueM = prompt.match(/^VENUE:\s*([^—\n]+)/m);
+  const venueName = venueM?.[1]?.trim() ?? '';
+
+  // Expand a name token into the forms the validator's matcher may produce.
+  // The name regex breaks internal-capital surnames (e.g. "O'Brien" → "Brien"),
+  // so also surface the substring after an apostrophe.
+  const expandWord = (w: string): string[] => {
+    const out = [w];
+    if (w.includes("'") || w.includes('’')) {
+      const tail = w.split(/['’]/).pop();
+      if (tail && tail.length > 1) out.push(tail);
+    }
+    return out;
+  };
+
   const excluded = new Set(PLAYER_NAME_SAFE_WORDS);
-  for (const w of `${teamName} ${opponentName} ${competition}`.toLowerCase().split(/\s+/)) {
-    if (w) excluded.add(w);
+  for (const w of `${teamName} ${opponentName} ${competition} ${venueName}`.toLowerCase().split(/\s+/)) {
+    if (w) for (const e of expandWord(w)) excluded.add(e);
   }
   for (const name of whitelist) {
-    for (const w of name.split(/\s+/)) excluded.add(w);
+    for (const w of name.split(/\s+/)) for (const e of expandWord(w)) excluded.add(e);
   }
 
   const whitelistWords = new Set<string>();
   for (const entry of whitelist) {
     for (const w of entry.split(/\s+/)) {
-      if (w.length >= 3) whitelistWords.add(w);
+      for (const e of expandWord(w)) if (e.length >= 3) whitelistWords.add(e);
     }
   }
 
+  // When player data is present we scan the whole output. Otherwise we scan the
+  // factual playerSpotlight PLUS the attributed mediaWatch — names invented in
+  // either are caught, while real names from the fetched headlines pass because
+  // collectPlayerWhitelist added them to the whitelist.
   const textToScan = hasPlayerData
     ? JSON.stringify(output)
-    : (output.playerSpotlight ?? '');
+    : `${output.playerSpotlight ?? ''} ${(output.mediaWatch ?? []).join(' ')}`;
 
   const violations: string[] = [];
   const seen = new Set<string>();
@@ -168,6 +389,27 @@ const ollamaClient = new OpenAI({
   timeout: 15 * 60 * 1000,
 });
 
+// ─── mediaWatch enforcement ───────────────────────────────────────────────────
+
+/**
+ * mediaWatch may carry content ONLY when a FROM THE MEDIA block was actually
+ * supplied in the data block. The model reliably ignores the prompt's "if no media
+ * block, OMIT mediaWatch" instruction and fabricates attributed lines ("Reports
+ * suggest…", "The tipsters lean toward…") — which are exempt from the name/stat
+ * validators because mediaWatch is treated as attributed editorial. So enforce it
+ * deterministically (same principle as binding standings to DERIVED FACTS): if the
+ * data block carried no FROM THE MEDIA section, strip mediaWatch to empty before
+ * storing. A retry is not enough — the model overrides retry nudges; the strip is
+ * robust to non-compliance. When a media block WAS supplied, leave it untouched
+ * (it is relaying real, attributed content).
+ */
+function stripUnsourcedMediaWatch(output: AIPreview, prompt: string): AIPreview {
+  if (/^FROM THE MEDIA/m.test(prompt)) return output;        // real source present — keep
+  if (!output.mediaWatch || output.mediaWatch.length === 0) return output;
+  aiLog(`mediaWatch-strip: removed ${output.mediaWatch.length} unsourced item(s) (no FROM THE MEDIA block)`);
+  return { ...output, mediaWatch: [] };
+}
+
 // ─── Ollama call ──────────────────────────────────────────────────────────────
 
 export async function callOllama(
@@ -179,7 +421,11 @@ export async function callOllama(
   const doGenerate = async (): Promise<AIPreview> => {
     const response = await ollamaClient.chat.completions.create({
       model:      modelOverride ?? AI_MODEL,
-      max_tokens: maxTokensOverride ?? (compact ? 2500 : 4000),
+      // Non-compact ceiling is 6000 (headroom for richer future prompts; current
+      // previews land well under 1000 tokens so this never costs anything today).
+      // compact (2500) is unreachable on the main preview path — generateAndStorePreview
+      // always passes compact=false — and is left untouched.
+      max_tokens: maxTokensOverride ?? (compact ? 2500 : 6000),
       messages:   [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user',   content: prompt },
@@ -217,7 +463,12 @@ export async function callOllama(
   const allViolations = (v: AIPreview) => [
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
+    ...validatePhaseStakes(v, prompt),
+    ...validateWorldCupGroupRecord(v, prompt),
+    ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
+    ...validateInventedStatlines(v, prompt),
+    ...validateInventedYears(v, prompt),
   ];
   const violations = allViolations(result);
   if (violations.length > 0) {
@@ -227,7 +478,7 @@ export async function callOllama(
       const retryViols = allViolations(retry);
       if (retryViols.length === 0) {
         aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
-        return retry;
+        return stripUnsourcedMediaWatch(retry, prompt);
       }
       aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — returning first attempt`);
     } catch (e) {
@@ -236,7 +487,7 @@ export async function callOllama(
   } else {
     aiLog(`done elapsed=${Date.now() - t0}ms`);
   }
-  return result;
+  return stripUnsourcedMediaWatch(result, prompt);
 }
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
@@ -276,9 +527,9 @@ export async function upsertPreview(
  * the result to Supabase. Designed to be called server-side or from the
  * standalone generator script — never from the browser.
  *
- * Context (standings, form, news) is intentionally minimal here: this is the
- * "warm" generation path. The full-context path runs when a user opens a game
- * panel with live data already loaded in the client.
+ * Builds a rich context (standings, WC group, managers) via buildPreviewContext,
+ * then merges any caller-provided enrichment (form/news/lineups from the API
+ * route). All entry points — heartbeat, poller, regen — converge here.
  */
 export async function generateAndStorePreview(
   league: string,
@@ -286,15 +537,23 @@ export async function generateAndStorePreview(
   teamName: string,
   previewContext?: Partial<PreviewContext>,
 ): Promise<{ ok: boolean; error?: string }> {
-  const isF1         = league === 'f1';
-  const maxTokens    = isF1 ? 5000 : undefined;
+  const isF1      = league === 'f1';
+  // Non-F1 falls through to callOllama's 6000 default. F1 previews are longer
+  // (driver + constructor + championship detail); keep them at the same ceiling.
+  const maxTokens = isF1 ? 6000 : undefined;
 
   try {
+    // Build the canonical base context (standings + WC group + managers).
+    // Results are cached per league — safe for batch heartbeat runs.
+    const baseCtx = await buildPreviewContext(league, fixture, teamName);
+    // Merge: baseCtx provides structure; previewContext adds form/news/lineups.
+    const ctx = { ...baseCtx, ...previewContext } as PreviewContext;
+
     const prompt = buildDataBlock(
       league,
       teamName,
       fixture.opponent,
-      (previewContext ?? {}) as PreviewContext,
+      ctx,
       [],
       [],
       fixture.competition,
@@ -311,6 +570,11 @@ export async function generateAndStorePreview(
 
     if (isValidPreview(preview)) {
       await upsertPreview(fixture.id, preview, AI_MODEL, null);
+      // Representative games (State of Origin) key per perspective on the display
+      // side — upsert the SAME payload under the mirror key(s) so both resolve.
+      for (const mirrorId of fixture.mirrorGameIds ?? []) {
+        await upsertPreview(mirrorId, preview, AI_MODEL, null);
+      }
       return { ok: true };
     }
 

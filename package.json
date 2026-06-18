@@ -12,7 +12,8 @@
     "warm": "tsx scripts/generate-previews.ts",
     "warm:force": "tsx scripts/generate-previews.ts --force",
     "poll": "tsx scripts/poll-jobs.ts",
-    "coverage": "tsx scripts/coverage-report.ts"
+    "coverage": "tsx scripts/coverage-report.ts",
+    "dump-prompt": "tsx scripts/dump-prompt.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
