@@ -579,18 +579,73 @@ function buildDerivedFacts(
  *
  * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
  */
+/**
+ * Result of a played group match between two teams, both from the FIRST team's
+ * perspective. `null` from the provider means the two teams have not met. Used to
+ * apply the 2026 head-to-head-first tiebreaker among teams level on points.
+ */
+export interface WCGroupMeeting { aPts: number; bPts: number; aGF: number; bGF: number }
+export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null;
+
+/**
+ * Rank a World Cup group applying the 2026 in-group order: points first, then —
+ * among teams LEVEL on points — head-to-head (H2H points → H2H GD → H2H goals),
+ * then overall goal difference, then overall goals scored. (Reverses the pre-2026
+ * overall-GD-first rule.)
+ *
+ * Conservatism: H2H is applied to a level cluster ONLY when EVERY pair in that
+ * cluster has been played (the mini-table is complete). If any pair has not met
+ * (e.g. teams level on points who have not yet played, or a partially-played 3-way
+ * tie), it falls back to overall GD provisionally — never asserting an order it
+ * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
+ * which preserves the prior behaviour exactly.
+ */
+export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
+  const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
+    b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
+
+  const orderCluster = (cluster: WorldCupGroupRow[]): WorldCupGroupRow[] => {
+    if (cluster.length <= 1 || !h2h) return [...cluster].sort(byOverall);
+    const names = cluster.map(r => r.teamName);
+    const mini = new Map(names.map(n => [n, { pts: 0, gd: 0, gf: 0 }]));
+    let allPairsMet = true;
+    for (let a = 0; a < names.length; a++) {
+      for (let b = a + 1; b < names.length; b++) {
+        const r = h2h(names[a], names[b]);
+        if (!r) { allPairsMet = false; continue; }
+        const A = mini.get(names[a])!, B = mini.get(names[b])!;
+        A.pts += r.aPts; B.pts += r.bPts;
+        A.gd  += r.aGF - r.bGF; B.gd += r.bGF - r.aGF;
+        A.gf  += r.aGF; B.gf += r.bGF;
+      }
+    }
+    // Incomplete mini-table ⇒ no confident H2H order; fall back to overall GD.
+    if (!allPairsMet) return [...cluster].sort(byOverall);
+    return [...cluster].sort((a, b) => {
+      const A = mini.get(a.teamName)!, B = mini.get(b.teamName)!;
+      return (B.pts - A.pts) || (B.gd - A.gd) || (B.gf - A.gf) || byOverall(a, b);
+    });
+  };
+
+  const byPoints = [...rows].sort((a, b) => b.points - a.points);
+  const out: WorldCupGroupRow[] = [];
+  for (let i = 0; i < byPoints.length;) {
+    let j = i;
+    while (j + 1 < byPoints.length && byPoints[j + 1].points === byPoints[i].points) j++;
+    out.push(...orderCluster(byPoints.slice(i, j + 1)));
+    i = j + 1;
+  }
+  return out;
+}
+
 function buildWorldCupGroupFacts(
   rows: WorldCupGroupRow[],
   group: string,
   teamName: string,
   opponentName: string,
+  h2h?: WCGroupH2H,
 ): { ranked: WorldCupGroupRow[]; lines: string[] } {
-  const ranked = [...rows].sort((a, b) =>
-    b.points - a.points ||
-    b.goalDifference - a.goalDifference ||
-    b.goalsFor - a.goalsFor ||
-    a.teamName.localeCompare(b.teamName),
-  );
+  const ranked = rankWorldCupGroup(rows, h2h);
   const rankOf = (name: string) => ranked.findIndex(r => r.teamName === name) + 1;
 
   const lines: string[] = [
@@ -638,12 +693,19 @@ function buildWorldCupGroupFacts(
   const oRow = ranked.find(r => r.teamName === opponentName);
   if (tRow && oRow) {
     const [hi, lo] = rankOf(teamName) < rankOf(opponentName) ? [tRow, oRow] : [oRow, tRow];
-    const reason =
-      hi.points !== lo.points
-        ? `on points (${hi.points} vs ${lo.points})`
-        : hi.goalDifference !== lo.goalDifference
-          ? `on goal difference, level on points (${hi.teamName} GD ${hi.goalDifference >= 0 ? '+' : ''}${hi.goalDifference} vs ${lo.teamName} GD ${lo.goalDifference >= 0 ? '+' : ''}${lo.goalDifference})`
-          : `on goals scored, level on points and goal difference`;
+    const meeting = h2h?.(hi.teamName, lo.teamName);
+    const fmtGD = (r: WorldCupGroupRow) => `${r.goalDifference >= 0 ? '+' : ''}${r.goalDifference}`;
+    let reason: string;
+    if (hi.points !== lo.points) {
+      reason = `on points (${hi.points} vs ${lo.points})`;
+    } else if (meeting && meeting.aPts !== meeting.bPts) {
+      reason = `on the head-to-head result (they have met in the group; this is the FIRST tiebreaker for teams level on points, ahead of goal difference)`;
+    } else if (hi.goalDifference !== lo.goalDifference) {
+      const prov = meeting ? '' : ' (provisional separator — they have not met yet; if they finish level having met, head-to-head decides first)';
+      reason = `on goal difference, level on points (${hi.teamName} GD ${fmtGD(hi)} vs ${lo.teamName} GD ${fmtGD(lo)})${prov}`;
+    } else {
+      reason = `on goals scored, level on points and goal difference`;
+    }
     lines.push(`  • Between the two: ${hi.teamName} are ahead of ${lo.teamName} in the group ${reason}.`);
   }
 
@@ -791,6 +853,36 @@ export function collectPlayerWhitelist(prompt: string): {
   if (injuryText) {
     hasPlayerData = true;
     for (const line of injuryText.split('\n')) addNamesFromLine(line);
+  }
+
+  // F1 — drivers and constructors from the championship standings/grid are the
+  // grounded name source (the F1 path has no LINEUP block). Seed them so legitimate
+  // names pass; a driver/constructor NOT in the standings is still rejected.
+  // NOTE: F1 has no lineup, so we do NOT set hasPlayerData (which would switch the
+  // validator to whole-output scanning and flag F1 structural terms). We only SEED
+  // the whitelist with grounded driver/constructor/circuit/race names so they pass;
+  // a fabricated driver (2+ unknown words in the spotlight) is still rejected.
+  const f1DriverText      = extractSection(/DRIVERS' CHAMPIONSHIP/);
+  const f1ConstructorText = extractSection(/CONSTRUCTORS' CHAMPIONSHIP/);
+  const f1GridText        = extractSection(/STARTING GRID/);
+  if (f1DriverText || f1ConstructorText) {
+    // Driver lines: "  P1. <Driver> [<Constructor>] — ..."
+    for (const text of [f1DriverText, f1GridText]) {
+      for (const line of (text ?? '').split('\n')) {
+        const dm = line.match(/P\d+[.:]\s*(.+?)\s*[[(](.+?)[\])]/);
+        if (dm) { whitelist.add(dm[1].trim().toLowerCase()); whitelist.add(dm[2].trim().toLowerCase()); }
+      }
+    }
+    // Constructor lines: "  P1. <Constructor> — ..."
+    for (const line of (f1ConstructorText ?? '').split('\n')) {
+      const cm = line.match(/P\d+\.\s*(.+?)\s*(?:—|-|$)/);
+      if (cm) whitelist.add(cm[1].trim().toLowerCase());
+    }
+    // Circuit (e.g. "Red Bull Ring") and the race name (e.g. "Austrian Grand Prix").
+    const circuitM = prompt.match(/^Circuit:\s*(.+)$/m);
+    if (circuitM) whitelist.add(circuitM[1].trim().toLowerCase());
+    const raceM = prompt.match(/^FORMULA 1 — (.+?)\s*\(/m);
+    if (raceM) whitelist.add(raceM[1].trim().toLowerCase());
   }
 
   // KEY PERFORMERS — "Name 28 pts/5 reb/3 ast, Name2 19 pts/..." (stats are not
@@ -1078,7 +1170,7 @@ GROUNDING — construct grounded, specific reads; never fabricate facts:
   - Only name a coach/manager present in the HEAD COACHES line (see DATA INTEGRITY).
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
-• CHAMPIONSHIP POINTS (F1) — when the data block contains CHAMPIONSHIP DERIVED FACTS, every championship gap ("X points behind/ahead", "leads by Y", "Z clear") and every win count MUST be taken verbatim from there. Do NOT compute your own points gaps (a miscalculated margin is a grounding error) and do NOT invent win totals — use the exact wins stated in the standings/derived facts.
+• CHAMPIONSHIP POINTS (F1) — when the data block contains CHAMPIONSHIP DERIVED FACTS, every championship gap ("X points behind/ahead", "leads by Y", "Z clear") and every win count MUST be taken verbatim from there. Do NOT compute your own points gaps (a miscalculated margin is a grounding error) and do NOT invent win totals — use the exact wins stated in the standings/derived facts. State each rival's gap to the leader SEPARATELY, per rival (e.g. "Ferrari 72, McLaren 121, Red Bull 173 behind") — never collapse differently-placed rivals under one number ("72 points ahead of Ferrari, McLaren and Red Bull" is wrong; only Ferrari is 72 behind).
 • GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. NEVER describe a team's group record using the all-competitions RECENT FORM line (e.g. a team that has played one group game has NOT "won one and drawn one" — that conflates their tournament form with the group). The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
 • DERIVED FACTS BINDS THE "context" FIELD TOO — this is where standings errors slip in. Any points total, gap, or inside/outside-the-finals (top-eight) claim in the context field must come VERBATIM from DERIVED FACTS — including the DIRECTION. If DERIVED FACTS says a side is "N points inside the finals places", they are INSIDE — never write "outside". Never source a standings number from anywhere else: not the LEAGUE TABLE rows, not the SEASON STATE round number, not your own arithmetic. THE ROUND-NUMBER TRAP: "Round 13 of 27" is the ROUND, not a points total — never write "level on 13 points" off the round number. If DERIVED FACTS does not give the figure or direction you want, state it qualitatively ("both sides level and inside the eight") rather than inventing a number or a direction.
 • EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
