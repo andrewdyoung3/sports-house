@@ -1196,7 +1196,7 @@ GROUNDING — construct grounded, specific reads; never fabricate facts:
 • Tactical observations and situational framing drawn from the data are encouraged. Invented statistics presented as fact are not.
 • DERIVED FACTS — when the data block contains a DERIVED FACTS section, every points gap, standings margin, or competition arithmetic figure MUST be taken verbatim from that section. Do NOT compute your own ladder arithmetic. Do NOT round, rephrase, or approximate derived figures. If a gap you want to discuss is not listed in DERIVED FACTS, describe the situation qualitatively (e.g. "well clear of the finals") rather than quoting any number.
 • CHAMPIONSHIP POINTS (F1) — when the data block contains CHAMPIONSHIP DERIVED FACTS, every championship gap ("X points behind/ahead", "leads by Y", "Z clear") and every win count MUST be taken verbatim from there. Do NOT compute your own points gaps (a miscalculated margin is a grounding error) and do NOT invent win totals — use the exact wins stated in the standings/derived facts. State each rival's gap to the leader SEPARATELY, per rival (e.g. "Ferrari 72, McLaren 121, Red Bull 173 behind") — never collapse differently-placed rivals under one number ("72 points ahead of Ferrari, McLaren and Red Bull" is wrong; only Ferrari is 72 behind).
-• GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. NEVER describe a team's group record using the all-competitions RECENT FORM line (e.g. a team that has played one group game has NOT "won one and drawn one" — that conflates their tournament form with the group). The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
+• GROUP TOURNAMENT (World Cup) — the GROUP DERIVED FACTS block gives each team's GROUP record (points, played, W-D-L, goal difference, current group position) and stake. Any group-standing or qualification claim in ANY field MUST come from there, verbatim. The RECENT FORM block is a SEPARATE thing: it spans ALL competitions (qualifiers, friendlies, and group games mixed) and is momentum/context ONLY — never restate it as the group record or as results "from their opening game(s)". ARITHMETIC: a team that has played N group games has exactly N group results — if N is one, it has ONE group result (a single win, draw, or loss), NEVER two (it cannot have "a win and a loss" or "a win and a draw" in the group from one game), regardless of what the all-competitions form shows. The group position in GROUP DERIVED FACTS is the live rank; do not re-derive it.
 • DERIVED FACTS BINDS THE "context" FIELD TOO — this is where standings errors slip in. Any points total, gap, or inside/outside-the-finals (top-eight) claim in the context field must come VERBATIM from DERIVED FACTS — including the DIRECTION. If DERIVED FACTS says a side is "N points inside the finals places", they are INSIDE — never write "outside". Never source a standings number from anywhere else: not the LEAGUE TABLE rows, not the SEASON STATE round number, not your own arithmetic. THE ROUND-NUMBER TRAP: "Round 13 of 27" is the ROUND, not a points total — never write "level on 13 points" off the round number. If DERIVED FACTS does not give the figure or direction you want, state it qualitatively ("both sides level and inside the eight") rather than inventing a number or a direction.
 • EXPERT MODEL PREDICTIONS margin — when a predicted winning margin is provided, you may round it or express it as a range consistent with that figure (e.g. "around 40" or "40+" for a 43-point tip). Do NOT cite a margin that contradicts the prediction — if the tip says 43 points, do not write "15 points" or "a close finish".
 
@@ -1912,24 +1912,25 @@ export function buildDataBlock(
   const tForm = context.teamRecentForm ?? teamResults;
   const oForm = context.opponentRecentForm ?? oppResults;
 
-  // World Cup GROUP stage: suppress the all-competitions RECENT FORM block. Its
-  // W-L-W-L letter string (qualifiers/friendlies) is the source of the group-record
-  // conflation ("level on 3 points, both with one win and one loss from their opening
-  // game" — impossible). The GROUP DERIVED FACTS record, the intra-group H2H, and the
-  // lineups carry the preview; the all-comps form is the least reliable signal here.
+  // World Cup GROUP stage: recent form is KEPT (useful momentum/context) but
+  // labelled unmistakably as all-competitions — NOT the group record — so the model
+  // cannot conflate the mixed W-L-W-L string (qualifiers/friendlies + a group result)
+  // with the one-game group tally. The group record lives in GROUP DERIVED FACTS above.
   const wcGroupStage = league === 'world_cup'
     && (context.worldCup?.stage ?? 'group') === 'group'
     && (context.worldCup?.groupTable?.length ?? 0) > 0;
 
-  if (enabled('recentForm') && !wcGroupStage) {
+  if (enabled('recentForm')) {
     // Recent form — spans all competitions
     if (tForm.length > 0 || oForm.length > 0) {
       const isF1 = league === 'f1';
       const formHeading = isF1
         ? 'RECENT FORM — Race Results (most recent first):'
-        : isOffLeague
-          ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
-          : 'RECENT FORM (last 5 fixtures, most recent first):';
+        : wcGroupStage
+          ? 'RECENT FORM — ACROSS ALL COMPETITIONS (qualifiers, friendlies AND group games mixed; most recent first). This is momentum/context ONLY — it is NOT the group record. For any group standing, points, or results use GROUP DERIVED FACTS above:'
+          : isOffLeague
+            ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
+            : 'RECENT FORM (last 5 fixtures, most recent first):';
       lines.push(formHeading);
       if (tForm.length > 0) {
         if (isF1) {
@@ -1942,6 +1943,9 @@ export function buildDataBlock(
       }
       if (oForm.length > 0 && league !== 'f1') {
         lines.push(`  ${opponentName}: ${formString(oForm)} — ${formDetail(oForm)}`);
+      }
+      if (wcGroupStage) {
+        lines.push('  ⚠ The line above mixes competitions. NEVER restate it as the group record: a team that has played N group games has exactly N group results — see GROUP DERIVED FACTS for the true group tally.');
       }
       lines.push('');
     }

@@ -186,14 +186,45 @@ export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): 
   const violations: string[] = [];
   const seen = new Set<string>();
 
-  // (a) Group-record conflation: a team at ≤1 game can't have a two-result record.
-  if ([...played.values()].some(n => n <= 1)) {
-    const twoResultRe = /\b((?:a|one|1)\s+win[,\s]+(?:and\s+)?(?:a|one|1)\s+(?:draw|loss)|(?:a|one|1)\s+(?:draw|loss)[,\s]+(?:and\s+)?(?:a|one|1)\s+win|two wins|two draws|two losses|won (?:two|both)|a win and a draw)\b/gi;
-    for (const m of ctx.matchAll(twoResultRe)) {
-      const hit = m[0].toLowerCase();
-      if (seen.has(hit)) continue;
-      seen.add(hit);
-      violations.push(`WC group-record conflation "${m[0]}" — a tracked team has played ≤1 group game; use the GROUP DERIVED FACTS record, not the all-competitions form line`);
+  // (a) ARITHMETIC IMPOSSIBILITY (count-based, not phrasing-based): a team that has
+  //     played N group games has at most N group results. Count the result-outcomes
+  //     claimed in a RECORD framing and reject when they exceed games played — this
+  //     catches any wording, including ones never enumerated. Scoped to avoid false
+  //     positives on conditionals ("a win would…") and legit all-comps form refs.
+  const playedVals = [...played.values()];
+  if (playedVals.length > 0) {
+    const nMin = Math.min(...playedVals);
+    const RES = /\b(wins?|won|victor(?:y|ies)|loss(?:es)?|lost|defeats?|defeated|beaten|draws?|drew|tie[ds]?|tied)\b/gi;
+    const PAST = /\b(won|lost|drew|beaten|defeated|tied)\b/i;
+    const multOf = (w: string): number => (({ two: 2, '2': 2, both: 2, three: 3, '3': 3 }) as Record<string, number>)[w.toLowerCase()] ?? 1;
+
+    // Locate every result token with its outcome-count (a count word adjacent before/after).
+    const hits: Array<{ idx: number; end: number; n: number; tok: string }> = [];
+    for (const m of ctx.matchAll(RES)) {
+      const i = m.index ?? 0;
+      const before = (ctx.slice(Math.max(0, i - 12), i).trim().split(/\s+/).pop() ?? '');
+      const after  = (ctx.slice(i + m[0].length).match(/^\s+(\w+)/)?.[1] ?? '');
+      hits.push({ idx: i, end: i + m[0].length, n: Math.max(multOf(before), multOf(after)), tok: m[0] });
+    }
+
+    // Cluster adjacent result tokens (within 35 chars) → a single record phrase.
+    for (let i = 0; i < hits.length;) {
+      let j = i, outcomes = hits[i].n;
+      while (j + 1 < hits.length && hits[j + 1].idx - hits[j].end <= 35) { j++; outcomes += hits[j].n; }
+      if (outcomes > nMin) {
+        const start = hits[i].idx, fin = hits[j].end;
+        const phrase = ctx.slice(start, fin);
+        const lead   = ctx.slice(Math.max(0, start - 30), start);
+        const around = ctx.slice(Math.max(0, start - 55), fin + 45);
+        const isRecord     = PAST.test(phrase) || /\b(with|have|has|hold(?:ing)?|after|from|record|to (?:their|its) name|both|each|sit(?:ting)? on|level on)\b/i.test(lead);
+        const isConditional = /\b(would|could|should|if|might|may|will)\b|'d\b/i.test(around);
+        const oppAttached   = /\b(?:to|against|over|beat|def\.?|past|by|versus|vs\.?)\s+[A-ZÀ-Þ]/.test(around);
+        const formFramed    = /\b(form|all competitions|recent(?:ly)?|qualifier|friendl|warm-?up|last (?:five|5))\b/i.test(around);
+        if (isRecord && !isConditional && !oppAttached && !formFramed) {
+          violations.push(`WC group-record arithmetic "${phrase.slice(0, 55)}" — implies ${outcomes} group results, but a tracked team has played only ${nMin} group game(s); a one-game record is a single result (see GROUP DERIVED FACTS)`);
+        }
+      }
+      i = j + 1;
     }
   }
 
