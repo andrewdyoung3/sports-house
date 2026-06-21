@@ -879,7 +879,20 @@ export function WcGroupBrowser({
   const availableGroups = WC_GROUP_LETTERS.filter(g => rowsWithGroup.some(r => r.group === g));
   const groups = availableGroups.length > 0 ? availableGroups : [...WC_GROUP_LETTERS];
 
-  const rows = rowsWithGroup.filter(r => r.group === activeGroup);
+  // ESPN's standings `position` is the draw/seeding order, NOT the live rank — it can
+  // list a 0-point team above a team on points. Re-sort each group by the actual
+  // standing (points → goal difference → goals scored) and renumber for display, so
+  // the group leader sits on top in descending order.
+  const gdOf = (r: StandingRow) => (r.goalsFor ?? 0) - (r.goalsAgainst ?? 0);
+  const rows = rowsWithGroup
+    .filter(r => r.group === activeGroup)
+    .sort((a, b) =>
+      (b.points ?? 0) - (a.points ?? 0) ||
+      gdOf(b) - gdOf(a) ||
+      (b.goalsFor ?? 0) - (a.goalsFor ?? 0) ||
+      a.name.localeCompare(b.name),
+    )
+    .map((r, i) => ({ ...r, position: i + 1 }));
 
   return (
     <div className="space-y-2">
@@ -1496,7 +1509,16 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                   : `Round: ${game.worldCupStage ?? context.worldCup.stage}`}
               </p>
               <div className="space-y-1 mt-0.5">
-                {context.worldCup.groupTable.map((row) => {
+                {[...context.worldCup.groupTable]
+                  // ESPN's `position` is the draw/seeding order — re-sort by the live
+                  // standing (points → goal difference → goals scored) and renumber.
+                  .sort((a, b) =>
+                    (b.points ?? 0) - (a.points ?? 0) ||
+                    b.goalDifference - a.goalDifference ||
+                    (b.goalsFor ?? 0) - (a.goalsFor ?? 0) ||
+                    a.teamName.localeCompare(b.teamName),
+                  )
+                  .map((row, i) => {
                   const isTeam = row.teamName === team.shortName || row.teamName === game.opponent || row.teamId === team.id;
                   return (
                     <div
@@ -1506,7 +1528,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                         isTeam ? 'bg-white/8 text-white/90' : 'text-white/50',
                       ].join(' ')}
                     >
-                      <span className="font-bold tabular-nums w-4 shrink-0">{row.position}.</span>
+                      <span className="font-bold tabular-nums w-4 shrink-0">{i + 1}.</span>
                       <span className="flex-1 truncate mx-1.5 font-semibold">{row.teamName}</span>
                       <span className="tabular-nums font-bold text-white/80">{row.points}pts</span>
                       <span className="tabular-nums text-white/35 ml-2 w-10 text-right">
