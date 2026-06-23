@@ -1747,6 +1747,21 @@ export function buildDataBlock(
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
     const groupNotStarted = wcGroupTable.every(r => r.played === 0);
 
+    // BIND the group letter up front (sourced from world-cup.ts via WC_TEAM_GROUPS).
+    // The model has hallucinated the wrong letter ("Group F" for a Group D fixture);
+    // state it once, unmissably, before any standings the model might re-read. The
+    // best-third carve-out keeps the legitimate "across all 12 groups" phrasing valid.
+    const groupLetter = wc.group ?? '';
+    if (groupLetter) {
+      lines.push(
+        `THIS FIXTURE IS IN GROUP ${groupLetter}. Refer to the group only as "Group ${groupLetter}" — ` +
+        `do NOT name any other group letter for ${teamName} or ${opponentName}. (The "8 best ` +
+        `third-placed teams across all 12 groups" rule references the groups collectively; that is ` +
+        `fine — but THIS match's group is Group ${groupLetter}.)`,
+      );
+      lines.push('');
+    }
+
     if (groupNotStarted) {
       // Suppress the all-zeros table — it carries no information and misleads the model.
       // Instead inject the group composition so the model knows who else they face.
