@@ -34,9 +34,11 @@ src/
                             + fetchESPNMatchExtras(): form / head-to-head / lineups from ESPN summary?event=
     preview-context.ts    — buildPreviewContext(): canonical context builder used by ALL generation paths
     preview-prompt.ts     — System prompt + buildDataBlock()/buildBlocks() (block-decomposed twin for sandbox)
-    preview-generator.ts  — Ollama call + output validators (player-name/points/finals) + Supabase upsert
+    preview-generator.ts  — Ollama call + output validators (player-names/points/finals-imminence/
+                            statlines/years/phase-stakes/WC group-record/WC group-letter/F1) + Supabase upsert
     weather.ts            — fetchVenueWeather() (Open-Meteo, no key); shared by /api/weather + previews
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
+                            (competition-rules.ts = COMP_RULES, the per-season single source of truth)
   app/api/
     preview/route.ts      — Display panel data (thin wrapper over preview-fetchers)
     sandbox/              — Dev-only prompt sandbox: context (buildBlocks) / models / generate
@@ -65,7 +67,7 @@ Standings/news are also live for **Super Rugby, Rugby Int'l, NBA, NHL** and the 
 
 ### AI match-preview enrichment (per fixture)
 Beyond standings/news, each preview's data block is enriched by `buildPreviewContext` → `preview-fetchers.ts`:
-- **Recent form + head-to-head + last lineups** — `fetchESPNMatchExtras()` reads ESPN's `summary?event=` goldmine (`lastFiveGames` / `headToHeadGames` / `rosters[].roster`) for NRL/EPL/SRU/RINT/NBA/NHL/WC. Name-driven; `eventId = fixture.id.split('-').pop()`. Lineups: `starter` flag for soccer/basketball, **jersey ≤13 (league) / ≤15 (union)** for rugby. AFL form+H2H come from the Squiggle `games` array.
+- **Recent form + head-to-head + last lineups** — `fetchESPNMatchExtras()` reads ESPN's `summary?event=` goldmine (`lastFiveGames` / `headToHeadGames` / `rosters[].roster`) for NRL/EPL/SRU/RINT/NBA/NHL/WC. Name-driven; `eventId = fixture.id.split('-').pop()`. Lineups: `starter` flag for soccer/basketball, **jersey ≤13 (league) / ≤15 (union)** for rugby. AFL form+H2H come from the Squiggle `games` array. **WC name caveat:** ESPN uses endonyms (e.g. "Türkiye", not our "Turkey") — the WC group context locates the group by LETTER (`WC_TEAM_GROUPS`) and canonicalises ESPN names to our TEAMS names (`_canonicalWCName`), and `WC_ID_TO_ESPN_NAME` must keep the variant ESPN actually returns; a mismatch silently drops the whole group block.
 - **AFL squads/lineups** — `afl-roster.ts` (AFL.com / Telstra CFS; runtime `WMCTok` token, never stored; cached on `/tmp`). Named team lists once selected (~Thu); suppressed pre-naming. Flows into the SQUAD block + whitelist.
 - **Weather at kickoff** — `weather.ts` (Open-Meteo) for outdoor leagues; only shown when notable.
 

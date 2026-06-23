@@ -4,7 +4,7 @@
 > build/run instructions). This doc is the "why and how it fits together" overview plus a
 > running log of decisions, the next build, and known limitations.
 >
-> Last updated: 2026-06-17
+> Last updated: 2026-06-24
 
 ---
 
@@ -112,8 +112,10 @@ src/
     landing/hero-cta.tsx
     onboarding/team-selector-card.tsx
     dashboard/                — team-feed-card, game-card, news-item, recent-form
-    schedule/                 — next-game-hero, schedule-calendar, game-expand-panel,
-                                league-table, f1-starting-grid, sport-ball
+    schedule/                 — next-game-hero(+ -sh), schedule-calendar, game-expand-panel,
+                                league-table(+ -sh), f1-starting-grid, sport-ball. The `-sh`
+                                variants are the active `.sh-*` design-system skins (hero + sidebar
+                                ladder); WcGroupBrowser (in game-expand-panel) renders WC groups
     results/result-expand-panel.tsx
     providers/prefs-sync.tsx  — invisible auth-state wiring: serialized per-identity reload on
                                 INITIAL_SESSION/SIGNED_IN; guest restore + re-anon on SIGNED_OUT
@@ -135,11 +137,24 @@ src/
     preview-lifecycle.ts      — Pure decideForTeam() logic; exports SETTLE_BUFFER_HOURS=4,
                                 REGEN_MARKS_HOURS=[48,24], LOOKAHEAD_DAYS=14, LOOKBACK_DAYS=3
     preview-generator.ts      — generateAndStorePreview(), callOllama(), upsertPreview(),
-                                isValidPreview(), validation (points/names/finals-imminence)
+                                isValidPreview(); validators (points / names / finals-imminence /
+                                statlines / years / phase-stakes / WC group-record-arithmetic /
+                                WC group-letter / F1 championship) — each retried once on violation
     preview-prompt.ts         — prompt assembly: SYSTEM_PROMPT + buildDataBlock() + buildBlocks()
-                                (sandbox twin) + collectPlayerWhitelist()
+                                (sandbox twin) + collectPlayerWhitelist(); + DERIVED FACTS builders
+                                (buildDerivedFacts / buildWorldCupGroupFacts + rankWorldCupGroup +
+                                makeWCH2H / buildF1DerivedFacts). ~2.3k lines (see §10)
+    competition-rules.ts      — SINGLE SOURCE OF TRUTH for per-comp, per-SEASON rules: COMP_RULES
+                                (archetype, cutoffs, points, finals schedules) each tagged season +
+                                source; finalsRoundForDate() names finals by date window (no feed stage)
+    competition-structure.ts  — STRUCTURE (per-league structure type) + stakes/standings derivation;
+                                reads cutoffs/points from competition-rules.ts (no scattered literals)
+    competition-context.ts    — per-competition profile prose for the data block
+    world-cup.ts              — WC 2026 group/stage helpers (48-team, 12 groups, best-thirds)
+    managers.ts               — current managers/coaches map (injected into the data block)
     preview-context.ts        — buildPreviewContext(): THE single context builder for all generation
-                                paths; delegates to preview-fetchers; adds weather + managers
+                                paths; delegates to preview-fetchers; adds weather + managers +
+                                derived facts; pulls intra-group WC results (_wcGroupResults) for H2H
     preview-fetchers.ts       — shared per-league fetchers + fetchESPNMatchExtras() (form/H2H/lineups
                                 from ESPN summary) + fetchCricketPreview() + fetchSOOPreview()
     cricketdata.ts            — cricketdata.org/CricAPI client (token-free; daily-quota cache, §5a)
@@ -281,9 +296,10 @@ available:
 - **Weather at kickoff** — `weather.ts` (Open-Meteo, no key); outdoor leagues, only when notable.
 - **State of Origin** — rep teams `nrl-maroons`/`nrl-blues`; series state instead of a club ladder; see §5.
 
-**Output validators** (`preview-generator.ts`, retried once on violation): points-claim, finals-imminence,
-invented player names (whitelist from the data block), **invented per-player statlines**, **invented
-calendar years**.
+**Output validators** (`preview-generator.ts`, retried once on violation): points-claim,
+finals-imminence, invented player names (whitelist from the data block), invented per-player
+statlines, invented calendar years, **plus the derived-facts binders** — phase-stakes,
+WC group-record arithmetic, WC group-letter, F1 championship (see "Derived-facts framework" below).
 
 **Faithfulness invariant (non-negotiable):** generation, the dev sandbox route (`/api/sandbox/context`
 → `buildBlocks`), and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext`
@@ -296,6 +312,55 @@ per-block prompt and run generations; `buildBlocks` decomposes `buildDataBlock` 
 **Recurrence guard** — `scripts/check-team-coverage.ts` asserts every followable team in `teams.ts`
 resolves to a generation identity (club map OR rep map OR cricket-dynamic); NFL/MLB reported as
 intentionally unsupported. Run after adding teams/maps; **0 GAPS required**.
+
+### Derived-facts framework — pre-computed stakes/standings (post-2026-06-18, PR #12)
+
+The model used to *derive* table positions, points-still-available, and finals stakes itself — the
+root of the WC group-record conflation, F1 championship-gap, and Super Rugby "dead rubber" errors.
+It now receives **PRE-COMPUTED "DERIVED FACTS"** blocks in the prompt and is told to bind prose to
+them; validators reject any contradiction.
+
+- **Single source of truth for rules** — `src/lib/competition-rules.ts` (`COMP_RULES`, keyed by
+  league). Cutoffs, points systems, and finals schedules are **config, not literals** — each entry
+  carries the `season` it was confirmed for and the `source`. This exists because AFL (8 → top-10
+  wildcard) and Super Rugby (8 → 6) both changed format for 2026 and went **silently stale** under
+  the old hardcoded literals in `preview-prompt.ts`/`competition-structure.ts`. **RE-CHECK each
+  entry at its competition's season start.** `competition-structure.ts` (STRUCTURE) and the prompt
+  builders read cutoffs/points from here.
+- **Per structure-type computation** (builders in `preview-prompt.ts`):
+  - **LEAGUE LADDER** — `buildDerivedFacts` (AFL tiers: top-6 direct / 7–10 wildcard / outside-10;
+    NRL top 8; SRU top 6). **Phase-aware:** a finals decider resolves to GRAND FINAL stakes via
+    `finalsRoundForDate` (date windows — the feed has NO stage label) and the regular-season ladder
+    collapses to a seeding note.
+  - **GROUP TOURNAMENT (World Cup)** — `buildWorldCupGroupFacts` + `rankWorldCupGroup`. Recomputes
+    the live standing (the feed's `position` is draw/seeding order!) by points → GD → goals. The
+    **2026 head-to-head-first tiebreaker is wired**: completed intra-group results come from the
+    ESPN `/scoreboard` endpoint (`season.slug === 'group-stage'` → `_wcGroupResults` in
+    `preview-context.ts`) into `worldCup.groupResults` → `makeWCH2H` provider; not-yet-met pairs
+    fall back to GD. Conservative stakes (no false "qualified"). RECENT FORM is **kept** for WC
+    group games (an earlier fix wrongly suppressed it — reverted in 46596ed): it is **relabelled
+    "RECENT FORM — ACROSS ALL COMPETITIONS"** (qualifiers, friendlies AND group games mixed) and
+    flagged momentum/context-only. The fabrication was the model conflating that all-comps form
+    with the one-game group tally ("1 win and 1 loss from a single game"); the fix binds every
+    group-record/qualification claim to GROUP DERIVED FACTS and backstops it with the
+    **arithmetic validator** (a team that has played N group games has at most N group results).
+    **Group identity is name-variant-proof:** the group is located by its LETTER (from
+    `WC_TEAM_GROUPS`) and every ESPN name is normalised to our canonical TEAMS name
+    (`_canonicalWCName`), so an ESPN/our name divergence (e.g. "Türkiye" vs "Turkey") can no longer
+    silently drop the group context. An emphatic `THIS FIXTURE IS IN GROUP <X>` line + the
+    `validateWorldCupGroupLetter` backstop keep the letter bound in the prose.
+  - **CHAMPIONSHIP POINTS (F1)** — `buildF1DerivedFacts`: per-rival gaps to the leader, exact win
+    counts, conservative points-still-available.
+  - **SERIES (State of Origin)** — `soo.ts` series-state. **Cricket / NBA / NHL** are commented
+    `TODO` stubs in `COMP_RULES` (config present, no computation yet — §10).
+- **Prose binds to facts; validators reject contradictions** (`preview-generator.ts`):
+  `validatePointsClaims`, `validatePhaseStakes` (a Grand Final can't be a dead rubber),
+  `validateWorldCupGroupRecord` (group-record arithmetic + qualification over-claim — e.g. a phrase
+  implying more group results than a tracked team has played), `validateWorldCupGroupLetter`
+  (conservative — rejects a different group letter for the fixture, allows best-third cross-group
+  references), `validateF1ChampionshipClaims`.
+- **Faithfulness invariant preserved** — derived facts are added to `PreviewContext`/`buildDataBlock`,
+  never a parallel path; `verify-sandbox-faithful` must stay byte-identical prod vs sandbox.
 
 **On-follow ping:**
 
@@ -339,7 +404,7 @@ And set `WorkingDirectory` to the project root (required for `.env.local` loadin
 | F1 | Jolpi Ergast calendar | Jolpi Ergast results | grid / recent races (own data block) |
 | **BBL / Cricket Int** | **cricketdata.org / CricAPI** (`cricketdata.ts`) | series state | match context, toss, named squads, series form/H2H (ESPN/cricinfo cricket is WAF-blocked → keyed API) |
 | NBA | ESPN basketball/nba scoreboard | ESPN | news + injuries + key performers; form/H2H |
-| FIFA World Cup | ESPN soccer/fifa.world scoreboard | group table in context | form/H2H/lineups via ESPN `summary` |
+| FIFA World Cup | ESPN soccer/fifa.world scoreboard | group table in context (re-ranked points→GD→goals; **2026 H2H-first tiebreaker** from intra-group `/scoreboard` results) | form/H2H/lineups via ESPN `summary`; all-comp form **kept**, relabelled "ACROSS ALL COMPETITIONS" (group claims bind to GROUP DERIVED FACTS) |
 | NHL | ESPN hockey/nhl (offseason) | ESPN | form/H2H/lineups via ESPN `summary` |
 | MLB | **mock-data.ts** | mock | mock |
 | Weather | Open-Meteo (`weather.ts`) — outdoor leagues, kickoff hour, shown only when notable |
@@ -469,11 +534,14 @@ modal, opt-in only.
 
 The auth roadmap (Phase 1 → Phase 2 → AI-route gating) is shipped. The preview generation
 **infrastructure** (local Ollama + Supabase + launchd) is shipped and running — but it is **not
-"done"**: a substantial **preview-data enrichment cycle** has since landed on top of it (recent
-form, head-to-head, lineups, weather, cricket via cricketdata.org, AFL squads via AFL.com, State of
-Origin rep teams, the prompt sandbox + faithfulness invariant, and the team-coverage recurrence
-guard — see §4, §5, §12). Enrichment is ongoing as new sources are wired (per-source, behind the
-guard). The other current focus is a **design / QoL pass**:
+"done"**: a substantial **preview-data enrichment cycle** landed on top of it (recent form,
+head-to-head, lineups, weather, cricket via cricketdata.org, AFL squads via AFL.com, State of Origin
+rep teams, the prompt sandbox + faithfulness invariant, and the team-coverage recurrence guard),
+**followed by the derived-facts framework** (config-driven per-season rules + pre-computed
+stakes/standings + prose-binding validators — PR #12) and a **World Cup head-to-head / group-record
+correctness cycle** (see §4, §5, §12). Enrichment + derived-facts are ongoing per-sport (cricket /
+NBA / NHL stakes are still `TODO` stubs — §10). The other current focus is a **design / QoL pass**
+(the schedule sidebar-ladder fixes in §12 are part of it):
 
 - **Dashboard palette unification** — migrate the dashboard's legacy `zinc-*` palette to the
   app's `white/glass` system (§10).
@@ -501,9 +569,25 @@ guard). The other current focus is a **design / QoL pass**:
   layer, not the aggregation layer.
 - **NHL/MLB still mock** — no fixture fetchers exist for these leagues; they use
   `mock-data.ts`. `REAL_DATA_LEAGUES` does not include `nhl` or `mlb`.
+- **Derived facts not yet computed for cricket / NBA / NHL** — they are commented `TODO` stubs in
+  `COMP_RULES` (`competition-rules.ts`): the rule scaffolding is named (BBL 2pts/win + NRR; NBA
+  top-6-direct + play-in; NHL division-top-3 + wildcards) but no stakes/standings are computed for
+  them yet. Previews for these still generate; they just don't get a DERIVED FACTS block. Wire each
+  at its season start (re-confirm the cutoffs then).
 - **Round-complete lifecycle gate deferred** — the settle buffer (`SETTLE_BUFFER_HOURS=4`)
   approximates "prior match has settled" by waiting N hours after the prior kickoff. A more
   precise gate would check `completed: true` on the prior fixture row. Not yet implemented.
+- **Date-window phase inference is brittle for AFL/NRL finals.** `finalsRoundForDate`
+  (`competition-rules.ts`) maps a fixture to a finals round by date window — clean for Super Rugby
+  (one finals game per week) but **ambiguous for AFL/NRL finals** (multiple games per week, and
+  reschedules can push a game out of its window). The feed carries no stage label, so there's no
+  authoritative fallback. **Revisit before the September finals** (e.g. tighten the windows, or
+  find a per-fixture stage signal).
+- **`verify-sandbox-faithful` proves byte-identical only at the same fetch instant.** It rebuilds
+  prod and sandbox context back-to-back, but **live-data races** (the F1 Squiggle model tip,
+  Open-Meteo wind) can make two fetches differ, producing a transient sandbox≠prod diff that clears
+  on re-run. A real regression could in principle co-occur with such a race. **Re-run before
+  treating a single diff as a regression** — only a diff that persists across runs is real.
 - **Cricket coverage is quota-bounded** — cricketdata.org free tier is 100 hits/day; the client
   caches hard (`/tmp`, per-type TTL) and a circuit breaker stops calls if the quota trips. Tracked
   men's/BBL teams are dormant off-season (women's WC isn't a tracked team). Data/season limitation,
@@ -521,8 +605,10 @@ guard). The other current focus is a **design / QoL pass**:
 - **Double `getUser()` per ai-review request** (low priority) — the gated `ai-review` route
   calls `getUser()` at the route level in addition to the middleware's `getUser()` on `/api/*`.
   Fine at this scale.
-- **Large files to watch** (navigability, not bugs): `preview/route.ts` ~1.6k ·
-  `game-expand-panel.tsx` ~1.4k · `schedule/page.tsx` ~1.4k · `fixtures/route.ts` ~1.3k.
+- **Large files to watch** (navigability, not bugs): `preview-prompt.ts` ~2.3k ·
+  `preview-fetchers.ts` ~2.2k · `game-expand-panel.tsx` ~1.8k · `schedule/page.tsx` ~1.6k ·
+  `fixtures/route.ts` ~1.4k. (`preview-prompt.ts` grew with the derived-facts builders — a
+  future split of the per-structure-type builders into their own modules is worth considering.)
 
 ---
 
@@ -534,6 +620,9 @@ guard). The other current focus is a **design / QoL pass**:
    `REAL_DATA_LEAGUES` and the generator `LEAGUES` (same path as NBA).
 3. **Round-complete lifecycle gate** — replace the settle-buffer approximation with a check
    on `completed: true` from the fixture list.
+4. **Derived facts for cricket / NBA / NHL** — promote the `COMP_RULES` `TODO` stubs to live
+   computation (BBL NRR + finals; NBA play-in; NHL wildcards), each at its season start. Same
+   pattern as the AFL/NRL/SRU/EPL/WC/F1 builders already shipped.
 
 - **[LOW PRIORITY] Configure custom SMTP** to enable email magic-link sign-in in production.
   Currently Google OAuth covers all sign-ins. Work involved: pick an email provider (Resend /
@@ -543,6 +632,72 @@ guard). The other current focus is a **design / QoL pass**:
 ---
 
 ## 12. Resolved this cycle (done — not carried as debt)
+
+### Derived-facts framework (2026-06-18, PR #12 — Phases A–C)
+- **Config-driven per-season rules** — `competition-rules.ts` (`COMP_RULES`) became the single
+  source of truth for cutoffs/points/finals schedules, each tagged `season` + `source`. Caught the
+  silently-stale AFL (8 → top-10 wildcard) and Super Rugby (8 → 6) 2026 format changes.
+- **Pre-computed DERIVED FACTS in the prompt** — per structure type: LEAGUE LADDER (phase-aware,
+  finals-by-date), GROUP TOURNAMENT (WC re-rank + H2H), CHAMPIONSHIP POINTS (F1 gaps), SERIES (SOO).
+  Replaces model self-derivation — the root cause of group-record / championship-gap / dead-rubber
+  errors. (See §4 "Derived-facts framework".)
+- **Prose-binding validators** — `validatePhaseStakes`, `validateWorldCupGroupRecord`,
+  `validateF1ChampionshipClaims` join the existing points/name/year/statline validators; each
+  retried once. Faithfulness invariant preserved (sandbox == prod byte-for-byte).
+
+### World Cup head-to-head + group-record cycle (2026-06-18 → 22, on `main`)
+- **2026 H2H-first tiebreaker activated** — completed intra-group results sourced from the ESPN
+  `/scoreboard` endpoint (`_wcGroupResults`) feed `makeWCH2H`; not-met pairs fall back to GD.
+  **Wired + unit-proven, but the live override is unexercised:** the natural path (two teams level
+  on points who have met decisively) cannot occur until matchday 2, so it has not yet flipped a
+  real fixture's order — only a synthetic test (`scripts/test-validators.ts`).
+- **Group-record conflation fixed at the source** — an earlier fix wrongly *suppressed* the
+  all-competitions RECENT FORM for WC group games; that was **reverted** (46596ed). Form is **kept**
+  and **relabelled "RECENT FORM — ACROSS ALL COMPETITIONS"** (momentum/context only); every
+  group-record/qualification claim binds to GROUP DERIVED FACTS, backstopped by the group-record
+  **arithmetic validator** (results-claimed ≤ games-played).
+- **Group standings sorted for display** — leader on top (points → GD → goals), since the feed's
+  `position` is draw/seeding order, not the live standing.
+
+### Loose-end cleanup: group-letter binding + name-validator precision (2026-06-24, branch `fix/wc-group-binding`)
+- **WC group-letter binding (Fix 1)** — wc-760443 (Turkey v Paraguay, Group D) had previewed as
+  "Group F". Investigation showed the letter was **absent**, not mis-bound: a **name-variant
+  mismatch** dropped the *entire* WC group context. ESPN's WC feeds return **"Türkiye"** while our
+  TEAMS name is **"Turkey"**, so `_wcGroupForTeam` (which matched the group by exact ESPN
+  `displayName`) found nothing → `ctx.worldCup` came back `undefined` → the whole group block
+  (standings, GROUP DERIVED FACTS, **and** the H2H results) was omitted and the model invented the
+  group. Fix:
+  - **`preview-context.ts`** — locate the group by its **letter** (deterministic from
+    `WC_TEAM_GROUPS`, name-independent) and **normalise every ESPN name to our canonical TEAMS
+    name** (`_canonicalWCName`) across group rows AND completed group results, so the rows, the
+    H2H provider, the `groupTeams` set, and the downstream `teamName`/`opponentName` comparisons
+    all key on one convention. This also restored the previously-empty `worldCup.groupResults`
+    (H2H) for Turkey.
+  - **`world-cup.ts`** — `WC_ID_TO_ESPN_NAME['wc-turkey']` now keeps **"Türkiye"** (the exclusion
+    list wrongly kept "Turkey"), so the ESPN `summary` extras path (form/H2H/lineups) also resolves.
+  - **`preview-prompt.ts`** — an emphatic `THIS FIXTURE IS IN GROUP D` line at the top of the WC
+    block (belt-and-suspenders for the binding-gap case), plus the conservative
+    **`validateWorldCupGroupLetter`** backstop (rejects a different group letter for this fixture;
+    allows the correct one and best-third cross-group references).
+  Verified by an 8× generation spread (see report).
+- **`validatePlayerNames` precision (Fix 2)** — stopped two false positives that burned retries:
+  the possessive "Group D's" (added `group` to the safe-word set + treat single-letter tokens like
+  the group letter as non-evidence) and F1 driver/constructor names (already seeded from the
+  standings whitelist in 97d93da — confirmed working, no change needed). A genuinely invented
+  player name is still rejected — both directions covered by `scripts/test-validators.ts`.
+
+### Schedule sidebar / ladder UI (2026-06-22 → 23, branch `fix/wc-group-binding` — browser-verified, committed, NOT yet merged/deployed)
+- **Hero-open now reveals the league table** — on the desktop "all teams" view, opening the next-game
+  hero resolves standings to the hero game's league and shows the sidebar ladder (`standingsLeague`
+  + `standingsTableLeague` + the visibility gate now account for `heroExpanded`; the standings hooks
+  moved below the `heroGame` memo to satisfy declaration order). WC heroes still hide the sidebar
+  duplicate (the in-panel group table shows instead).
+- **`LeagueTableSh` fits any sport without a scrollbar** — switched to `table-layout: fixed`: the
+  team column flexes/truncates, numeric columns get defined widths, rank↔team gap and a small `%`/
+  `Pts` edge inset restored (the base `.sh-standings td` padding shorthand had been outranking the
+  single-class rules).
+- **Status:** browser-verified this cycle (dev server, AFL ladder) and committed on the branch
+  (`4c78d6d`); **not yet merged to `main` or deployed** — ships with this branch.
 
 ### Preview-data enrichment cycle (2026-06-14 → 17, branch `feat/preview-data-wiring`)
 - **Rich context wired** — recent form, head-to-head, last lineups via one shared ESPN `summary`
@@ -591,8 +746,11 @@ guard). The other current focus is a **design / QoL pass**:
 - **This file is the canonical "project context".** When asked to "update project context", update
   THIS file (`PROJECT_CONTEXT.md`) fully — all affected sections — and bump the `Last updated:` date.
   Keep `CLAUDE.md` (build/run instructions) in sync too, but this doc is the one meant.
-- **AI previews:** don't acknowledge small sample size / early-season hedging — redirect to
-  useful content instead.
+- **AI previews — sample-size note (rescoped):** the "don't acknowledge small sample size"
+  guidance is specifically about **season-aggregate stats** (ladder position, for/against trends,
+  win rates) early in a season — don't hedge those into uselessness; redirect to useful content.
+  It is **not a blanket ban on hedging** — couched, well-grounded speculation about the fixture
+  ("if X starts, expect…") is fine and often the point.
 - **AI preview cache — two layers with different mechanics:**
   - **Server-side (previews):** none — `game_previews` is a live Supabase read on every
     request. Freshness is controlled by the Mac generator (lifecycle marks). No Next.js
