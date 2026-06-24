@@ -709,18 +709,34 @@
 
 /* standings */
 .sh-standings { padding: 16px 18px; }
-.sh-standings table { width: 100%; border-collapse: collapse; }
+/* Fixed layout so columns share the sidebar width instead of overflowing it: the team
+   column flexes (and truncates), every numeric column gets a defined width. No more
+   horizontal scrollbar regardless of sport (AFL %, EPL Pts, F1 Driver/Pts). */
+.sh-standings table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .sh-standings th {
   text-align: left; font-family: var(--font-head); font-weight: 700; font-size: 10.5px;
   letter-spacing: .5px; text-transform: uppercase; color: var(--text-3);
   padding: 0 0 9px; border-bottom: 1px solid var(--border);
 }
-.sh-standings th.num, .sh-standings td.num { text-align: right; }
-.sh-standings th:nth-child(2) { padding-left: 8px; }
+.sh-standings th.num, .sh-standings td.num { text-align: right; padding-left: 6px; }
 .sh-standings td { padding: 8px 0; font-size: 13.5px; color: var(--text-2); border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent); }
 .sh-standings tbody tr:last-child td { border-bottom: none; }
-.sh-rank { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; width: 22px; }
-.sh-stand-team { color: var(--text); font-weight: 600; padding-left: 12px; white-space: nowrap; }
+/* Column widths (set on header row → drive the whole fixed-layout column). Order matters:
+   .sh-rank / .pct override the generic .num width. Team has no width → takes the rest. */
+.sh-standings .num    { width: 28px; }
+.sh-standings .sh-rank { width: 26px; }
+.sh-standings .pct    { width: 50px; }
+/* Horizontal padding — qualified with `.sh-standings` so they outrank the base
+   `.sh-standings td { padding: 8px 0 }` shorthand and actually apply: a gap between
+   rank and team, and a small inset so the last (%/Pts) column never hugs the edge. */
+.sh-standings .sh-rank      { padding-right: 7px; }
+.sh-standings .sh-stand-team { padding-left: 9px; }
+.sh-standings .pct          { padding-right: 4px; }
+.sh-rank { color: var(--text-3); font-family: var(--font-mono); font-size: 12px; }
+.sh-stand-team {
+  color: var(--text); font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .sh-standings td.pct { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-2); }
 .sh-standings tr.is-mine td { background: var(--accent-soft); }
 .sh-standings tr.is-mine .sh-stand-team { color: var(--accent); font-weight: 700; }

@@ -52,20 +52,20 @@ export function LeagueTableSh({ league, rows, followedTeamIds, compColor, compSh
         <span className="sh-card-head-label">{isF1 ? 'Standings' : 'Ladder'}</span>
       </div>
 
-      <div style={{ overflowY: 'auto', maxHeight: '260px' }}>
+      <div style={{ overflowY: 'auto', overflowX: 'hidden', maxHeight: '260px' }}>
         <table>
           <thead>
             <tr>
-              <th className="num">#</th>
-              <th>{isF1 ? 'Driver' : 'Team'}</th>
+              <th className="num sh-rank">#</th>
+              <th className="sh-stand-team">{isF1 ? 'Driver' : 'Team'}</th>
               {isF1 ? (
-                <th className="num">Pts</th>
+                <th className="num pct">Pts</th>
               ) : (
                 <>
                   <th className="num">W</th>
                   {showDraws && <th className="num">D</th>}
                   <th className="num">L</th>
-                  <th className="num">{showPct ? '%' : 'Pts'}</th>
+                  <th className="num pct">{showPct ? '%' : 'Pts'}</th>
                 </>
               )}
             </tr>

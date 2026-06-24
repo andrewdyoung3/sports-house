@@ -15,7 +15,8 @@
  */
 
 import { MANAGER } from './managers';
-import { WC_TEAM_GROUPS, WC_ID_TO_ESPN_NAME, computeGroupAdvancementScenario } from './world-cup';
+import { WC_TEAM_GROUPS, WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, computeGroupAdvancementScenario } from './world-cup';
+import { TEAMS } from '@/lib/teams';
 import {
   fetchAFLPreview, fetchNRLPreview, fetchEPLPreview, fetchSRUPreview,
   fetchRINTPreview, fetchNBAPreview, fetchNHLPreview, fetchF1Preview,
@@ -178,7 +179,9 @@ async function _wcGroupResults(
     const comp = ((e.competitions as Record<string, unknown>[]) ?? [])[0];
     const cs   = (comp?.competitors as Record<string, unknown>[]) ?? [];
     if (cs.length !== 2) continue;
-    const nm = (c: Record<string, unknown>) => String((c.team as Record<string, unknown> | undefined)?.displayName ?? '');
+    // Normalise to our canonical names so the H2H provider, groupTeams set, and the
+    // ranked rows all key on the same names (the rows are already canonicalised).
+    const nm = (c: Record<string, unknown>) => _canonicalWCName(String((c.team as Record<string, unknown> | undefined)?.displayName ?? ''));
     const a = nm(cs[0]), b = nm(cs[1]);
     if (!groupTeams.has(a) || !groupTeams.has(b)) continue;
     out.push({ teamA: a, teamB: b, goalsA: Number(cs[0].score ?? 0), goalsB: Number(cs[1].score ?? 0) });
@@ -188,7 +191,20 @@ async function _wcGroupResults(
 
 interface WCGroupData { table: LeagueTableRow[]; wcRows: WorldCupGroupRow[] }
 
-async function _wcGroupForTeam(teamName: string): Promise<WCGroupData> {
+/**
+ * ESPN WC displayName → our canonical TEAMS name (e.g. "Türkiye" → "Turkey",
+ * "United States" → "USA"). Keeps the whole WC subsystem — group rows, completed
+ * group results, and the downstream teamName/opponentName comparisons in the prompt
+ * — on ONE name convention, so a followed team is never lost to a name-variant gap
+ * (the bug that dropped the entire group context for Turkey and let the model
+ * invent the group letter). Falls back to the ESPN name when unmapped.
+ */
+function _canonicalWCName(espnName: string): string {
+  const id = WC_ESPN_NAME_TO_ID[espnName];
+  return (id ? TEAMS.find(t => t.id === id)?.name : undefined) ?? espnName;
+}
+
+async function _wcGroupForTeam(teamName: string, groupLetter?: string): Promise<WCGroupData> {
   const data   = await _fetchRawWC() as Record<string, unknown>;
   const groups = (data.children as unknown[]) ?? [];
 
@@ -200,10 +216,18 @@ async function _wcGroupForTeam(teamName: string): Promise<WCGroupData> {
 
   for (const g of groups as Record<string, unknown>[]) {
     const entries = ((g.standings as Record<string, unknown> | undefined)?.entries as Record<string, unknown>[]) ?? [];
-    if (!entries.some(e => (e.team as Record<string, unknown> | undefined)?.displayName === teamName)) continue;
+    // Locate the group by its LETTER (deterministic from WC_TEAM_GROUPS) first —
+    // robust to name variants — then fall back to a canonical-name membership match.
+    const espnGroupName = String(g.name ?? '');
+    const byLetter = !!groupLetter && espnGroupName === `Group ${groupLetter}`;
+    const byName   = entries.some(e => {
+      const dn = String((e.team as Record<string, unknown> | undefined)?.displayName ?? '');
+      return dn === teamName || _canonicalWCName(dn) === teamName;
+    });
+    if (!byLetter && !byName) continue;
 
     const table: LeagueTableRow[] = entries.map((e, j) => ({
-      name:     String((e.team as Record<string, unknown>)?.displayName ?? ''),
+      name:     _canonicalWCName(String((e.team as Record<string, unknown>)?.displayName ?? '')),
       position: j + 1,
       played:   sv(e, 'gamesPlayed', 'played'),
       wins:     sv(e, 'wins'),
@@ -216,7 +240,7 @@ async function _wcGroupForTeam(teamName: string): Promise<WCGroupData> {
       const gf = sv(e, 'pointsFor', 'goalsFor');
       const ga = sv(e, 'pointsAgainst', 'goalsAgainst');
       return {
-        teamName:       String((e.team as Record<string, unknown>)?.displayName ?? ''),
+        teamName:       _canonicalWCName(String((e.team as Record<string, unknown>)?.displayName ?? '')),
         position:       j + 1,
         played:         sv(e, 'gamesPlayed', 'played'),
         wins:           sv(e, 'wins'),
@@ -241,9 +265,12 @@ async function _buildWCMatchContext(
   worldCupStage: string | undefined,
 ): Promise<WorldCupMatchContext | undefined> {
   try {
-    const { wcRows } = await _wcGroupForTeam(teamName);
-    if (wcRows.length === 0) return undefined;
+    // Group letter from our own deterministic map drives the lookup (robust to the
+    // ESPN/our name divergence — e.g. "Türkiye" vs "Turkey" — that previously
+    // dropped the whole group context and let the model invent the group letter).
     const group  = WC_TEAM_GROUPS[teamId];
+    const { wcRows } = await _wcGroupForTeam(teamName, group);
+    if (wcRows.length === 0) return undefined;
     const ourRow = wcRows.find(r =>
       r.teamName === teamName || teamName.includes(r.teamName.split(' ')[0]),
     );

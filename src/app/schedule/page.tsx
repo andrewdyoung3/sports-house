@@ -971,38 +971,9 @@ export default function SchedulePage() {
   // Reset on unmount so other pages keep the default
   useEffect(() => () => { resetBgLeft(); }, []);
 
-  // Resolve which league's standings to show. Memoised so the fetch below only
-  // re-runs when the resolved league actually changes — not on every card expand.
-  const standingsLeague = useMemo((): string | null => {
-    const league = activeLeagueId
-      ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league ?? null : null)
-      ?? allGames.find(g => g.id === expandedId)?.team.league
-      ?? null;
-    return league && REAL_DATA_LEAGUES.has(league) ? league : null;
-  }, [activeLeagueId, activeTeamId, expandedId, teams, allGames]);
-
-  // Standings derived synchronously from cache — no render lag, no flicker.
-  const standings = standingsLeague
-    ? (standingsCacheRef.current.has(standingsLeague)
-        ? standingsCacheRef.current.get(standingsLeague) ?? null
-        : null)
-    : null;
-
-  // Fetch standings on first visit to each league; cache hit = instant, no re-fetch.
-  useEffect(() => {
-    if (!standingsLeague) return;
-    if (standingsCacheRef.current.has(standingsLeague)) return;
-    fetch(`/api/standings?league=${standingsLeague}`)
-      .then(r => r.ok ? r.json() : [])
-      .then((rows: StandingRow[]) => {
-        standingsCacheRef.current.set(standingsLeague, rows.length > 0 ? rows : null);
-        setStandingsCacheVersion(v => v + 1);
-      })
-      .catch(() => {
-        standingsCacheRef.current.set(standingsLeague, null);
-        setStandingsCacheVersion(v => v + 1);
-      });
-  }, [standingsLeague]);
+  // NOTE: standings resolution (standingsLeague / standings / standingsMap) lives
+  // *below* the heroGame memo — it now falls back to the hero game's league when the
+  // hero panel is open, which requires heroGame to be defined first.
 
   // Fetch league fixtures on first visit; subsequent visits are served from the
   // ref cache synchronously (same render as activeLeagueId changes — no flash).
@@ -1122,18 +1093,6 @@ export default function SchedulePage() {
 
   const isLeagueMode = activeLeagueId !== null;
 
-  // Position map for AFL/NRL/EPL/F1 league-browse — teamId → table position.
-  const STANDINGS_POSITION_LEAGUES = new Set(['afl', 'nrl', 'epl', 'f1']);
-  const standingsMap = useMemo((): Map<string, number> | undefined => {
-    if (!isLeagueMode || !activeLeagueId || !STANDINGS_POSITION_LEAGUES.has(activeLeagueId) || !standings) return undefined;
-    const map = new Map<string, number>();
-    for (const row of standings) {
-      if (row.teamId) map.set(row.teamId, row.position);
-    }
-    return map;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [standings, isLeagueMode, activeLeagueId, standingsCacheVersion]);
-
   // In league-browse mode: show all league games (home/away filter still applies).
   // In team mode: show followed-team games filtered by active team pill.
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
@@ -1180,6 +1139,54 @@ export default function SchedulePage() {
       ) ?? displayedGames[0]
     );
   }, [displayedGames, isLeagueMode, baseFollowedTeamIds]);
+
+  // Resolve which league's standings to show. Memoised so the fetch below only
+  // re-runs when the resolved league actually changes — not on every card expand.
+  // Falls back to the hero game's league while its panel is open, so the desktop
+  // sidebar table tracks the hero even on the "all teams" view (no pill selected).
+  const standingsLeague = useMemo((): string | null => {
+    const league = activeLeagueId
+      ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league ?? null : null)
+      ?? allGames.find(g => g.id === expandedId)?.team.league
+      ?? (heroExpanded ? heroGame?.team.league ?? null : null)
+      ?? null;
+    return league && REAL_DATA_LEAGUES.has(league) ? league : null;
+  }, [activeLeagueId, activeTeamId, expandedId, teams, allGames, heroExpanded, heroGame]);
+
+  // Standings derived synchronously from cache — no render lag, no flicker.
+  const standings = standingsLeague
+    ? (standingsCacheRef.current.has(standingsLeague)
+        ? standingsCacheRef.current.get(standingsLeague) ?? null
+        : null)
+    : null;
+
+  // Fetch standings on first visit to each league; cache hit = instant, no re-fetch.
+  useEffect(() => {
+    if (!standingsLeague) return;
+    if (standingsCacheRef.current.has(standingsLeague)) return;
+    fetch(`/api/standings?league=${standingsLeague}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: StandingRow[]) => {
+        standingsCacheRef.current.set(standingsLeague, rows.length > 0 ? rows : null);
+        setStandingsCacheVersion(v => v + 1);
+      })
+      .catch(() => {
+        standingsCacheRef.current.set(standingsLeague, null);
+        setStandingsCacheVersion(v => v + 1);
+      });
+  }, [standingsLeague]);
+
+  // Position map for AFL/NRL/EPL/F1 league-browse — teamId → table position.
+  const STANDINGS_POSITION_LEAGUES = new Set(['afl', 'nrl', 'epl', 'f1']);
+  const standingsMap = useMemo((): Map<string, number> | undefined => {
+    if (!isLeagueMode || !activeLeagueId || !STANDINGS_POSITION_LEAGUES.has(activeLeagueId) || !standings) return undefined;
+    const map = new Map<string, number>();
+    for (const row of standings) {
+      if (row.teamId) map.set(row.teamId, row.position);
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standings, isLeagueMode, activeLeagueId, standingsCacheVersion]);
 
   // Group by calendar date in the user's timezone — hero game excluded (shown separately above)
   const groupedByDate = useMemo(() => {
@@ -1251,6 +1258,7 @@ export default function SchedulePage() {
     activeLeagueId
       ?? (activeTeamId !== 'all' ? teams.find(t => t.id === activeTeamId)?.league : undefined)
       ?? [...allGames, ...(activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [])].find(g => g.id === expandedId)?.team.league
+      ?? (heroExpanded ? heroGame?.team.league : undefined)
   ) as SportKey | undefined;
   const standingsBadge = standingsTableLeague ? LEAGUE_BADGE[standingsTableLeague] : undefined;
   // Task 2: hide the WC group-standings sidebar widget when the in-preview group table is already
@@ -1477,7 +1485,7 @@ export default function SchedulePage() {
 
           {/* League standings / WC groups — shown in league-browse mode, when a team is selected, or when a card is expanded.
               WC group standings are hidden when any expand panel is open (the in-preview group table is already visible). */}
-          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null) && !hideWcSidebarStandings && (
+          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null || heroExpanded) && !hideWcSidebarStandings && (
             standingsTableLeague === 'world_cup' ? (
               <div className="sh-card sh-standings">
                 <div className="sh-card-head">

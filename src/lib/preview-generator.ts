@@ -243,6 +243,39 @@ export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): 
   return violations;
 }
 
+/**
+ * WC group-letter binding. The fixture's group is stated authoritatively in the
+ * data block (THIS FIXTURE IS IN GROUP <X> / GROUP <X> DERIVED FACTS), sourced from
+ * world-cup.ts. The model has hallucinated a different letter ("Group F" for a Group
+ * D fixture). Reject when prose names a single group letter that differs from the
+ * fixture's — but stay conservative: a wrong letter inside a best-third / cross-group
+ * clause ("the best third-placed teams across the groups") is a legitimate collective
+ * reference, not a mis-stamp of THIS fixture, so it is allowed.
+ */
+export function validateWorldCupGroupLetter(output: AIPreview, prompt: string): string[] {
+  const m = prompt.match(/THIS FIXTURE IS IN GROUP ([A-L])\b/)
+    ?? prompt.match(/GROUP ([A-L]) DERIVED FACTS/)
+    ?? prompt.match(/GROUP ([A-L]) (?:STANDINGS|COMPOSITION)/);
+  if (!m) return [];
+  const correct = m[1];
+  const text = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].filter(Boolean).join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const mm of text.matchAll(/\bGroup\s+([A-L])\b/g)) {
+    const letter = mm[1];
+    if (letter === correct || seen.has(letter)) continue;
+    const i = mm.index ?? 0;
+    const around = text.slice(Math.max(0, i - 80), i + 80).toLowerCase();
+    if (/third|best[-\s]third|across|other group|all 12 group|12 groups|each group|every group/.test(around)) continue;
+    seen.add(letter);
+    violations.push(`WC group letter "Group ${letter}" — this fixture is in Group ${correct} (see GROUP ${correct} DERIVED FACTS); name the group verbatim and do not introduce another group letter`);
+  }
+  return violations;
+}
+
 function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const phaseMatch = prompt.match(/SEASON STATE:.*?\(phase:\s*([^)]+)\)/i);
   if (!phaseMatch) return [];
@@ -312,7 +345,7 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
   'cricket', 'season', 'round', 'phase', 'preliminary', 'semi', 'quarter',
   'trophy', 'stage', 'world', 'national', 'international', 'premiership',
   'championship', 'division', 'competition', 'association', 'pacific',
-  'magic', 'regular', 'origin', 'state',
+  'magic', 'regular', 'origin', 'state', 'group',
   'north', 'south', 'east', 'west', 'central', 'united', 'city', 'town',
   'park', 'ground', 'stadium', 'arena', 'oval', 'field', 'harbour',
   'harbor', 'bay', 'lake', 'river',
@@ -390,12 +423,15 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
     const lower    = stripped.toLowerCase();
     const words    = lower.split(/\s+/);
 
-    if (words.every(w => excluded.has(w))) continue;
+    // A real name word is ≥2 chars; single letters (group letters like "D" in
+    // "Group D's", stray initials) are structural tokens, never surnames — treat
+    // them as non-evidence so possessive group labels don't trip the validator.
+    if (words.every(w => excluded.has(w) || w.length < 2)) continue;
     if (teamName.toLowerCase().includes(lower) || opponentName.toLowerCase().includes(lower)) continue;
     if (competition.toLowerCase().includes(lower)) continue;
     if (whitelist.has(lower)) continue;
     if ([...whitelist].some(entry => entry.includes(lower) || lower.includes(entry))) continue;
-    const nonSafeWords = words.filter(w => !excluded.has(w));
+    const nonSafeWords = words.filter(w => !excluded.has(w) && w.length >= 2);
 
     if (!hasPlayerData) {
       if (nonSafeWords.length < 2) continue;
@@ -496,6 +532,7 @@ export async function callOllama(
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
     ...validateWorldCupGroupRecord(v, prompt),
+    ...validateWorldCupGroupLetter(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
