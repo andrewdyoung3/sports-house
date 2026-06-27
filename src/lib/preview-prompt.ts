@@ -1484,6 +1484,24 @@ function deriveSeriesState(
   ].join(' ');
 }
 
+/**
+ * SEC-4: defang external feed free-text (news headlines/descriptions) before it
+ * enters the LLM prompt. Strips control characters and neutralises common
+ * prompt-injection markers so a compromised or odd feed item can't issue
+ * instructions to the model. Only neutralises (keeps text readable); the strong
+ * OUTPUT validators remain the primary faithfulness guard.
+ */
+function sanitizeFeedText(s: string): string {
+  return s
+    .replace(/[\u0000-\u001F\u007F]/g, ' ') // control chars (SEC-4)
+    .replace(/```/g, "'''")                                                              // code fences
+    .replace(/<\/?(system|user|assistant)>/gi, '')                                       // fake role tags
+    .replace(/\b(ignore|disregard|forget)\b(\s+(?:all|any|the|previous|above|prior))/gi, '[$1]$2') // "ignore previous…"
+    .replace(/\bsystem\s+prompt\b/gi, 'system-prompt')
+    .replace(/\s{3,}/g, ' ')
+    .trim();
+}
+
 export function buildDataBlock(
   league: string,
   teamName: string,
@@ -2085,12 +2103,12 @@ export function buildDataBlock(
       if (hasNews) {
         lines.push('  RECENT HEADLINES (may be speculative or outdated):');
         teamNews.slice(0, 3).forEach(n => {
-          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-          lines.push(`    ${teamName}: "${n.headline}"${desc}`);
+          const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
+          lines.push(`    ${teamName}: "${sanitizeFeedText(n.headline)}"${desc}`);
         });
         oppNews.slice(0, 3).forEach(n => {
-          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-          lines.push(`    ${opponentName}: "${n.headline}"${desc}`);
+          const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
+          lines.push(`    ${opponentName}: "${sanitizeFeedText(n.headline)}"${desc}`);
         });
       }
       if (hasTips) {

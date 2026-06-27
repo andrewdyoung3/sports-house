@@ -5,10 +5,11 @@ out/
 # Dependencies
 node_modules/
 
-# Environment
+# Environment — ignore ALL .env variants (incl. .save/.backup), but keep examples.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.local.example
+!.env.*.example
 
 # Secrets — never commit downloaded OAuth client secrets (Google Cloud Console).
 # These belong ONLY in the Supabase dashboard (Auth → Providers → Google), not the repo.

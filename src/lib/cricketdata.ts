@@ -148,7 +148,7 @@ export async function cricSeriesInfo(id: string): Promise<CricSeriesInfo | null>
   if (_seriesInfo.has(id)) return _seriesInfo.get(id)!;
   const cached = fileCacheGet<CricSeriesInfo>(`series-${id}`, TTL_SERIES);
   if (cached) { _seriesInfo.set(id, cached); return cached; }
-  const j = await call('series_info', `id=${id}`);
+  const j = await call('series_info', `id=${encodeURIComponent(id)}`);
   const data = (j?.data as CricSeriesInfo) ?? null;
   _seriesInfo.set(id, data);
   if (j && data) fileCacheSet(`series-${id}`, data);
@@ -160,7 +160,7 @@ export async function cricMatchInfo(id: string): Promise<CricMatch | null> {
   if (_matchInfo.has(id)) return _matchInfo.get(id)!;
   const cached = fileCacheGet<CricMatch>(`match-${id}`, TTL_MATCH);
   if (cached) { _matchInfo.set(id, cached); return cached; }
-  const j = await call('match_info', `id=${id}`);
+  const j = await call('match_info', `id=${encodeURIComponent(id)}`);
   const data = (j?.data as CricMatch) ?? null;
   _matchInfo.set(id, data);
   if (j && data) fileCacheSet(`match-${id}`, data);
@@ -172,7 +172,7 @@ export async function cricMatchSquad(id: string): Promise<CricSquadGroup[]> {
   if (_matchSquad.has(id)) return _matchSquad.get(id)!;
   const cached = fileCacheGet<CricSquadGroup[]>(`squad-${id}`, TTL_SQUAD);
   if (cached) { _matchSquad.set(id, cached); return cached; }
-  const j = await call('match_squad', `id=${id}`);
+  const j = await call('match_squad', `id=${encodeURIComponent(id)}`);
   const data = (j?.data as CricSquadGroup[]) ?? [];
   _matchSquad.set(id, data);
   if (j) fileCacheSet(`squad-${id}`, data);

@@ -23,7 +23,6 @@
     "test:integration": "tsx scripts/verify-sandbox-faithful.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.78.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
     "clsx": "^2.1.1",
@@ -35,6 +34,7 @@
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

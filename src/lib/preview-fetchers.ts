@@ -749,14 +749,19 @@ function mapEspnGame(g: any): GameResult {
   const homeSc  = parseInt(g.homeTeamScore ?? '0', 10) || 0;
   const awaySc  = parseInt(g.awayTeamScore ?? '0', 10) || 0;
   const result  = String(g.gameResult ?? '').toUpperCase();
+  const teamScore     = isHome ? homeSc : awaySc;
+  const opponentScore = isHome ? awaySc : homeSc;
+  // COR-3: some ESPN soccer/WC summaries report only 'W'/'L' (no explicit 'D'), so a
+  // level game would otherwise be mislabelled a loss. Fall back to the score line.
+  const isDraw = result === 'D' || (result !== 'W' && result !== 'L' && teamScore === opponentScore);
   return {
     opponent:      g.opponent?.displayName ?? '',
     opponentAbbr:  g.opponent?.abbreviation ?? '',
     isHome,
-    isWin:         result === 'W',
-    isDraw:        result === 'D',
-    teamScore:     isHome ? homeSc : awaySc,
-    opponentScore: isHome ? awaySc : homeSc,
+    isWin:         result === 'W' || (result !== 'L' && !isDraw && teamScore > opponentScore),
+    isDraw,
+    teamScore,
+    opponentScore,
     date:          g.gameDate ?? '',
   };
 }
