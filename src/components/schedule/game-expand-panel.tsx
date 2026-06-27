@@ -1224,6 +1224,10 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       setLoading(false);
       setAiLoading(false);
     });
+    // Intentionally keyed on fixture IDENTITY only. The omitted values (results,
+    // weather, oppResults, …) are SET by this effect — depending on them would
+    // re-fire it in a loop. Re-fetch must happen per fixture, not per data update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team.id, team.league, game.id, game.opponent, game.opponentId]);
 
   const wins   = results.filter(r => r.isWin).length;

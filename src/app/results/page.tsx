@@ -430,11 +430,14 @@ interface ResultsCalendarProps {
 }
 
 function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick }: ResultsCalendarProps) {
-  const now = new Date();
+  // Mount-stable "now" — used only for the initial view month/year and today's key,
+  // which don't need to track render time. Stabilising it lets todayKey list it as a
+  // dep without recomputing every render (CQ-5).
+  const now = useMemo(() => new Date(), []);
   const [viewYear,  setViewYear]  = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
 
-  const todayKey = useMemo(() => datekeyInZone(now.toISOString(), userTz), [userTz]);
+  const todayKey = useMemo(() => datekeyInZone(now.toISOString(), userTz), [now, userTz]);
 
   const resultsByDate = useMemo(() => {
     const map = new Map<string, ResultEntry[]>();

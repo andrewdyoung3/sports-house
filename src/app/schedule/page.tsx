@@ -1133,6 +1133,10 @@ export default function SchedulePage() {
     const eg = [...allGames, ...currentLeagueGames].find(g => g.id === expandedId);
     if (eg?.opponentId) ids.push(eg.opponentId);
     return new Set(ids);
+    // leagueCacheVersion is a deliberate recompute trigger: this reads from
+    // leagueCacheRef.current (a ref, which doesn't re-render), so the version bump is
+    // how cache mutations propagate. eslint sees it as "unused" — it is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teams, expandedId, allGames, activeLeagueId, leagueCacheVersion]);
 
   const isLeagueMode = activeLeagueId !== null;
@@ -1150,6 +1154,8 @@ export default function SchedulePage() {
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
       return true;
     });
+    // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
