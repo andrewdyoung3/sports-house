@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -333,7 +333,8 @@ interface ScheduleRowProps {
   /** teamId → league position, shown in league-browse mode for AFL/NRL/EPL. */
   standingsMap?: Map<string, number>;
   onHover: (dateKey: string | null) => void;
-  onToggle: () => void;
+  /** Receives the game id so the parent can pass a single stable callback (PERF-2). */
+  onToggle: (id: string) => void;
 }
 
 function ScheduleRow({
@@ -423,13 +424,13 @@ function ScheduleRow({
       <article
         className={'sh-fix' + (isExpanded ? ' is-open' : '')}
         style={{ '--accent': team.primaryColor } as React.CSSProperties}
-        onClick={onToggle}
+        onClick={() => onToggle(game.id)}
         onMouseEnter={() => onHover(dateKey)}
         onMouseLeave={() => onHover(null)}
         role="button"
         aria-expanded={isExpanded}
         tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
         <div className="sh-fix-wm" aria-hidden="true">
@@ -529,13 +530,13 @@ function ScheduleRow({
             ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
             : undefined,
       }}
-      onClick={onToggle}
+      onClick={() => onToggle(game.id)}
       onMouseEnter={() => onHover(dateKey)}
       onMouseLeave={() => onHover(null)}
       role="button"
       aria-expanded={isExpanded}
       tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
     >
       {/* ── Team-colour ambient tint (sits above glass, below content) ── */}
       <div
@@ -890,6 +891,12 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// PERF-2: memoized so a hover/glow state change in the parent only re-renders the
+// row whose isHighlighted/isExpanded actually changed, not the whole fixture list.
+// Relies on stable props (toggleExpand/handleCalendarHover are useCallback,
+// standingsMap is useMemo) — keep them stable or memoization is defeated.
+const ScheduleRowMemo = memo(ScheduleRow);
 
 export default function SchedulePage() {
   const router = useRouter();
@@ -1448,7 +1455,7 @@ export default function SchedulePage() {
                                 : undefined,
                           }}
                         >
-                          <ScheduleRow
+                          <ScheduleRowMemo
                             game={game}
                             userTz={userTz}
                             dateKey={dateKey}
@@ -1457,7 +1464,7 @@ export default function SchedulePage() {
                             isFollowed={isFollowed}
                             standingsMap={standingsMap}
                             onHover={handleCalendarHover}
-                            onToggle={() => toggleExpand(game.id)}
+                            onToggle={toggleExpand}
                           />
                           {everExpandedIds.has(game.id) && (
                             <div style={{ display: isExpanded ? 'block' : 'none' }}>
