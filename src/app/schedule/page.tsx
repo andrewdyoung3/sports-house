@@ -335,6 +335,8 @@ interface ScheduleRowProps {
   onHover: (dateKey: string | null) => void;
   /** Receives the game id so the parent can pass a single stable callback (PERF-2). */
   onToggle: (id: string) => void;
+  /** id of the expand panel this row controls, for aria-controls (UX-1). */
+  panelId: string;
 }
 
 function ScheduleRow({
@@ -347,6 +349,7 @@ function ScheduleRow({
   standingsMap,
   onHover,
   onToggle,
+  panelId,
 }: ScheduleRowProps) {
   const { team } = game;
   const isF1           = team.league === 'f1';
@@ -429,6 +432,7 @@ function ScheduleRow({
         onMouseLeave={() => onHover(null)}
         role="button"
         aria-expanded={isExpanded}
+        aria-controls={panelId}
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
@@ -535,6 +539,7 @@ function ScheduleRow({
       onMouseLeave={() => onHover(null)}
       role="button"
       aria-expanded={isExpanded}
+        aria-controls={panelId}
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
     >
@@ -951,6 +956,23 @@ export default function SchedulePage() {
     window.addEventListener('sporthouse:open-calendar', handler);
     return () => window.removeEventListener('sporthouse:open-calendar', handler);
   }, [openCalendar]);
+
+  // UX-2: the mobile calendar is a modal sheet — close on Escape, move focus into it
+  // on open, and restore focus to the previously-focused element on close.
+  const calendarCloseRef = useRef<HTMLButtonElement | null>(null);
+  const calendarReturnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!calendarOpen) return;
+    calendarReturnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
+    const t = setTimeout(() => calendarCloseRef.current?.focus(), 50);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeCalendar(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('keydown', onKey);
+      calendarReturnFocusRef.current?.focus?.();
+    };
+  }, [calendarOpen, closeCalendar]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('cal') === '1') {
@@ -1465,9 +1487,15 @@ export default function SchedulePage() {
                             standingsMap={standingsMap}
                             onHover={handleCalendarHover}
                             onToggle={toggleExpand}
+                            panelId={`fixpanel-${game.id}`}
                           />
                           {everExpandedIds.has(game.id) && (
-                            <div style={{ display: isExpanded ? 'block' : 'none' }}>
+                            <div
+                              id={`fixpanel-${game.id}`}
+                              role="region"
+                              aria-label="Match details"
+                              style={{ display: isExpanded ? 'block' : 'none' }}
+                            >
                               <GameExpandPanel
                                 game={game}
                                 compact={isLeagueMode}
@@ -1564,6 +1592,9 @@ export default function SchedulePage() {
           />
           {/* Sheet — slides up on open, down on close */}
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Calendar"
             className={[
               'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
               'transition-transform duration-[420ms] ease-out',
@@ -1573,7 +1604,9 @@ export default function SchedulePage() {
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold text-white/80">Calendar</p>
               <button
+                ref={calendarCloseRef}
                 onClick={() => closeCalendar()}
+                aria-label="Close calendar"
                 className="text-white/40 hover:text-white transition-colors p-1"
               >
                 <X className="h-5 w-5" />
