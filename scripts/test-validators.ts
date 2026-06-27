@@ -18,6 +18,7 @@
 import {
   validatePlayerNames,
   validateWorldCupGroupLetter,
+  validateLadderPosition,
 } from '@/lib/preview-generator';
 import { rankWorldCupGroup, makeWCH2H } from '@/lib/preview-prompt';
 import type { AIPreview, WorldCupGroupRow } from '@/types';
@@ -156,6 +157,47 @@ expect('without H2H, overall GD ranks Paraguay above Türkiye (baseline)',
   withoutH2H.indexOf('Paraguay') < withoutH2H.indexOf('Türkiye'));
 expect('points order is respected outside the tie cluster (USA top, Australia bottom)',
   withH2H[0] === 'USA' && withH2H[3] === 'Australia');
+
+// ─── validateLadderPosition (the 8→7 "occupy 7th" class) ────────────────────────
+// Authoritative fact: Brisbane 8th, Geelong 4th. The prose must not state a
+// different positional ordinal for either team; positional context only (so
+// "4-point lead", "top 10", "fourth straight win", "third quarter" never fire).
+{
+  const LADDER_PROMPT = [
+    'DERIVED FACTS — pre-computed from the table above. Use these numbers verbatim; do NOT recalculate:',
+    '  • LADDER POSITION (use this exact ordinal for each team; do not restate it as any other number): Brisbane Lions — 8th of 18; Geelong — 4th of 18.',
+    '  • Geelong leads Brisbane Lions by 4 competition points on the table.',
+  ].join('\n');
+
+  const fired = (context: string): boolean =>
+    validateLadderPosition(preview({ context }), LADDER_PROMPT).length > 0;
+
+  // REJECT — wrong positional ordinal for a fixture team
+  expect('rejects "Brisbane Lions, who occupy 7th" (table says 8th)',
+    fired('Geelong sit 4th with a lead over Brisbane Lions, who occupy 7th — just inside the wildcard zone.'));
+  expect('rejects "Geelong sit 5th" (table says 4th)',
+    fired('Geelong sit 5th on the table this week.'));
+  expect('rejects word-ordinal mismatch "Brisbane Lions are seventh"',
+    fired('Brisbane Lions are seventh on the ladder.'));
+
+  // PASS — correct ordinals (must NOT fire)
+  expect('allows correct "Brisbane Lions occupy 8th, Geelong sit 4th"',
+    !fired('Geelong sit 4th on the ladder; Brisbane Lions occupy 8th.'));
+  expect('allows correct word ordinals "eighth"/"fourth"',
+    !fired('Brisbane Lions are eighth in the standings while Geelong are fourth.'));
+
+  // PASS — false-positive traps (non-positional numbers/ordinals; must NOT fire)
+  expect('trap: "4-point lead" does not fire',          !fired('Geelong hold a 4-point lead over Brisbane Lions.'));
+  expect('trap: "top 10" does not fire',                !fired('Brisbane Lions are scrapping to stay in the top 10.'));
+  expect('trap: "fourth straight win" does not fire',   !fired('Brisbane Lions chase a fourth straight win.'));
+  expect('trap: "third quarter" does not fire',         !fired('Geelong owned the third quarter last start.'));
+  expect('trap: "first half" does not fire',            !fired('Geelong started fast in the first half.'));
+  expect('trap: no positional ordinal does not fire',   !fired('A crucial clash in the run home for both clubs.'));
+
+  // No LADDER POSITION fact in the prompt → validator is inert
+  expect('inert when no LADDER POSITION fact present',
+    validateLadderPosition(preview({ context: 'Brisbane Lions occupy 7th.' }), 'DERIVED FACTS:\n  • nothing here').length === 0);
+}
 
 // ─── Summary ────────────────────────────────────────────────────────────────────
 

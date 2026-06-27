@@ -4,7 +4,7 @@
 > build/run instructions). This doc is the "why and how it fits together" overview plus a
 > running log of decisions, the next build, and known limitations.
 >
-> Last updated: 2026-06-24
+> Last updated: 2026-06-28
 
 ---
 
@@ -138,8 +138,8 @@ src/
                                 REGEN_MARKS_HOURS=[48,24], LOOKAHEAD_DAYS=14, LOOKBACK_DAYS=3
     preview-generator.ts      — generateAndStorePreview(), callOllama(), upsertPreview(),
                                 isValidPreview(); validators (points / names / finals-imminence /
-                                statlines / years / phase-stakes / WC group-record-arithmetic /
-                                WC group-letter / F1 championship) — each retried once on violation
+                                statlines / years / phase-stakes / ladder-position / WC group-record-
+                                arithmetic / WC group-letter / F1 championship) — retried once on violation
     preview-prompt.ts         — prompt assembly: SYSTEM_PROMPT + buildDataBlock() + buildBlocks()
                                 (sandbox twin) + collectPlayerWhitelist(); + DERIVED FACTS builders
                                 (buildDerivedFacts / buildWorldCupGroupFacts + rankWorldCupGroup +
@@ -299,7 +299,8 @@ available:
 **Output validators** (`preview-generator.ts`, retried once on violation): points-claim,
 finals-imminence, invented player names (whitelist from the data block), invented per-player
 statlines, invented calendar years, **plus the derived-facts binders** — phase-stakes,
-WC group-record arithmetic, WC group-letter, F1 championship (see "Derived-facts framework" below).
+ladder-position, WC group-record arithmetic, WC group-letter, F1 championship (see "Derived-facts
+framework" below).
 
 **Faithfulness invariant (non-negotiable):** generation, the dev sandbox route (`/api/sandbox/context`
 → `buildBlocks`), and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext`
@@ -332,6 +333,19 @@ them; validators reject any contradiction.
     NRL top 8; SRU top 6). **Phase-aware:** a finals decider resolves to GRAND FINAL stakes via
     `finalsRoundForDate` (date windows — the feed has NO stage label) and the regular-season ladder
     collapses to a seeding note.
+    - **ONE canonical ladder order — the feed's own `position`.** `buildDerivedFacts`,
+      `buildTableSection`, AND `computeCompetitionStatus` all sort by `position` (the live feed order,
+      including the league's official tiebreakers). Do **NOT** re-derive the order from points +
+      hardcoded tiebreakers — that reintroduces "rules from memory" staleness and could replace a
+      correct feed order with a wrong one. **Rule: trust the feed's `position` for league ladders;
+      recompute rank ONLY where the feed position isn't the live order → World Cup** (draw seeding).
+    - **Authoritative `LADDER POSITION` fact (the 8→7 "occupy 7th" fix, 2026-06-28).** The first
+      derived fact emits each fixture team's position verbatim — `LADDER POSITION … : Brisbane Lions
+      — 8th of 18; Geelong — 4th of 18.` — so the model never infers the ordinal from a gap or a
+      zone range. The ordinal LEADS its line (the AFL wildcard-band clause is phrased as a separate
+      sentence) so an adjacent "7th–10th" band can't be read as the team's own position.
+      `validateLadderPosition` binds the prose to it (below). Emitted for every ladder league
+      (afl/nrl/epl/super_rugby/rugby_int/nba/nhl); the zero-points guard suppresses it pre-season.
   - **GROUP TOURNAMENT (World Cup)** — `buildWorldCupGroupFacts` + `rankWorldCupGroup`. Recomputes
     the live standing (the feed's `position` is draw/seeding order!) by points → GD → goals. The
     **2026 head-to-head-first tiebreaker is wired**: completed intra-group results come from the
@@ -355,6 +369,9 @@ them; validators reject any contradiction.
     `TODO` stubs in `COMP_RULES` (config present, no computation yet — §10).
 - **Prose binds to facts; validators reject contradictions** (`preview-generator.ts`):
   `validatePointsClaims`, `validatePhaseStakes` (a Grand Final can't be a dead rubber),
+  `validateLadderPosition` (prose ordinal for a fixture team must match the authoritative LADDER
+  POSITION fact — tightly scoped to positional context, so "4-point lead"/"top 10"/"fourth straight
+  win"/"third quarter" never fire; both-direction unit tests in `scripts/test-validators.ts`),
   `validateWorldCupGroupRecord` (group-record arithmetic + qualification over-claim — e.g. a phrase
   implying more group results than a tracked team has played), `validateWorldCupGroupLetter`
   (conservative — rejects a different group letter for the fixture, allows best-third cross-group

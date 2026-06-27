@@ -291,6 +291,92 @@ function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+// ─── Ladder-position validator ─────────────────────────────────────────────────
+
+const ORDINAL_WORD: Record<string, number> = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
+  eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13,
+  fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18,
+  nineteenth: 19, twentieth: 20,
+};
+const ordinalToNum = (s: string): number | null => {
+  const w = s.toLowerCase();
+  if (ORDINAL_WORD[w] !== undefined) return ORDINAL_WORD[w];
+  const m = w.match(/^(\d+)(?:st|nd|rd|th)$/);
+  return m ? parseInt(m[1], 10) : null;
+};
+const ordSuffix = (n: number): string => {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
+};
+
+/**
+ * Ladder-position binding (the 8→7 "occupy 7th" class). buildDerivedFacts emits one
+ * authoritative `LADDER POSITION` fact per fixture team; the prose must not state a
+ * DIFFERENT positional ordinal for either team. Deterministic — reject → retry →
+ * refuse-to-store (REL-1). Tightly scoped to ordinals in a POSITIONAL context near a
+ * fixture team so "4-point lead", "top 10", "fourth straight win", "third quarter"
+ * never fire.
+ */
+export function validateLadderPosition(output: AIPreview, prompt: string): string[] {
+  // 1. Authoritative positions from the LADDER POSITION derived fact.
+  const factLine = prompt.match(/LADDER POSITION[^\n]*?:\s*([^\n]+)/);
+  if (!factLine) return [];
+  const expected: { name: string; pos: number; tokens: string[] }[] = [];
+  for (const m of factLine[1].matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s*[—–-]\s*(\d+)(?:st|nd|rd|th)\s+of\s+\d+/g)) {
+    const name   = m[1].trim();
+    const pos    = parseInt(m[2], 10);
+    const tokens = name.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+    if (tokens.length > 0) expected.push({ name, pos, tokens });
+  }
+  if (expected.length === 0) return [];
+
+  // 2. Factual prose only (mediaWatch is attributed editorial).
+  const prose = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ').toLowerCase();
+
+  // 3. Positional-ordinal claims (two directions; non-positional nouns excluded).
+  const ORD = `\\d+(?:st|nd|rd|th)|${Object.keys(ORDINAL_WORD).join('|')}`;
+  const NON_POS = `(?:straight|consecutive|successive|in\\s+a\\s+row|wins?|won|losses?|loss|defeats?|draws?|quarters?|halves|half|years?|seasons?|times?|minutes?|goals?|tr(?:y|ies)|rounds?|legs?|gear|innings)`;
+  const reVerb = new RegExp(`\\b(?:sit|sits|sitting|occupy|occupies|occupying|are|in|placed|ranked|rank|languish|languishing|down\\s+in)\\s+(?:in\\s+|at\\s+)?(${ORD})\\b(?!\\s+${NON_POS})`, 'gi');
+  const rePhrase = new RegExp(`\\b(${ORD})\\b(?:[-\\s]placed)?\\s+(?:on\\s+the\\s+(?:ladder|table)|in\\s+the\\s+(?:ladder|table|standings)|place|spot|position)\\b`, 'gi');
+
+  const claims: { num: number; idx: number }[] = [];
+  for (const re of [reVerb, rePhrase]) {
+    for (const m of prose.matchAll(re)) {
+      const num = ordinalToNum(m[1]);
+      if (num !== null) claims.push({ num, idx: m.index ?? 0 });
+    }
+  }
+  if (claims.length === 0) return [];
+
+  // 4. Attribute each claim to the nearest fixture-team mention (≤70 chars before,
+  //    ≤40 after) and flag any contradiction with that team's authoritative position.
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const c of claims) {
+    let best: { team: typeof expected[number]; dist: number } | null = null;
+    for (const t of expected) {
+      for (const tok of t.tokens) {
+        for (let at = prose.indexOf(tok); at >= 0; at = prose.indexOf(tok, at + tok.length)) {
+          const dist = c.idx - (at + tok.length);          // >0: team before ordinal
+          if (dist < -40 || dist > 70) continue;
+          const ad = Math.abs(dist);
+          if (!best || ad < best.dist) best = { team: t, dist: ad };
+        }
+      }
+    }
+    if (best && c.num !== best.team.pos) {
+      const key = `${best.team.name}:${c.num}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        violations.push(`ladder position: prose places ${best.team.name} ${ordSuffix(c.num)} but the table has them ${ordSuffix(best.team.pos)} (LADDER POSITION fact)`);
+      }
+    }
+  }
+  return violations;
+}
+
 /**
  * Catches invented per-player statlines. When the data block contains NO KEY
  * PERFORMERS section, the model has no grounded per-player numbers, so any stat
@@ -489,6 +575,7 @@ function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
+    ...validateLadderPosition(v, prompt),
     ...validateWorldCupGroupRecord(v, prompt),
     ...validateWorldCupGroupLetter(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),

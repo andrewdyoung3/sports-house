@@ -202,7 +202,13 @@ function computeCompetitionStatus(
   const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
   if (!maxPpg || !totalRounds || table.length === 0) return [];
 
-  const sorted = [...table].sort((a, b) => b.points - a.points);
+  // ONE canonical ladder order — the feed's own `position` (the live, authoritative
+  // order incl. the league's official tiebreakers), the same order buildDerivedFacts
+  // and buildTableSection use. Do NOT re-derive from points + hardcoded tiebreakers:
+  // that would reintroduce per-season "rules from memory" staleness and could replace
+  // a correct feed order with a wrong one. (World Cup recomputes separately because
+  // its feed `position` is draw-seeding, not the live group rank.)
+  const sorted = [...table].sort((a, b) => a.position - b.position);
   const notes: string[] = [];
   const rem = (t: LeagueTableRow) => Math.max(0, totalRounds - t.played);
 
@@ -407,6 +413,22 @@ function buildDerivedFacts(
     'DERIVED FACTS — pre-computed from the table above. Use these numbers verbatim; do NOT recalculate:',
   ];
 
+  // ── Authoritative ladder position ─────────────────────────────────────────
+  // The single source for any "Nth" the prose may state about a fixture team — the
+  // ordinal LEADS so adjacent zone/range descriptors below (e.g. the AFL "wildcard
+  // band") can't be misread as the team's own position. Bound deterministically by
+  // validateLadderPosition. Uses the feed's `position` (canonical order); for World
+  // Cup the position is the recomputed group rank (handled in the group block).
+  {
+    const posBits: string[] = [];
+    for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
+      if (row && row.points > 0) posBits.push(`${name} — ${ordinalSuffix(row.position)} of ${sorted.length}`);
+    }
+    if (posBits.length > 0) {
+      facts.push(`  • LADDER POSITION (use this exact ordinal for each team; do not restate it as any other number): ${posBits.join('; ')}.`);
+    }
+  }
+
   // ── Head-to-head gap ──────────────────────────────────────────────────────
   if (teamRow && oppRow && (teamRow.points > 0 || oppRow.points > 0)) {
     const diff = (teamRow.points) - (oppRow.points);
@@ -449,7 +471,10 @@ function buildDerivedFacts(
       } else if (pos <= finalsN) {
         const insideTen = row.points - (wildcardRow?.points ?? 0);
         const outsideSix = (directRow?.points ?? 0) - row.points;
-        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — in the wildcard zone (7th–10th, would play a wildcard final): ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
+        // Ordinal stands alone as its own sentence with an "of N" anchor; the band is
+        // a separate descriptive clause so its 7th–10th range can't be misread as the
+        // team's position (the 8→7 collapse this fix targets).
+        facts.push(`  • ${name} sit ${ordinalSuffix(pos)} of ${sorted.length}. That is inside the wildcard band — the teams finishing 7th through 10th play a wildcard final — ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
       } else {
         const gap = (wildcardRow?.points ?? 0) - row.points;
         facts.push(`  • ${name} are ${ordinalSuffix(pos)} — outside the top ${finalsN} (out of finals), ${gap} point${gap === 1 ? '' : 's'} behind the wildcard cutoff (${ordinalSuffix(finalsN)} is ${wildcardRow?.name ?? 'n/a'} with ${wildcardRow?.points ?? 0} pts).`);

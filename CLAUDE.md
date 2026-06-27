@@ -35,7 +35,8 @@ src/
     preview-context.ts    — buildPreviewContext(): canonical context builder used by ALL generation paths
     preview-prompt.ts     — System prompt + buildDataBlock()/buildBlocks() (block-decomposed twin for sandbox)
     preview-generator.ts  — Ollama call + output validators (player-names/points/finals-imminence/
-                            statlines/years/phase-stakes/WC group-record/WC group-letter/F1) + Supabase upsert
+                            statlines/years/phase-stakes/ladder-position/WC group-record/WC group-letter/F1)
+                            + Supabase upsert
     weather.ts            — fetchVenueWeather() (Open-Meteo, no key); shared by /api/weather + previews
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
                             (competition-rules.ts = COMP_RULES, the per-season single source of truth)
