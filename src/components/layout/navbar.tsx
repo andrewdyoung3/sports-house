@@ -42,7 +42,7 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-[30px] h-full grid grid-cols-[1fr_auto_1fr] items-center">
 
         {/* Brand → home */}
-        <Link href="/" className="sh-logo justify-self-start group opacity-90 hover:opacity-100 transition-opacity">
+        <Link href="/" aria-label="SportHouse home" className="sh-logo justify-self-start group opacity-90 hover:opacity-100 transition-opacity">
           <img src="/icon-mark.svg" alt="" aria-hidden="true" className="sh-logomark h-8 w-8 flex-shrink-0" />
           <span className="sh-wordmark hidden sm:block">SportHouse</span>
         </Link>
@@ -54,6 +54,7 @@ export function Navbar() {
             <Link
               key={href}
               href={href}
+              aria-label={label}
               className={cn('sh-nav-tab', pathname === href && 'is-active')}
             >
               <Icon className="h-4 w-4" />
@@ -72,7 +73,7 @@ export function Navbar() {
 
         {/* Right — My Teams + account control */}
         <div className="flex items-center gap-2 justify-self-end">
-          <Link href="/onboarding" className="sh-nav-myteams">
+          <Link href="/onboarding" aria-label="My Teams" className="sh-nav-myteams">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:block">My Teams</span>
           </Link>

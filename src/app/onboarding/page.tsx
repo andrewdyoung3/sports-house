@@ -101,6 +101,7 @@ export default function OnboardingPage() {
         <div className="mb-5 max-w-md">
           <Input
             icon
+            aria-label="Search teams"
             placeholder="Search teams, cities…"
             value={query}
             onChange={e => setQuery(e.target.value)}

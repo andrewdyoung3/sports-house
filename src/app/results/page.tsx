@@ -716,6 +716,24 @@ export default function ResultsPage() {
     try { setUserTz(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch {}
   }, []);
 
+  // UX-5: when navigated here with a #result-date-* hash (from the schedule calendar's
+  // past-day click), scroll to that date once results have loaded — the anchor does not
+  // exist until then, so native hash scrolling on load can't reach it.
+  useEffect(() => {
+    if (loading) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith('#result-date-')) return;
+    const dk = hash.slice('#result-date-'.length);
+    const t = setTimeout(() => {
+      const el = document.getElementById(`result-date-${dk}`);
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }
+    }, 100);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   useEffect(() => {
     // Reset accumulator so a followed-teams change (prefsVersion, e.g. the post-sign-in
     // anon→permanent union) refetches the EXACT new set instead of layering onto the old one.

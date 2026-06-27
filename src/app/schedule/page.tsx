@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
@@ -878,6 +879,7 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SchedulePage() {
+  const router = useRouter();
   const [teams,    setTeams]    = useState<Team[]>([]);
   const [allGames, setAllGames] = useState<ScheduleEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -1206,9 +1208,11 @@ export default function SchedulePage() {
 
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
+  // UX-5: SPA navigation instead of a full page reload (the results page scrolls to
+  // the #result-date-* hash once its data loads).
   const handlePastDayClick  = useCallback((dk: string) => {
-    window.location.href = `/results#result-date-${dk}`;
-  }, []);
+    router.push(`/results#result-date-${dk}`);
+  }, [router]);
 
   const handleDayClick = useCallback((dk: string) => {
     const el = document.getElementById(`date-section-${dk}`);
