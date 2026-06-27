@@ -13,7 +13,13 @@
     "warm:force": "tsx scripts/generate-previews.ts --force",
     "poll": "tsx scripts/poll-jobs.ts",
     "coverage": "tsx scripts/coverage-report.ts",
-    "dump-prompt": "tsx scripts/dump-prompt.ts"
+    "dump-prompt": "tsx scripts/dump-prompt.ts",
+    "test": "npm run test:validators && npm run test:structure && npm run test:lifecycle && npm run test:team-coverage",
+    "test:validators": "tsx scripts/test-validators.ts",
+    "test:structure": "tsx scripts/test-competition-structure.ts",
+    "test:lifecycle": "tsx scripts/test-preview-lifecycle.ts",
+    "test:team-coverage": "tsx scripts/check-team-coverage.ts",
+    "test:integration": "tsx scripts/verify-sandbox-faithful.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

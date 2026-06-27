@@ -147,66 +147,50 @@ console.log('\n── AFL: ladder-finals ─────────────
   test('phase is mid-season', r.phase, 'mid-season');
 }
 
-// Round 21 of 23. Team in 1st (64 pts). 9th has 20 pts, 2 rounds left. → FINALS LOCKED
+// Round 21 of 23 (2 rounds left). 2026 AFL: top-10 finals (Wildcard Round added),
+// so the first team OUTSIDE the cutoff is 11th. Team in 1st; 11th can't catch even
+// winning out → FINALS LOCKED. (finalsTeams=10 per COMP_RULES.afl, season 2026.)
 {
-  // 9th has 20 pts, 2 rounds left: max = 20 + 2*4 = 28. Team has 64 > 28 → locked.
-  const table = aflTable(64, 21, 1, 48, 21, 20, 21);
-  const r = resolveCompetitionContext('afl', table, 'Sydney Swans', 'Adelaide Crows', 21);
-  // Note: 'Sydney Swans' row has pts=64+20=84 (we added 20 in aflTable to make it 1st).
-  // Let's use a cleaner table for this test.
   const cleanTable: LeagueTableRow[] = [
-    makeRow('Sydney Swans',    1, 21, 80),
-    makeRow('Collingwood',     2, 21, 60),
-    makeRow('Brisbane Lions',  3, 21, 56),
-    makeRow('Carlton',         4, 21, 52),
-    makeRow('GWS Giants',      5, 21, 48),
-    makeRow('Geelong Cats',    6, 21, 44),
-    makeRow('Hawthorn',        7, 21, 40),
-    makeRow('Port Adelaide',   8, 21, 36),
-    makeRow('Gold Coast Suns', 9, 21, 20), // max = 20 + 2*4 = 28
-    makeRow('Richmond Tigers', 10, 21, 8), // way down, eliminated
+    makeRow('Sydney Swans',     1, 21, 80),
+    makeRow('Collingwood',      2, 21, 60),
+    makeRow('Brisbane Lions',   3, 21, 56),
+    makeRow('Carlton',          4, 21, 52),
+    makeRow('GWS Giants',       5, 21, 48),
+    makeRow('Geelong Cats',     6, 21, 44),
+    makeRow('Hawthorn',         7, 21, 40),
+    makeRow('Port Adelaide',    8, 21, 36),
+    makeRow('Gold Coast Suns',  9, 21, 32),
+    makeRow('Essendon',        10, 21, 28),
+    makeRow('Adelaide Crows',  11, 21, 20), // 11th: max = 20 + 2*4 = 28 < 80 → 1st locked
+    makeRow('Richmond Tigers', 12, 21, 8),
   ];
-  const r2 = resolveCompetitionContext('afl', cleanTable, 'Sydney Swans', 'Gold Coast Suns', 21);
-  test('1st, 9th can\'t catch → FINALS LOCKED', r2.stakes, 'FINALS LOCKED');
+  const r2 = resolveCompetitionContext('afl', cleanTable, 'Sydney Swans', 'Adelaide Crows', 21);
+  test('1st, 11th can\'t catch → FINALS LOCKED', r2.stakes, 'FINALS LOCKED');
 }
 
-// Round 22 of 23. Team in 10th, max possible = 12 pts. 8th has 36 pts. → ELIMINATED
+// Round 22 of 23 (1 round left). Team in 12th, max can't reach the 10th-place
+// finals cutoff → ELIMINATED. (2026: top-10 finals.)
 {
   const table: LeagueTableRow[] = [
-    makeRow('Sydney Swans',    1, 22, 80),
-    makeRow('Collingwood',     2, 22, 60),
-    makeRow('Brisbane Lions',  3, 22, 56),
-    makeRow('Carlton',         4, 22, 52),
-    makeRow('GWS Giants',      5, 22, 48),
-    makeRow('Geelong Cats',    6, 22, 44),
-    makeRow('Hawthorn',        7, 22, 40),
-    makeRow('Port Adelaide',   8, 22, 36), // 8th
-    makeRow('Gold Coast Suns', 9, 22, 30),
-    makeRow('Richmond Tigers', 10, 22, 8), // max = 8 + 1*4 = 12 < 36 → eliminated
+    makeRow('Sydney Swans',     1, 22, 80),
+    makeRow('Collingwood',      2, 22, 60),
+    makeRow('Brisbane Lions',   3, 22, 56),
+    makeRow('Carlton',          4, 22, 52),
+    makeRow('GWS Giants',       5, 22, 48),
+    makeRow('Geelong Cats',     6, 22, 44),
+    makeRow('Hawthorn',         7, 22, 40),
+    makeRow('Port Adelaide',    8, 22, 36),
+    makeRow('Gold Coast Suns',  9, 22, 32),
+    makeRow('Essendon',        10, 22, 30), // 10th = finals cutoff
+    makeRow('Adelaide Crows',  11, 22, 14),
+    makeRow('Richmond Tigers', 12, 22, 8),  // max = 8 + 1*4 = 12 < 30 → eliminated
   ];
   const r = resolveCompetitionContext('afl', table, 'Richmond Tigers', 'GWS Giants', 22);
-  test('10th, max 12 pts < 36 pts 8th → ELIMINATED', r.stakes, 'ELIMINATED');
+  test('12th, max 12 pts < 30 pts 10th → ELIMINATED', r.stakes, 'ELIMINATED');
 }
 
-// Both teams locked (1st and 2nd). → DEAD RUBBER
-{
-  const table: LeagueTableRow[] = [
-    makeRow('Sydney Swans',   1, 22, 80), // 9th max = 20 + 1*4 = 24 < 80 → locked
-    makeRow('Collingwood',    2, 22, 76), // 9th can't catch → locked
-    makeRow('Brisbane Lions', 3, 22, 56),
-    makeRow('Carlton',        4, 22, 52),
-    makeRow('GWS Giants',     5, 22, 48),
-    makeRow('Geelong Cats',   6, 22, 44),
-    makeRow('Hawthorn',       7, 22, 40),
-    makeRow('Port Adelaide',  8, 22, 36),
-    makeRow('Gold Coast',     9, 22, 20),
-    makeRow('Richmond',       10, 22, 8),
-  ];
-  const r = resolveCompetitionContext('afl', table, 'Sydney Swans', 'Collingwood', 22);
-  test('1st and 2nd both locked → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
-}
-
-// Both teams in 9th and 10th, both eliminated. → DEAD RUBBER
+// Both top-2 teams locked into the top-10 (1 round left). → DEAD RUBBER. (2026: top-10.)
 {
   const table: LeagueTableRow[] = [
     makeRow('Sydney Swans',   1, 22, 80),
@@ -216,12 +200,35 @@ console.log('\n── AFL: ladder-finals ─────────────
     makeRow('GWS Giants',     5, 22, 48),
     makeRow('Geelong Cats',   6, 22, 44),
     makeRow('Hawthorn',       7, 22, 40),
-    makeRow('Port Adelaide',  8, 22, 36), // 8th
-    makeRow('Gold Coast',     9, 22, 4),  // max = 4 + 1*4 = 8 < 36 → eliminated
-    makeRow('Richmond',       10, 22, 0), // max = 0 + 1*4 = 4 < 36 → eliminated
+    makeRow('Port Adelaide',  8, 22, 36),
+    makeRow('Gold Coast',     9, 22, 32),
+    makeRow('Essendon',      10, 22, 28),
+    makeRow('Adelaide',      11, 22, 20), // 11th max = 20 + 1*4 = 24 < 76 → 1st & 2nd both locked
+    makeRow('Richmond',      12, 22, 8),
   ];
-  const r = resolveCompetitionContext('afl', table, 'Gold Coast', 'Richmond', 22);
-  test('9th and 10th both eliminated → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
+  const r = resolveCompetitionContext('afl', table, 'Sydney Swans', 'Collingwood', 22);
+  test('1st and 2nd both locked → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
+}
+
+// Both teams (11th and 12th) eliminated from the top-10. → DEAD RUBBER. (2026: top-10.)
+{
+  const table: LeagueTableRow[] = [
+    makeRow('Sydney Swans',   1, 22, 80),
+    makeRow('Collingwood',    2, 22, 76),
+    makeRow('Brisbane Lions', 3, 22, 56),
+    makeRow('Carlton',        4, 22, 52),
+    makeRow('GWS Giants',     5, 22, 48),
+    makeRow('Geelong Cats',   6, 22, 44),
+    makeRow('Hawthorn',       7, 22, 40),
+    makeRow('Port Adelaide',  8, 22, 36),
+    makeRow('Gold Coast',      9, 22, 32),
+    makeRow('Essendon',       10, 22, 30), // 10th = finals cutoff
+    makeRow('Adelaide Crows', 11, 22, 4),  // max = 4 + 1*4 = 8 < 30 → eliminated
+    makeRow('Richmond Tigers',12, 22, 0),  // max = 0 + 1*4 = 4 < 30 → eliminated
+  ];
+  // Use full club names — 'Adelaide' alone substring-collides with 'Port Adelaide'.
+  const r = resolveCompetitionContext('afl', table, 'Adelaide Crows', 'Richmond Tigers', 22);
+  test('11th and 12th both eliminated → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
 }
 
 // Early season, team in 5th. → STANDARD (early season, no stakes)
@@ -311,34 +318,35 @@ console.log('\n── EPL: table, no finals ────────────
   test('EPL 20th, mathematically relegated → RELEGATED', r.stakes, 'RELEGATED');
 }
 
-// Both teams confirmed safe, mid-table, late season → DEAD RUBBER
+// Both teams confirmed safe, lower-mid-table, late season → DEAD RUBBER.
+// 2025-26 EPL: 5 Champions League places (COMP_RULES.epl.clSpots=5), so both teams
+// must be clear of the top-5 race (posGap > 3 AND > 3 wins off 5th) as well as
+// relegation-safe for the result to be a genuine dead rubber.
 {
   const customTable: LeagueTableRow[] = [
     makeRow('Man City',    1, 36, 85),
     makeRow('Arsenal',     2, 36, 78),
     makeRow('Liverpool',   3, 36, 72),
     makeRow('Chelsea',     4, 36, 64),
-    makeRow('Tottenham',   5, 36, 58),
+    makeRow('Tottenham',   5, 36, 58),  // 5th — Champions League cutoff
     makeRow('Man Utd',     6, 36, 52),
-    // Team A at 10th (50 pts) — safe: 18th has 20 pts, max = 20 + 2*3 = 26 < 50 → safe
-    makeRow('Team A',     10, 36, 50),
-    // Team B at 11th (48 pts) — safe too: same reasoning
-    makeRow('Team B',     11, 36, 48),
-    makeRow('Mid 7',       7, 36, 46),
-    makeRow('Mid 8',       8, 36, 44),
-    makeRow('Mid 9',       9, 36, 42),
+    makeRow('Newcastle',   7, 36, 50),
+    makeRow('Brighton',    8, 36, 48),
+    makeRow('Team A',      9, 36, 46),  // 9th: posGap |9-5|=4>3, 12 pts off 5th (>9) → not top-5 race
+    makeRow('Team B',     10, 36, 44),  // 10th: posGap 5>3, 14 pts off 5th → not top-5 race
+    makeRow('Mid 11',     11, 36, 40),
     makeRow('Mid 12',     12, 36, 38),
     makeRow('Mid 13',     13, 36, 36),
     makeRow('Mid 14',     14, 36, 34),
     makeRow('Mid 15',     15, 36, 32),
     makeRow('Mid 16',     16, 36, 30),
-    makeRow('Luton',      17, 36, 28),  // safety line
-    makeRow('Sheff Utd',  18, 36, 20),  // relegation, max = 20+2*3=26 < 28 → relegated
-    makeRow('Burnley',    19, 36, 15),
-    makeRow('Watford',    20, 36, 10),
+    makeRow('Mid 17',     17, 36, 28),
+    makeRow('Luton',      18, 36, 18),  // 18th: max = 18 + 2*3 = 24 < 44 → A & B both safe
+    makeRow('Sheff Utd',  19, 36, 14),
+    makeRow('Burnley',    20, 36, 10),
   ];
   const r = resolveCompetitionContext('epl', customTable, 'Team A', 'Team B', 36);
-  test('EPL both mid-table confirmed safe, run home → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
+  test('EPL both lower-mid confirmed safe, run home → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
 }
 
 console.log('\n── World Cup: group stage ────────────────────────────────────────');
