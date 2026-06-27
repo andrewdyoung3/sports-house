@@ -714,7 +714,8 @@ async function fetchFirstLegResult(
       teamScore:     parseInt(teamComp.score ?? '0', 10),
       opponentScore: parseInt(oppComp.score  ?? '0', 10),
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] first-leg result parse failed: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -890,7 +891,8 @@ export async function fetchESPNMatchExtras(
     if (oppLineup.length  > 0) out.opponentLastLineup = oppLineup;
 
     return out;
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] ESPN match-extras (form/H2H/lineup) parse failed: ${err instanceof Error ? err.message : err}`);
     return {};
   }
 }
@@ -921,7 +923,8 @@ async function fetchESPNInjuries(
         status: (i.status ?? 'Unknown') as string,
       }))
       .filter((i: any) => i.name);
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] ESPN injuries parse failed (${sportPath}/${espnTeamId}): ${err instanceof Error ? err.message : err}`);
     return [];
   }
 }

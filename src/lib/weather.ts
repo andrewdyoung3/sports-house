@@ -297,7 +297,8 @@ export async function fetchVenueWeather(
       weatherCode,
       isNotable: isNotableWeather(tempC, precipMm, precipProb, windKmh),
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[weather] forecast parse failed for "${venue}": ${err instanceof Error ? err.message : err}`);
     return undefined;
   }
 }

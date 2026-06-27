@@ -59,6 +59,8 @@ export function cricketConfigured(): boolean {
 // ─── Per-process caches (one process = one heartbeat run) ─────────────────────
 let _quotaTripped = false;
 let _current: { fetched: boolean; data: CricMatch[] } = { fetched: false, data: [] };
+let _currentFailedAt = 0;                 // REL-2: negative-cache timestamp for failures
+const CURRENT_NEG_CACHE_MS = 60_000;      // suppress retries for 60s after a failure
 const _seriesInfo = new Map<string, CricSeriesInfo | null>();
 const _matchInfo  = new Map<string, CricMatch | null>();
 const _matchSquad = new Map<string, CricSquadGroup[]>();
@@ -121,12 +123,23 @@ async function call(endpoint: string, params: string): Promise<Record<string, un
 /** All current/live/recent matches — module cache → file cache (3h) → API. */
 export async function cricCurrentMatches(): Promise<CricMatch[]> {
   if (_current.fetched) return _current.data;
-  _current.fetched = true;
   const cached = fileCacheGet<CricMatch[]>('current', TTL_CURRENT);
-  if (cached) { _current.data = cached; return cached; }
+  if (cached) { _current.fetched = true; _current.data = cached; return cached; }
+  // REL-2: do NOT mark fetched=true before the call — a single transient failure
+  // (timeout / 5xx / quota) used to poison the whole process with [], silently
+  // zeroing all cricket fixtures for the run. Only cache a SUCCESSFUL fetch; on
+  // failure leave fetched=false (the next run self-heals) but negative-cache for a
+  // short window so a generic outage can't trigger a retry storm within one run.
+  if (Date.now() - _currentFailedAt < CURRENT_NEG_CACHE_MS) return _current.data;
   const j = await call('currentMatches', 'offset=0');
-  _current.data = (j?.data as CricMatch[]) ?? [];
-  if (j) fileCacheSet('current', _current.data);
+  if (!j) {
+    _currentFailedAt = Date.now();
+    console.warn('[cricketdata] currentMatches fetch failed — not caching; will retry');
+    return _current.data;
+  }
+  _current.data = (j.data as CricMatch[]) ?? [];
+  _current.fetched = true;
+  fileCacheSet('current', _current.data);
   return _current.data;
 }
 
@@ -170,6 +183,7 @@ export async function cricMatchSquad(id: string): Promise<CricSquadGroup[]> {
 export function clearCricketCache(): void {
   _quotaTripped = false;
   _current = { fetched: false, data: [] };
+  _currentFailedAt = 0;
   _seriesInfo.clear();
   _matchInfo.clear();
   _matchSquad.clear();

@@ -129,8 +129,12 @@ async function cachedRichContext(
   try {
     ctx = await fetchRichContext(league, fixture, teamName);
   } catch (err) {
+    // REL-2: a transient fetch error must NOT be cached as {} — doing so blanked
+    // the fixture's entire context for the whole process run (every later call
+    // returned the empty object, so the preview generated from no data). Return
+    // empty for THIS call but leave the cache unset so a later call retries.
     console.warn(`[preview-context] rich fetch failed league=${league} team=${fixture.teamId}: ${err instanceof Error ? err.message : err}`);
-    ctx = {};
+    return {};
   }
   _richCache.set(key, ctx);
   return ctx;
