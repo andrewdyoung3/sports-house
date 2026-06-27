@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { enforceRateLimit } from '@/lib/request-guards';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,6 +7,9 @@ export async function POST(req: NextRequest) {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ error: 'not found' }, { status: 404 });
   }
+  // SEC-2: bound the dev-only LLM sandbox so a stray loop can't hammer Ollama.
+  const limited = enforceRateLimit(req, 'sandbox-generate', 20);
+  if (limited) return limited;
 
   const { prompt, model, system, maxTokens } = await req.json() as {
     prompt: string; model: string; system?: string; maxTokens?: number;

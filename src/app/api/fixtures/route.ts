@@ -17,6 +17,7 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTeam } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
+import { enforceRateLimit } from '@/lib/request-guards';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 import { SOO_META, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
@@ -1389,6 +1390,11 @@ const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int'
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
+  // SEC-2: abuse ceiling only — generous enough that a heavy page load (fixtures
+  // fetched per followed team) never trips it. EPL fans out across 5 competitions.
+  const limited = enforceRateLimit(req, 'fixtures', 300);
+  if (limited) return limited;
+
   const league = req.nextUrl.searchParams.get('league') ?? '';
   const teamId = req.nextUrl.searchParams.get('teamId') ?? '';
 

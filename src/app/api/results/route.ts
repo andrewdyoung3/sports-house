@@ -15,6 +15,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
+import { enforceRateLimit } from '@/lib/request-guards';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
@@ -1176,6 +1177,14 @@ const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int'
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
+  // SEC-2: abuse ceiling only — generous enough that a heavy page load (results
+  // fetched per followed team) never trips it. The cross-league soccer path below
+  // fans out to ~13 ESPN scoreboards per call, so the real protection against
+  // amplification abuse is limiting how often the route can be hit, not narrowing
+  // the fan-out (which would drop legitimate league coverage).
+  const limited = enforceRateLimit(req, 'results', 300);
+  if (limited) return limited;
+
   const league   = req.nextUrl.searchParams.get('league') ?? '';
   const teamId   = req.nextUrl.searchParams.get('teamId') ?? '';
   const teamName = req.nextUrl.searchParams.get('teamName') ?? '';
