@@ -84,6 +84,41 @@ Run after every change; final state on `audit/execution-pass`:
 
 ---
 
+## 3a. Post-pass review (3 follow-up checks)
+
+1. **Rate limiter vs internal generation (SEC-2) — verified, no fix needed, test added.**
+   The cron poller forwards `CRON_SECRET` to `/api/ai-review` over loopback (one IP) to
+   drive generation. The per-IP limiter sits *inside* `if (!isCron)`, and `isCron` is the
+   timing-safe `secretsMatch(x-cron-secret, CRON_SECRET)` check that runs first — so a
+   valid-secret request bypasses the limiter (and auth) entirely and a generation burst is
+   never 429'd. New `scripts/test-ai-review-ratelimit.ts` (wired into `npm test` as
+   `test:ratelimit`) asserts: 40 valid-secret requests never return 429; the public
+   (no-secret) path is 429-limited past the 30/min ceiling; and an *invalid* secret does
+   NOT bypass the limiter. The public, no-secret limit is unchanged.
+
+2. **DAT-1 trigger correctness — verified.**
+   `upsertPreview` sets `updated_at: new Date().toISOString()` explicitly on **every**
+   write, so the trigger's `new.updated_at <= old.updated_at` comparison is always
+   meaningful and a legitimately newer write (strictly greater timestamp) is never
+   dropped. The trigger is `BEFORE UPDATE … FOR EACH ROW` only, so the first `INSERT` of a
+   `game_id` (no conflict) never fires it and always succeeds; the guard applies only to
+   the `ON CONFLICT DO UPDATE` path. **By design, a guard-skipped write is silent**
+   (`RETURN NULL` cancels just that row's update; the statement still reports success and
+   `upsertPreview` logs `upsert-ok`) — an older/concurrent generation is dropped without
+   error, which is the intended last-writer-loses-if-older behavior. The only theoretical
+   drop of a "newer" write is two writes within the same millisecond (`new == old` →
+   skipped); content would be near-identical and this is acceptable.
+
+3. **Rate-limiter IP source — best-effort by design (single-host MVP), no code change.**
+   `clientIp` reads the first hop of `x-forwarded-for` (then `x-real-ip`, then
+   `'unknown'`). The first hop is client-spoofable behind an arbitrary proxy; on Vercel the
+   platform prepends the real client IP so the leftmost entry is trustworthy. Consistent
+   with the single-host/MVP stance and the limiter's documented role as an abuse ceiling
+   (not a security boundary), this is left as best-effort. For a multi-instance or
+   untrusted-proxy deployment, move rate limiting to the Vercel WAF (which derives the IP
+   trustworthily) or read the correct hop for that proxy depth — the call sites don't
+   change.
+
 ## 4. Needs a decision (the 7 open questions — defaults applied)
 
 | # | Question | Default applied | What a human must confirm |
