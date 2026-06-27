@@ -18,6 +18,7 @@ import type {
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { fetchTimeout } from '@/lib/espn';
+import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
 import {
@@ -404,7 +405,7 @@ export async function fetchNRLPreview(
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseNRLStandings(entries, teamESPNName);
     opponentStanding = parseNRLStandings(entries, oppESPNName);
     leagueTable = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => {
@@ -620,7 +621,7 @@ async function fetchCompetitionStage(
     if (!isGroupPhase) {
       const entries: any[] =
         data.standings?.entries ??
-        data.children?.[0]?.standings?.entries ?? [];
+        espnEntries(data);
       if (entries.length > 0) {
         const ti = entries.findIndex((e: any) => e.team?.displayName === teamName);
         const oi = entries.findIndex((e: any) => e.team?.displayName === opponentName);
@@ -981,26 +982,10 @@ function statVal(stats: any[], name: string): number {
   return Number(stats.find((s: any) => s.name === name)?.value ?? 0);
 }
 
-/**
- * COR-1: ESPN standings `entries` are not guaranteed to be returned in rank order
- * (ties, conference/division splits, alphabetical). Each entry carries a `rank`
- * stat; prefer it for `position`, falling back to the 1-based array index only when
- * the feed omits it. Downstream finals-cutoff / Nth-place facts AND the team's own
- * "Nth place" claim depend on the true rank — trusting array order can feed the
- * model standings facts that look authoritative but are wrong.
- */
-export function entryRank(entry: any, fallbackIndex: number): number {
-  const r = Number(entry?.stats?.find((s: any) => s.name === 'rank')?.value);
-  return Number.isFinite(r) && r > 0 ? r : fallbackIndex + 1;
-}
-
-/** Order ESPN standings entries by their true rank (rank stat, fallback to feed order). */
-export function sortByEntryRank(entries: any[]): any[] {
-  return entries
-    .map((e, i) => ({ e, r: entryRank(e, i) }))
-    .sort((a, b) => a.r - b.r)
-    .map(x => x.e);
-}
+// COR-1 standings-rank helpers now live in lib/espn-standings.ts (CQ-2), imported at
+// the top of this file; re-exported for back-compat with callers (e.g. the test
+// suite) that imported them from preview-fetchers.
+export { entryRank, sortByEntryRank, espnEntries };
 
 function parseESPNStandings(entries: any[], displayName: string): TeamStanding | undefined {
   const e = entries.find((x: any) => x.team?.displayName === displayName);
@@ -1067,7 +1052,7 @@ export async function fetchEPLPreview(
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
     // ESPN v2 standings: data.children[0].standings.entries (not an array)
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
     // Full table — used server-side for mathematical clinching/elimination analysis
@@ -1098,7 +1083,7 @@ export async function fetchEPLPreview(
           );
           if (res.ok) {
             const data = await res.json();
-            const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+            const entries: any[] = espnEntries(data);
             // Try to find by ESPN ID or by display name
             const found = entries.find((e: any) =>
               String(e.team?.id) === divEntry.espnId ||
@@ -1240,9 +1225,7 @@ export async function fetchRINTPreview(
   if (standRes.status === 'fulfilled' && standRes.value?.ok) {
     const data = await standRes.value.json();
     const entries: any[] =
-      data.children?.[0]?.standings?.entries ??
-      data.standings?.entries ??
-      [];
+      espnEntries(data);
 
     const parseRintStanding = (name: string): TeamStanding | undefined => {
       const idx = entries.findIndex((x: any) =>
@@ -1344,9 +1327,7 @@ export async function fetchSRUPreview(
 
   const data = await res.json();
   const entries: any[] =
-    data.children?.[0]?.standings?.entries ??
-    data.standings?.entries ??
-    [];
+    espnEntries(data);
 
   const teamIdx = entries.findIndex((x: any) =>
     x.team?.displayName === teamName || x.team?.name === teamName,
@@ -1605,7 +1586,7 @@ export async function fetchNBAPreview(teamId: string, opponentName: string, even
   let opponentStanding: TeamStanding | undefined;
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? data.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseNBAStandings(entries, teamName);
     opponentStanding = parseNBAStandings(entries, opponentName);
   }
@@ -1739,8 +1720,7 @@ export async function fetchNHLPreview(teamId: string, opponentName: string, even
   if (standRes.status === 'fulfilled' && standRes.value?.ok) {
     const data    = await standRes.value.json();
     const entries: any[] =
-      data.children?.[0]?.standings?.entries ??
-      data.standings?.entries ?? [];
+      espnEntries(data);
     teamStanding     = parseNHLStandings(entries, teamName);
     opponentStanding = parseNHLStandings(entries, opponentName);
   }

@@ -9,7 +9,7 @@
  * resolve to correct positions.
  */
 
-import { entryRank, sortByEntryRank } from '@/lib/preview-fetchers';
+import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 
 let passed = 0;
 let failed = 0;
@@ -51,6 +51,13 @@ assert('preserves feed order when no ranks', sortByEntryRank(noRanks).map(e => e
 const leaderLast = [mk('Eighth', 8), mk('Second', 2), mk('Leader', 1)];
 const s2 = sortByEntryRank(leaderLast);
 assert('leader returned last still resolves to position 1', s2[0].team.displayName === 'Leader' && entryRank(s2[0], 0) === 1);
+
+console.log('\n── espnEntries (shape resolution) ─────────────────────────');
+
+assert('reads children[0].standings.entries', espnEntries({ children: [{ standings: { entries: [mk('A', 1)] } }] }).length === 1);
+assert('falls back to flat standings.entries', espnEntries({ standings: { entries: [mk('A'), mk('B')] } }).length === 2);
+assert('children take precedence over flat', espnEntries({ children: [{ standings: { entries: [mk('A')] } }], standings: { entries: [mk('B'), mk('C')] } }).length === 1);
+assert('empty/garbage shape → []', espnEntries({}).length === 0 && espnEntries(null).length === 0);
 
 console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
