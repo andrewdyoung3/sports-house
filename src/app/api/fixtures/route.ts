@@ -75,7 +75,8 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
       // g.timestr already in local time (e.g. "1:10 PM"). Use both.
       const tz   = (g.tz as string) ?? '+10:00';
       const d    = new Date(g.date.replace(' ', 'T') + tz);
-      const time = g.timestr ? `${g.timestr} AEST` : aestDisplay(d);
+      // Squiggle's timestr is already Sydney-local; label follows its tz (AEDT in summer).
+      const time = g.timestr ? `${g.timestr} ${tz.startsWith('+11') ? 'AEDT' : 'AEST'}` : aestDisplay(d);
 
       return {
         id:             `afl-${g.id}`,
@@ -250,7 +251,7 @@ async function fetchESPNCompetition(
     const oppLogoUrl   = (oppComp?.team?.logo as string | undefined) ?? undefined;
 
     const utcDate  = new Date(e.date);
-    const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+    const aestDate = utcDate;
     const time     = aestDisplay(aestDate);
 
     const rights = BROADCAST_RIGHTS[slug] ?? BROADCAST_FALLBACK;
@@ -394,7 +395,7 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
       const opp     = NRL_OPP_TEAM[oppName] ?? unknownTeam(oppName);
 
       const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = utcDate;
       const time     = aestDisplay(aestDate);
 
       return {
@@ -468,7 +469,7 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
     const selfC    = comps.find(c => c.team?.displayName === meta.self);
     const isHome   = selfC?.homeAway === 'home';
     const utcDate  = new Date(e.date);
-    const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+    const aestDate = utcDate;
 
     // Series context label — shared derivation (see @/lib/soo).
     const seriesCtx = seriesLabelSuffix(tally, meta);
@@ -603,7 +604,7 @@ async function fetchSuperRugbyFixtures(teamId: string): Promise<UpcomingGame[]> 
       const opp     = SRU_OPP_TEAM[oppName] ?? unknownTeam(oppName);
 
       const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = utcDate;
       const time     = aestDisplay(aestDate);
 
       return {
@@ -712,7 +713,7 @@ async function fetchRintCompetition(
     const oppData = RINT_OPP[oppName] ?? { color: '#6B7280', abbr: oppName.slice(0, 3).toUpperCase(), logoUrl: undefined, teamId: '' };
 
     const utcDate  = new Date(e.date);
-    const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+    const aestDate = utcDate;
     const time     = aestDisplay(aestDate);
 
     // Wallabies home tests get Nine Network FTA; everything else is Stan Sport
@@ -833,7 +834,7 @@ function buildF1Sessions(races: any[], teamId: string): UpcomingGame[] {
       if (isNaN(sessionDate.getTime())) continue;
       if (sessionDate.getTime() <= twoHoursAgo) continue;
 
-      const aestDate = new Date(sessionDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = sessionDate;
 
       fixtures.push({
         id:              `f1-${race.round}-${session.key}`,
@@ -937,7 +938,7 @@ async function fetchBBLFixtures(teamId: string): Promise<UpcomingGame[]> {
       const opp     = BBL_OPP_TEAM[oppName] ?? unknownTeam(oppName);
 
       const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = utcDate;
       const eventType = comp.class?.eventType ?? comp.class?.name ?? 'T20';
       const fmt = parseCricketFormat(eventType);
 
@@ -1121,7 +1122,7 @@ async function fetchCricketIntFixtures(teamId: string): Promise<UpcomingGame[]> 
       const isHome  = ourComp?.homeAway === 'home';
       const oppName = oppComp?.team?.displayName ?? 'Unknown';
       const utcDate = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = utcDate;
       const eventType = comp.class?.eventType ?? comp.class?.name ?? '';
       const fmt = parseCricketFormat(eventType);
       const seriesName = e.name ?? comp.description ?? '';
@@ -1208,7 +1209,7 @@ const fetchWorldCupFixtures = unstable_cache(
         const group = espnRoundToGroup(roundHints);
 
         const utcDate = new Date(e.date);
-        const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+        const aestDate = utcDate;
 
         return {
           id:              `wc-${e.id}`,
@@ -1360,7 +1361,7 @@ async function fetchNBAFixtures(teamId: string): Promise<UpcomingGame[]> {
       const opp     = NBA_OPP_TEAM[oppName] ?? unknownTeam(oppName);
 
       const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+      const aestDate = utcDate;
 
       return {
         id:              `nba-${e.id}`,

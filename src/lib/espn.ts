@@ -40,13 +40,27 @@ export function espnDateRange(daysBack: number, daysForward: number): string {
   return `${fmt(start)}-${fmt(end)}`;
 }
 
-/** Format a UTC Date shifted to AEST (UTC+10) as a display string. */
+/** Sydney UTC offset in whole hours for a given instant: 10 (AEST) or 11 (AEDT). */
+function sydneyOffsetHours(utc: Date): number {
+  const local = new Date(utc.toLocaleString('en-US', { timeZone: 'Australia/Sydney' }));
+  const asUtc = new Date(utc.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return Math.round((local.getTime() - asUtc.getTime()) / 3_600_000);
+}
+
+/**
+ * Format a UTC instant as Sydney local time, DST-aware (COR-2).
+ * `d` is the raw UTC instant (NOT pre-shifted). Daylight saving (Oct–Apr) is
+ * honoured, so summer fixtures correctly read AEDT (UTC+11) rather than AEST.
+ * Name retained for call-site stability; output is AEST or AEDT as appropriate.
+ */
 export function aestDisplay(d: Date): string {
-  const h   = d.getUTCHours();
-  const m   = d.getUTCMinutes().toString().padStart(2, '0');
+  const offset = sydneyOffsetHours(d);
+  const local  = new Date(d.getTime() + offset * 3_600_000);
+  const h   = local.getUTCHours();
+  const m   = local.getUTCMinutes().toString().padStart(2, '0');
   const ap  = h >= 12 ? 'PM' : 'AM';
   const h12 = h % 12 || 12;
-  return `${h12}:${m} ${ap} AEST`;
+  return `${h12}:${m} ${ap} ${offset === 11 ? 'AEDT' : 'AEST'}`;
 }
 
 /** Fallback for unknown opponents: grey + initials. */
