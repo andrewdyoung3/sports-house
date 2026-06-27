@@ -46,18 +46,6 @@ export function contrastColor(hex: string): string {
   return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
-/** Add alpha transparency to a hex color. */
-export function hexAlpha(hex: string, alpha: number): string {
-  if (!HEX_RE.test(hex)) return hex;
-  const a = Math.round(alpha * 255).toString(16).padStart(2, '0');
-  return `${hex}${a}`;
-}
-
-/** Validate and return a safe hex color, falling back to a default. */
-export function safeHex(hex: string, fallback = '#6B7280'): string {
-  return HEX_RE.test(hex) ? hex : fallback;
-}
-
 /**
  * Format a UTC ISO date string as a local time with timezone abbreviation.
  * e.g. formatTimeInZone('2026-03-14T09:10:00Z', 'Australia/Brisbane') → '7:10 pm AEST'

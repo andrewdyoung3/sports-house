@@ -2146,35 +2146,6 @@ export function buildDataBlock(
   return lines.join('\n');
 }
 
-/**
- * Assembles the LLM user-message from the fixture context.
- *
- * @param enabledBlocks - when provided, only these blocks are included. When omitted, all blocks
- *   are included and the output is byte-identical to buildDataBlock with the same args.
- */
-export function assemblePrompt(
-  league: string,
-  teamName: string,
-  opponentName: string,
-  context: PreviewContext,
-  teamResults: GameResult[],
-  oppResults: GameResult[],
-  competition?: string,
-  compact?: boolean,
-  weather?: WeatherData,
-  venue?: string,
-  isHome?: boolean,
-  teamId?: string,
-  opponentId?: string,
-  seriesSummary?: string,
-  enabledBlocks?: Set<BlockId>,
-): string {
-  return buildDataBlock(
-    league, teamName, opponentName, context, teamResults, oppResults,
-    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
-    enabledBlocks,
-  );
-}
 
 /** Finds lines present in `full` but absent in `without` (preserving order). */
 function diffRemoved(full: string, without: string): string {
@@ -2276,52 +2247,6 @@ export function buildBlocks(
   return { blocks, footer };
 }
 
-export function buildUpdatePrompt(
-  previous: AIPreview,
-  teamName: string,
-  opponentName: string,
-  teamNews: { headline: string; description?: string }[],
-  oppNews:  { headline: string; description?: string }[],
-  context?: PreviewContext,
-): string {
-  const lines: string[] = [
-    'The following match preview was generated earlier. It remains accurate for the fixture context, tactical analysis, and ladder positions.',
-    '',
-    'EXISTING PREVIEW:',
-    JSON.stringify(previous),
-    '',
-    'NEW INFORMATION has emerged since this preview was written:',
-    'UPDATED TEAM NEWS & HEADLINES:',
-  ];
-  teamNews.slice(0, 4).forEach(n => {
-    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
-    lines.push(`  ${teamName}: "${n.headline}"${desc}`);
-  });
-  oppNews.slice(0, 4).forEach(n => {
-    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
-    lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
-  });
-  // Include squad/injury updates if available
-  if (context?.teamSquad?.length || context?.opponentSquad?.length) {
-    lines.push('');
-    lines.push('UPDATED SQUAD DATA (official selection for this game):');
-    if (context.teamSquad?.length)   lines.push(`  ${teamName}: ${context.teamSquad.join(', ')}`);
-    if (context.opponentSquad?.length) lines.push(`  ${opponentName}: ${context.opponentSquad.join(', ')}`);
-  }
-  if (context?.teamInjuryReport?.length || context?.opponentInjuryReport?.length) {
-    lines.push('');
-    lines.push('UPDATED INJURY REPORT:');
-    const fmtInj = (injuries: Array<{ name: string; status: string }>) =>
-      injuries.map(i => `${i.name} (${i.status})`).join(', ');
-    if (context?.teamInjuryReport?.length)     lines.push(`  ${teamName}: ${fmtInj(context.teamInjuryReport)}`);
-    if (context?.opponentInjuryReport?.length) lines.push(`  ${opponentName}: ${fmtInj(context.opponentInjuryReport)}`);
-  }
-  lines.push('');
-  lines.push(
-    'Return the same JSON structure. Update only the sections directly affected by this new information (e.g. playerSpotlight if an injury is mentioned, verdict if significant news shifts the outlook). If squad or injury data has changed, update tactical analysis, playerSpotlight, and verdict as needed. Preserve analysis that remains accurate. Do not invent new facts beyond what is provided above.'
-  );
-  return lines.join('\n');
-}
 
 // ─── Convenience wrapper ────────────────────────────────────────────────────────
 

@@ -344,11 +344,6 @@ export const TEAMS: Team[] = [
   { id: 'bbl-thunder',    name: 'Sydney Thunder',     shortName: 'Thunder',    abbreviation: 'ST',  league: 'bbl', sport: 'Cricket', city: 'Sydney',    country: 'Australia', primaryColor: '#8dc63f', secondaryColor: '#00473e', venue: 'ENGIE Stadium' },
 ];
 
-/** Look up a team by its ID. */
-export function getTeamById(id: string): Team | undefined {
-  return TEAMS.find(t => t.id === id);
-}
-
 /** Filter teams by league, with optional search query. */
 export function filterTeams(league: SportKey | 'all', query: string): Team[] {
   return TEAMS.filter(t => {
