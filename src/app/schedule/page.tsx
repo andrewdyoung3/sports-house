@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
@@ -15,10 +16,22 @@ import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
 import { NextGameHeroSh } from '@/components/schedule/next-game-hero-sh';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
-import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
-import { WcGroupBrowser } from '@/components/schedule/game-expand-panel';
+
+// PERF-1: the expand panel (~1.8k lines incl. WC/F1/cricket/AI sub-views) only
+// renders after a fixture is expanded (everExpandedIds) or, for WcGroupBrowser, when
+// a World Cup team is followed. Both live in the same module, so both are loaded
+// lazily to keep them out of the schedule route's first-load bundle. ssr:false — the
+// panel is purely interactive and reads localStorage/live data on the client.
+const GameExpandPanel = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.GameExpandPanel),
+  { ssr: false, loading: () => <div className="sh-detail-body" style={{ padding: '20px', opacity: 0.6 }}>Loading…</div> },
+);
+const WcGroupBrowser = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.WcGroupBrowser),
+  { ssr: false },
+);
 import type { Team, UpcomingGame, SportKey, StandingRow } from '@/types';
 import { wcStageLabel } from '@/lib/world-cup';
 

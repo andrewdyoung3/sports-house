@@ -16,7 +16,13 @@
 import { useState } from 'react';
 import { MapPin, Tv, ChevronDown } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
-import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
+import dynamic from 'next/dynamic';
+// PERF-1: lazy-load the panel — it only renders once the hero is expanded (open),
+// so it shouldn't sit in the schedule route's first-load bundle.
+const GameExpandPanel = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.GameExpandPanel),
+  { ssr: false, loading: () => <div style={{ padding: 20, opacity: 0.6 }}>Loading…</div> },
+);
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { formatTimeInZone, dedupeChannels } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
