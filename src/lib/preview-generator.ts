@@ -596,6 +596,33 @@ export async function callOllama(
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 
+/**
+ * DAT-3: stable fingerprint of the news-ish signals that should trigger a future
+ * regeneration (headlines + injuries + named squad). Persisted to
+ * game_previews.news_fingerprint so the column is no longer permanently NULL and a
+ * later staleness trigger can compare it (the trigger itself is deferred — see
+ * CHANGES.md). Mirrors the client's buildFingerprint in spirit (sorted, hashed);
+ * results/weather are intentionally excluded here (the client folds those into its
+ * own localStorage cache key).
+ */
+export function computeNewsFingerprint(ctx: Partial<PreviewContext>): string | null {
+  const headlines = [
+    ...(ctx.teamNews ?? []).map(n => n.headline),
+    ...(ctx.opponentNews ?? []).map(n => n.headline),
+  ].sort();
+  const injuries = [
+    ...(ctx.teamInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+    ...(ctx.opponentInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+  ].sort();
+  const squad = [
+    ...(ctx.teamSquad ?? []),
+    ...(ctx.opponentSquad ?? []),
+  ].sort().join(',').slice(0, 80);
+  if (headlines.length === 0 && injuries.length === 0 && squad.length === 0) return null;
+  const parts = [...headlines, ...injuries, squad].join('\x00');
+  return Buffer.from(parts).toString('base64').slice(0, 48);
+}
+
 export function isValidPreview(v: unknown): v is AIPreview {
   if (!v || typeof v !== 'object') return false;
   const p = v as Record<string, unknown>;
@@ -682,11 +709,12 @@ export async function generateAndStorePreview(
     }
 
     if (isValidPreview(preview)) {
-      await upsertPreview(fixture.id, preview, AI_MODEL, null);
+      const newsFingerprint = computeNewsFingerprint(ctx);  // DAT-3
+      await upsertPreview(fixture.id, preview, AI_MODEL, newsFingerprint);
       // Representative games (State of Origin) key per perspective on the display
       // side — upsert the SAME payload under the mirror key(s) so both resolve.
       for (const mirrorId of fixture.mirrorGameIds ?? []) {
-        await upsertPreview(mirrorId, preview, AI_MODEL, null);
+        await upsertPreview(mirrorId, preview, AI_MODEL, newsFingerprint);
       }
       return { ok: true };
     }

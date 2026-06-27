@@ -317,6 +317,13 @@ async function _buildWorldCupContext(
     console.warn(`[preview-context] WC standings fetch failed: ${err instanceof Error ? err.message : err}`);
   }
 
+  // REL-4: an empty group table for a followed WC team is the silent-drop symptom
+  // (ESPN name-variant drift or feed change). Surface it instead of producing a
+  // contentless group block. check-team-coverage guards the static name maps.
+  if (table.length === 0) {
+    console.warn(`[preview-context] WC group table empty for "${teamName}" (id=${fixture.teamId}) — group/form context will be missing`);
+  }
+
   if (table.length > 0) {
     const sorted  = [...table].sort((a, b) => a.position - b.position);
     const teamRow = sorted.find(r =>

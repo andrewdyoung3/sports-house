@@ -45,8 +45,14 @@ try {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const BATCH        = 5;
-const STALE_MINUTES = 10;
+// DAT-2: must exceed the Ollama generation timeout (15 min) so a job that is
+// legitimately still processing is never reclaimed and generated a second time
+// (which would double-write the same fixture). Matches the 20-min generation lock.
+const STALE_MINUTES = 20;
 const MAX_ATTEMPTS  = 3;
+// DAT-2: terminal (done/failed) rows are never re-read — purge ones older than this
+// so the table doesn't grow unbounded (one row per follow event).
+const PURGE_DONE_DAYS = 7;
 const LOG_FILE      = '/tmp/sporthouse-previewjobs.log';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -99,6 +105,16 @@ async function main() {
       noFixtureCount = 0, failedCount = 0;
 
   try {
+    // 3a. Purge old terminal rows (DAT-2) — best-effort, keeps the table bounded.
+    const purgeTs = new Date(Date.now() - PURGE_DONE_DAYS * 86400_000).toISOString();
+    const { data: purged } = await admin
+      .from('preview_jobs')
+      .delete()
+      .in('status', ['done', 'failed'])
+      .lt('updated_at', purgeTs)
+      .select('id');
+    if (purged && purged.length > 0) log(`purged ${purged.length} terminal job(s) older than ${PURGE_DONE_DAYS}d`);
+
     // 3. Reclaim stale 'processing' jobs (crashed/timed-out poller tick).
     const staleTs = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString();
     const { data: stale } = await admin

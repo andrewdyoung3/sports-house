@@ -21,7 +21,7 @@ import {
   NBA_ESPN_NAME, NHL_ESPN_NAME,
 } from '@/lib/preview-fetchers';
 import { SQUIGGLE_NAME } from '@/lib/afl';
-import { WC_ID_TO_ESPN_NAME } from '@/lib/world-cup';
+import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS } from '@/lib/world-cup';
 import { F1_DRIVER_IDS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { SOO_META } from '@/lib/soo';
 
@@ -72,9 +72,35 @@ console.log(`  ✓ dynamic:      ${byKind.dynamic}  (cricket via cricketdata by 
 console.log(`  · unsupported:  ${byKind.unsupported}  (mock leagues: ${[...UNSUPPORTED_LEAGUES].join(', ')} — no real-data source, intentional)`);
 console.log(`  ✗ GAPS:         ${gaps.length}`);
 
+// ─── REL-4: World Cup ESPN name round-trip + group coverage ──────────────────
+// The WC group context is located by name; a missing/changed ESPN name variant
+// silently drops a followed team's form/H2H/lineups (and can flip group ordering).
+// Assert every WC team id maps to an ESPN name that round-trips back to the same id,
+// and that every followable WC team has a group letter.
+const wcProblems: string[] = [];
+for (const id of Object.keys(WC_TEAM_GROUPS)) {
+  const espnName = WC_ID_TO_ESPN_NAME[id];
+  if (!espnName) {
+    wcProblems.push(`${id}: no WC_ID_TO_ESPN_NAME entry — ESPN form/H2H/lineups will silently drop`);
+    continue;
+  }
+  const back = WC_ESPN_NAME_TO_ID[espnName];
+  if (back !== id) {
+    wcProblems.push(`${id}: "${espnName}" does not round-trip via WC_ESPN_NAME_TO_ID (got ${back ?? 'undefined'})`);
+  }
+}
+for (const t of TEAMS) {
+  if (t.league === 'world_cup' && !(t.id in WC_TEAM_GROUPS)) {
+    wcProblems.push(`${t.id}: followable WC team missing a WC_TEAM_GROUPS letter`);
+  }
+}
+console.log(`\nWorld Cup name round-trip + group coverage: ${wcProblems.length === 0 ? '✓ PASS' : `✗ ${wcProblems.length} PROBLEM(S)`}`);
+for (const p of wcProblems) console.log(`  ✗ ${p}`);
+
 if (gaps.length > 0) {
   console.log('\nUNRESOLVED followable teams in a SUPPORTED league (fix required):');
   for (const g of gaps) console.log(`  - ${g.id}  [${g.league}]  ${g.name}`);
-  process.exit(1);
 }
-console.log('\nPASS — every followable team in a supported league resolves to a generation identity.');
+
+if (gaps.length > 0 || wcProblems.length > 0) process.exit(1);
+console.log('\nPASS — every followable team resolves to a generation identity; WC names round-trip.');
