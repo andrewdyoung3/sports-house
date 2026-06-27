@@ -479,12 +479,38 @@ function stripUnsourcedMediaWatch(output: AIPreview, prompt: string): AIPreview 
 
 // ─── Ollama call ──────────────────────────────────────────────────────────────
 
-export async function callOllama(
+/**
+ * Single source of truth for the output validator set. Run the full faithfulness
+ * suite over a candidate preview and return every violation. Used by both the
+ * generate-with-retry path and the storage gate so the two can never drift.
+ */
+function collectViolations(v: AIPreview, prompt: string): string[] {
+  return [
+    ...validatePointsClaims(v, prompt),
+    ...validateFinalsImminence(v, prompt),
+    ...validatePhaseStakes(v, prompt),
+    ...validateWorldCupGroupRecord(v, prompt),
+    ...validateWorldCupGroupLetter(v, prompt),
+    ...validateF1ChampionshipClaims(v, prompt),
+    ...validatePlayerNames(v, prompt),
+    ...validateInventedStatlines(v, prompt),
+    ...validateInventedYears(v, prompt),
+  ];
+}
+
+/**
+ * Generate a preview (with a one-shot retry on validation failure) and return it
+ * ALONGSIDE any violations that remain after the retry. The caller — never this
+ * function — decides what to do with a still-violating preview (REL-1: the
+ * storage gate refuses to persist it). The validators are unchanged; this only
+ * stops their result from being silently discarded at the boundary.
+ */
+export async function callOllamaValidated(
   prompt: string,
   compact = false,
   maxTokensOverride?: number,
   modelOverride?: string,
-): Promise<AIPreview> {
+): Promise<{ preview: AIPreview; violations: string[] }> {
   const doGenerate = async (): Promise<AIPreview> => {
     const response = await ollamaClient.chat.completions.create({
       model:      modelOverride ?? AI_MODEL,
@@ -527,35 +553,45 @@ export async function callOllama(
     result = await doGenerate();
   }
 
-  const allViolations = (v: AIPreview) => [
-    ...validatePointsClaims(v, prompt),
-    ...validateFinalsImminence(v, prompt),
-    ...validatePhaseStakes(v, prompt),
-    ...validateWorldCupGroupRecord(v, prompt),
-    ...validateWorldCupGroupLetter(v, prompt),
-    ...validateF1ChampionshipClaims(v, prompt),
-    ...validatePlayerNames(v, prompt),
-    ...validateInventedStatlines(v, prompt),
-    ...validateInventedYears(v, prompt),
-  ];
-  const violations = allViolations(result);
-  if (violations.length > 0) {
-    aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
-    try {
-      const retry      = await doGenerate();
-      const retryViols = allViolations(retry);
-      if (retryViols.length === 0) {
-        aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
-        return stripUnsourcedMediaWatch(retry, prompt);
-      }
-      aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — returning first attempt`);
-    } catch (e) {
-      aiLog(`retry-error elapsed=${Date.now() - t0}ms err=${e}`);
-    }
-  } else {
+  const violations = collectViolations(result, prompt);
+  if (violations.length === 0) {
     aiLog(`done elapsed=${Date.now() - t0}ms`);
+    return { preview: stripUnsourcedMediaWatch(result, prompt), violations: [] };
   }
-  return stripUnsourcedMediaWatch(result, prompt);
+
+  aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
+  try {
+    const retry      = await doGenerate();
+    const retryViols = collectViolations(retry, prompt);
+    if (retryViols.length === 0) {
+      aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
+      return { preview: stripUnsourcedMediaWatch(retry, prompt), violations: [] };
+    }
+    // Both attempts violate — surface the better attempt AND its remaining
+    // violations so the caller can refuse to store (REL-1). We no longer return a
+    // "clean-looking" first attempt that silently buries caught hallucinations.
+    aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — both attempts violate, will not store`);
+    const best = retryViols.length < violations.length
+      ? { preview: retry,  violations: retryViols }
+      : { preview: result, violations };
+    return { preview: stripUnsourcedMediaWatch(best.preview, prompt), violations: best.violations };
+  } catch (e) {
+    aiLog(`retry-error elapsed=${Date.now() - t0}ms err=${e}`);
+    return { preview: stripUnsourcedMediaWatch(result, prompt), violations };
+  }
+}
+
+/**
+ * Back-compat wrapper: returns just the preview. Prefer callOllamaValidated on any
+ * path that persists output so caught violations can block storage.
+ */
+export async function callOllama(
+  prompt: string,
+  compact = false,
+  maxTokensOverride?: number,
+  modelOverride?: string,
+): Promise<AIPreview> {
+  return (await callOllamaValidated(prompt, compact, maxTokensOverride, modelOverride)).preview;
 }
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
@@ -634,7 +670,16 @@ export async function generateAndStorePreview(
       fixture.seriesSummary,
     );
 
-    const preview = await callOllama(prompt, false, maxTokens);
+    const { preview, violations } = await callOllamaValidated(prompt, false, maxTokens);
+
+    // REL-1: the validators are the faithfulness backbone — never store output that
+    // still violates them after the retry. Returning ok:false marks the job failed
+    // (poller retries up to MAX_ATTEMPTS); a missing preview is strictly better than
+    // a persisted one that asserts wrong facts. Do NOT relax this to "store anyway".
+    if (violations.length > 0) {
+      aiLog(`refuse-store gameId=${fixture.id} violations=${JSON.stringify(violations)}`);
+      return { ok: false, error: `validation: ${violations.join('; ')}`.slice(0, 480) };
+    }
 
     if (isValidPreview(preview)) {
       await upsertPreview(fixture.id, preview, AI_MODEL, null);
