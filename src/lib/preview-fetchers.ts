@@ -407,12 +407,12 @@ export async function fetchNRLPreview(
     const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
     teamStanding     = parseNRLStandings(entries, teamESPNName);
     opponentStanding = parseNRLStandings(entries, oppESPNName);
-    leagueTable = entries.map((e: any, i: number): LeagueTableRow => {
+    leagueTable = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => {
       const s = e.stats ?? [];
       const sv = (n: string) => Number(s.find((x: any) => x.name === n)?.value ?? 0);
       return {
         name:     e.team?.displayName ?? '',
-        position: i + 1,
+        position: entryRank(e, i),
         played:   sv('gamesPlayed'),
         wins:     sv('gamesWon'),
         draws:    sv('gamesDrawn'),
@@ -585,7 +585,7 @@ async function fetchCompetitionStage(
 
     const parseEntry = (e: any, pos: number): TeamStanding => ({
       name:         e.team?.displayName ?? '',
-      position:     pos + 1,
+      position:     entryRank(e, pos),
       played:       sv(e, 'gamesPlayed'),
       wins:         sv(e, 'wins', 'gamesWon'),
       draws:        sv(e, 'ties', 'gamesDrawn'),
@@ -978,6 +978,27 @@ function statVal(stats: any[], name: string): number {
   return Number(stats.find((s: any) => s.name === name)?.value ?? 0);
 }
 
+/**
+ * COR-1: ESPN standings `entries` are not guaranteed to be returned in rank order
+ * (ties, conference/division splits, alphabetical). Each entry carries a `rank`
+ * stat; prefer it for `position`, falling back to the 1-based array index only when
+ * the feed omits it. Downstream finals-cutoff / Nth-place facts AND the team's own
+ * "Nth place" claim depend on the true rank — trusting array order can feed the
+ * model standings facts that look authoritative but are wrong.
+ */
+export function entryRank(entry: any, fallbackIndex: number): number {
+  const r = Number(entry?.stats?.find((s: any) => s.name === 'rank')?.value);
+  return Number.isFinite(r) && r > 0 ? r : fallbackIndex + 1;
+}
+
+/** Order ESPN standings entries by their true rank (rank stat, fallback to feed order). */
+export function sortByEntryRank(entries: any[]): any[] {
+  return entries
+    .map((e, i) => ({ e, r: entryRank(e, i) }))
+    .sort((a, b) => a.r - b.r)
+    .map(x => x.e);
+}
+
 function parseESPNStandings(entries: any[], displayName: string): TeamStanding | undefined {
   const e = entries.find((x: any) => x.team?.displayName === displayName);
   if (!e) return undefined;
@@ -1047,9 +1068,9 @@ export async function fetchEPLPreview(
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
     // Full table — used server-side for mathematical clinching/elimination analysis
-    leagueTable = entries.map((e: any, i: number): LeagueTableRow => ({
+    leagueTable = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => ({
       name:     e.team?.displayName ?? '',
-      position: i + 1,
+      position: entryRank(e, i),
       played:   statVal(e.stats ?? [], 'gamesPlayed'),
       wins:     statVal(e.stats ?? [], 'wins'),
       draws:    statVal(e.stats ?? [], 'ties'),
@@ -1230,7 +1251,7 @@ export async function fetchRINTPreview(
         Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
       return {
         name,
-        position: idx + 1,
+        position: entryRank(entries[idx], idx),
         played:   sv('gamesPlayed'),
         wins:     sv('wins', 'gamesWon'),
         draws:    sv('ties', 'gamesDrawn'),
@@ -1295,7 +1316,7 @@ function parseSRUStandings(entries: any[], displayName: string, idx: number): Te
     Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
   return {
     name:     displayName,
-    position: idx + 1,
+    position: entryRank(e, idx),
     played:   sv('gamesPlayed'),
     wins:     sv('wins', 'gamesWon'),
     draws:    sv('ties', 'gamesDrawn'),
@@ -1337,13 +1358,13 @@ export async function fetchSRUPreview(
   // Full table — Super Rugby has bonus points (max 5/game: 4 win + 1 try bonus)
   // We record raw competition points; the computeCompetitionStatus function uses
   // ppw=5 for SRU to be conservative (only flags clinching when mathematically certain).
-  const leagueTable: LeagueTableRow[] = entries.map((e: any, i: number): LeagueTableRow => {
+  const leagueTable: LeagueTableRow[] = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => {
     const stats = e.stats ?? [];
     const sv = (...names: string[]): number =>
       Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
     return {
       name:     e.team?.displayName ?? e.team?.name ?? '',
-      position: i + 1,
+      position: entryRank(e, i),
       played:   sv('gamesPlayed'),
       wins:     sv('wins', 'gamesWon'),
       draws:    sv('ties', 'gamesDrawn'),
@@ -1466,7 +1487,7 @@ function parseNBAStandings(entries: any[], displayName: string): TeamStanding | 
   const pct    = rawPct > 1 ? rawPct : rawPct * 100;
   return {
     name:       displayName,
-    position:   idx + 1,
+    position:   entryRank(entries[idx], idx),
     played,
     wins,
     draws:      0,
@@ -1690,7 +1711,7 @@ function parseNHLStandings(entries: any[], displayName: string): TeamStanding | 
     Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
   return {
     name:     displayName,
-    position: idx + 1,
+    position: entryRank(entries[idx], idx),
     played:   sv('gamesPlayed'),
     wins:     sv('wins', 'gamesWon'),
     draws:    sv('otLosses', 'ties', 'gamesDrawn'), // OT losses shown in draws column
