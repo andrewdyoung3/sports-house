@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { formatTimeInZone } from '@/lib/utils';
+import { formatTimeInZone, contrastColor } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -225,7 +225,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             <span
               className="text-[15px] font-black rounded-full px-4 py-1.5 leading-none"
               style={{
-                color: '#ffffff',
+                color: contrastColor(team.primaryColor),
                 background: team.primaryColor,
                 boxShadow: `0 0 22px ${team.primaryColor}80, 0 2px 8px rgba(0,0,0,0.45)`,
               }}
