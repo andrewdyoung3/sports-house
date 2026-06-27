@@ -46,6 +46,19 @@ let _wcRaw: unknown = null;
 // and prod/sandbox stay deterministic within a process run.
 const _weatherCache = new Map<string, import('@/types').WeatherData | undefined>();
 
+// PERF-4: cap in-process cache age. The heartbeat runs as a fresh process per run,
+// but a long-running server (dev / persistent host / sandbox routes) would otherwise
+// serve these module caches indefinitely (e.g. _wcRaw never expired → days-old WC
+// standings). The underlying fetches are still Next-cached with their own revalidate
+// windows; this only bounds the extra in-process memo on top.
+const CACHE_TTL_MS = 30 * 60_000;
+let _cacheBornAt = Date.now();
+function freshenCachesIfStale(): void {
+  if (Date.now() - _cacheBornAt <= CACHE_TTL_MS) return;
+  clearPreviewContextCache();
+  _cacheBornAt = Date.now();
+}
+
 async function _cachedWeather(
   venue: string | undefined,
   kickoffISO: string,
@@ -373,6 +386,7 @@ export async function buildPreviewContext(
   fixture: UpcomingGame,
   teamName: string,
 ): Promise<Partial<PreviewContext>> {
+  freshenCachesIfStale();  // PERF-4: bound in-process cache age on long-running servers
   const ctx: Partial<PreviewContext> = league === 'world_cup'
     ? await _buildWorldCupContext(fixture, teamName)
     : { ...(await cachedRichContext(league, fixture, teamName)) };
@@ -400,4 +414,5 @@ export function clearPreviewContextCache(): void {
   _weatherCache.clear();
   _wcRaw = null;
   _wcScoreboard = null;
+  _cacheBornAt = Date.now();
 }
