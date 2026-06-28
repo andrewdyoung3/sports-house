@@ -437,19 +437,24 @@ function buildDerivedFacts(
     } else if (diff < 0) {
       facts.push(`  • ${opponentName} leads ${teamName} by ${Math.abs(diff)} competition point${Math.abs(diff) === 1 ? '' : 's'} on the table.`);
     } else {
-      // Level on competition points — for AFL, percentage is the tiebreaker
+      // Level on competition points — emit the SHARED points figure (bind-the-value,
+      // same discipline as COR-1) so a correct "level on N points" prose cites the
+      // real number instead of being flagged unsourced, and the model is anchored on
+      // the true figure (curbing adjacent inventions like "1 point clear"). For AFL,
+      // percentage is the official tiebreaker.
+      const pts = teamRow.points;
       if (league === 'afl' && teamRow.percentage !== undefined && oppRow.percentage !== undefined) {
         const tPct = teamRow.percentage;
         const oPct = oppRow.percentage;
         if (tPct > oPct) {
-          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${teamName} hold the higher ladder position on percentage (${tPct.toFixed(1)}% vs ${oPct.toFixed(1)}%) — AFL official tiebreaker.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them). ${teamName} hold the higher ladder position on percentage (${tPct.toFixed(1)}% vs ${oPct.toFixed(1)}%) — AFL official tiebreaker.`);
         } else if (oPct > tPct) {
-          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${opponentName} hold the higher ladder position on percentage (${oPct.toFixed(1)}% vs ${tPct.toFixed(1)}%) — AFL official tiebreaker.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them). ${opponentName} hold the higher ladder position on percentage (${oPct.toFixed(1)}% vs ${tPct.toFixed(1)}%) — AFL official tiebreaker.`);
         } else {
-          facts.push(`  • ${teamName} and ${opponentName} are level on both competition points and percentage.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on both competition points (${pts} each) and percentage.`);
         }
       } else {
-        facts.push(`  • ${teamName} and ${opponentName} are level on competition points.`);
+        facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them).`);
       }
     }
   }

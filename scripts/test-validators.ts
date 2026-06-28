@@ -19,8 +19,10 @@ import {
   validatePlayerNames,
   validateWorldCupGroupLetter,
   validateLadderPosition,
+  validatePointsClaims,
 } from '@/lib/preview-generator';
-import { rankWorldCupGroup, makeWCH2H } from '@/lib/preview-prompt';
+import { rankWorldCupGroup, makeWCH2H, buildDataBlock } from '@/lib/preview-prompt';
+import type { LeagueTableRow, PreviewContext } from '@/types';
 import type { AIPreview, WorldCupGroupRow } from '@/types';
 
 // ─── Harness ──────────────────────────────────────────────────────────────────
@@ -197,6 +199,37 @@ expect('points order is respected outside the tie cluster (USA top, Australia bo
   // No LADDER POSITION fact in the prompt → validator is inert
   expect('inert when no LADDER POSITION fact present',
     validateLadderPosition(preview({ context: 'Brisbane Lions occupy 7th.' }), 'DERIVED FACTS:\n  • nothing here').length === 0);
+}
+
+// ─── Level-on-points figure is emitted + sourced (fix a) ────────────────────────
+// buildDerivedFacts must emit the SHARED points figure for teams level on points so
+// a correct "level on N points" prose validates (and a wrong N is still rejected).
+{
+  const r = (name: string, position: number, points: number, percentage: number): LeagueTableRow =>
+    ({ name, position, played: 15, wins: points / 4, draws: 0, losses: 15 - points / 4, points, percentage });
+  // Geelong (4th) and Brisbane (5th) level on 36 pts; percentage splits them.
+  const table: LeagueTableRow[] = [
+    r('Fremantle', 1, 52, 144), r('Sydney', 2, 48, 135), r('Hawthorn', 3, 40, 113),
+    r('Geelong Cats', 4, 36, 120.6), r('Brisbane Lions', 5, 36, 111.0), r('Adelaide', 6, 36, 110),
+    r('Melbourne', 7, 36, 104), r('Western Bulldogs', 8, 32, 92), r('Gold Coast', 9, 28, 105),
+    r('Collingwood', 10, 28, 99), r('Carlton', 11, 24, 95), r('Richmond', 12, 16, 78),
+  ];
+  const ctx = {
+    leagueTable: table,
+    teamStanding: table.find(t => t.name === 'Geelong Cats'),
+    opponentStanding: table.find(t => t.name === 'Brisbane Lions'),
+    fixtureDate: '2026-07-02T09:30:00Z',
+  } as PreviewContext;
+  const block = buildDataBlock('afl', 'Geelong Cats', 'Brisbane Lions', ctx, [], [], undefined, false, undefined, 'Kardinia Park', true, 'afl-cats', 'afl-lions', undefined);
+
+  expect('derived fact emits the shared points figure ("level on 36 competition points")',
+    /level on 36 competition points/.test(block));
+
+  const sourced = (context: string) => validatePointsClaims(preview({ context }), block);
+  expect('correct "level on 36 competition points" validates (now sourced)',
+    sourced('Geelong and Brisbane are level on 36 competition points.').length === 0);
+  expect('wrong "level on 30 competition points" is still rejected',
+    sourced('Geelong and Brisbane are level on 30 competition points.').length > 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

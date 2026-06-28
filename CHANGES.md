@@ -8,6 +8,27 @@ This pass executed the audit's prioritized fixes while preserving preview faithf
 
 ---
 
+## ⚠️ TRUST CAVEAT — faithfulness coverage is NOT complete for AFL (read before release)
+
+The faithfulness framework (DERIVED FACTS + output validators) now binds standings, ladder
+position, group records, F1 gaps, phase/stakes, player names, statlines and years. It does **NOT yet
+validate two AFL claim types**, which remain **model-generated and unguarded**:
+
+- **Win-scenario arithmetic** — e.g. *"a win would close the gap by 12"* (should be 4). No
+  win-scenario derived fact is computed, and `validatePointsClaims` deliberately skips
+  `"a win would…"` conditionals to avoid false positives. Unbound → can be wrong.
+- **Clinch / berth over-claims** — e.g. *"Sydney already secured a berth"* when not mathematically
+  clinched. The over-claim validator (`validateWorldCupGroupRecord`) is **World-Cup-only** (gated on
+  `GROUP X DERIVED FACTS`); AFL finals-berth/clinch vocabulary is not checked.
+
+**A green "faithfulness-validated" status must NOT be read as covering AFL win-scenario or clinch/berth
+claims.** AFL is materially improved by this branch (authoritative ladder position + position binding +
+the level-on-points figure fix) but is **not certified trustworthy** until the Phase 2 work
+(`afl/scenario-validation`: a win-scenario derived fact + a generalised clinch/berth over-claim
+validator) lands and verifies. Soften this caveat only after that branch is merged.
+
+---
+
 ## 1. What changed (by wave)
 
 ### Wave 0 — Test gate first (TEST-1, TEST-2)
