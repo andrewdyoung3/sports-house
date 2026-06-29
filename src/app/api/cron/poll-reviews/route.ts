@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { appendFileSync } from 'fs';
 import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
 import { acquireLock, releaseLock } from '@/lib/generation-lock';
+import { secretsMatch } from '@/lib/request-guards';
 
 function log(msg: string) {
   const line = `[${new Date().toISOString()}] [poll-reviews] ${msg}\n`;
@@ -26,7 +27,18 @@ function log(msg: string) {
   console.log(msg);
 }
 
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
+// SEC-3: the cron secret is forwarded on the self-call to /api/ai-review. Never send
+// it to a non-loopback, non-https origin — a misconfigured NEXT_PUBLIC_SITE_URL would
+// otherwise exfiltrate it. Fall back to loopback (safe) if BASE looks unsafe.
+function resolveSafeBase(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
+  const isLoopback = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(raw);
+  if (isLoopback || raw.startsWith('https://')) return raw;
+  console.error(`[poll-reviews] refusing unsafe BASE "${raw}" — falling back to loopback`);
+  return 'http://localhost:3001';
+}
+
+const BASE = resolveSafeBase();
 
 // ── How long after kickoff a game might still be "just finished" ──────────────
 const LOOKBACK_MS: Record<string, number> = {
@@ -220,8 +232,7 @@ async function postReview(job: ReviewJob, secret: string): Promise<'ok' | 'cache
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret');
-  if (!secret || secret !== process.env.CRON_SECRET) {
+  if (!secretsMatch(req.headers.get('x-cron-secret'), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -262,8 +273,9 @@ export async function GET(req: NextRequest) {
   }
 
   const counts = { generated: 0, cached: 0, errors: 0 };
+  const cronSecret = process.env.CRON_SECRET ?? '';
   for (const job of filteredJobs) {
-    const outcome = await postReview(job, secret);
+    const outcome = await postReview(job, cronSecret);
     if (outcome === 'ok')     counts.generated++;
     if (outcome === 'cached') counts.cached++;
     if (outcome === 'error')  counts.errors++;

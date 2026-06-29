@@ -4,9 +4,16 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp, Tv, MapPin } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TeamBadge } from '@/components/ui/team-badge';
-import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
+import dynamic from 'next/dynamic';
+// PERF-1: the hero is above-the-fold, so its static import of the ~1.8k-line panel
+// pulled that module into the schedule first-load bundle. The panel only renders
+// after the hero is expanded (everExpanded), so load it lazily.
+const GameExpandPanel = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.GameExpandPanel),
+  { ssr: false, loading: () => <div style={{ padding: 20, opacity: 0.6 }}>Loading…</div> },
+);
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { formatTimeInZone } from '@/lib/utils';
+import { formatTimeInZone, contrastColor } from '@/lib/utils';
 import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -225,7 +232,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
             <span
               className="text-[15px] font-black rounded-full px-4 py-1.5 leading-none"
               style={{
-                color: '#ffffff',
+                color: contrastColor(team.primaryColor),
                 background: team.primaryColor,
                 boxShadow: `0 0 22px ${team.primaryColor}80, 0 2px 8px rgba(0,0,0,0.45)`,
               }}

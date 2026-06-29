@@ -18,6 +18,7 @@ import type {
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { fetchTimeout } from '@/lib/espn';
+import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
 import {
@@ -404,15 +405,15 @@ export async function fetchNRLPreview(
 
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseNRLStandings(entries, teamESPNName);
     opponentStanding = parseNRLStandings(entries, oppESPNName);
-    leagueTable = entries.map((e: any, i: number): LeagueTableRow => {
+    leagueTable = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => {
       const s = e.stats ?? [];
       const sv = (n: string) => Number(s.find((x: any) => x.name === n)?.value ?? 0);
       return {
         name:     e.team?.displayName ?? '',
-        position: i + 1,
+        position: entryRank(e, i),
         played:   sv('gamesPlayed'),
         wins:     sv('gamesWon'),
         draws:    sv('gamesDrawn'),
@@ -585,7 +586,7 @@ async function fetchCompetitionStage(
 
     const parseEntry = (e: any, pos: number): TeamStanding => ({
       name:         e.team?.displayName ?? '',
-      position:     pos + 1,
+      position:     entryRank(e, pos),
       played:       sv(e, 'gamesPlayed'),
       wins:         sv(e, 'wins', 'gamesWon'),
       draws:        sv(e, 'ties', 'gamesDrawn'),
@@ -620,7 +621,7 @@ async function fetchCompetitionStage(
     if (!isGroupPhase) {
       const entries: any[] =
         data.standings?.entries ??
-        data.children?.[0]?.standings?.entries ?? [];
+        espnEntries(data);
       if (entries.length > 0) {
         const ti = entries.findIndex((e: any) => e.team?.displayName === teamName);
         const oi = entries.findIndex((e: any) => e.team?.displayName === opponentName);
@@ -714,7 +715,8 @@ async function fetchFirstLegResult(
       teamScore:     parseInt(teamComp.score ?? '0', 10),
       opponentScore: parseInt(oppComp.score  ?? '0', 10),
     };
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] first-leg result parse failed: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
@@ -747,14 +749,19 @@ function mapEspnGame(g: any): GameResult {
   const homeSc  = parseInt(g.homeTeamScore ?? '0', 10) || 0;
   const awaySc  = parseInt(g.awayTeamScore ?? '0', 10) || 0;
   const result  = String(g.gameResult ?? '').toUpperCase();
+  const teamScore     = isHome ? homeSc : awaySc;
+  const opponentScore = isHome ? awaySc : homeSc;
+  // COR-3: some ESPN soccer/WC summaries report only 'W'/'L' (no explicit 'D'), so a
+  // level game would otherwise be mislabelled a loss. Fall back to the score line.
+  const isDraw = result === 'D' || (result !== 'W' && result !== 'L' && teamScore === opponentScore);
   return {
     opponent:      g.opponent?.displayName ?? '',
     opponentAbbr:  g.opponent?.abbreviation ?? '',
     isHome,
-    isWin:         result === 'W',
-    isDraw:        result === 'D',
-    teamScore:     isHome ? homeSc : awaySc,
-    opponentScore: isHome ? awaySc : homeSc,
+    isWin:         result === 'W' || (result !== 'L' && !isDraw && teamScore > opponentScore),
+    isDraw,
+    teamScore,
+    opponentScore,
     date:          g.gameDate ?? '',
   };
 }
@@ -890,7 +897,8 @@ export async function fetchESPNMatchExtras(
     if (oppLineup.length  > 0) out.opponentLastLineup = oppLineup;
 
     return out;
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] ESPN match-extras (form/H2H/lineup) parse failed: ${err instanceof Error ? err.message : err}`);
     return {};
   }
 }
@@ -921,7 +929,8 @@ async function fetchESPNInjuries(
         status: (i.status ?? 'Unknown') as string,
       }))
       .filter((i: any) => i.name);
-  } catch {
+  } catch (err) {
+    console.warn(`[preview-fetchers] ESPN injuries parse failed (${sportPath}/${espnTeamId}): ${err instanceof Error ? err.message : err}`);
     return [];
   }
 }
@@ -977,6 +986,11 @@ export const ESPN_TEAM_NAME: Record<string, string> = {
 function statVal(stats: any[], name: string): number {
   return Number(stats.find((s: any) => s.name === name)?.value ?? 0);
 }
+
+// COR-1 standings-rank helpers now live in lib/espn-standings.ts (CQ-2), imported at
+// the top of this file; re-exported for back-compat with callers (e.g. the test
+// suite) that imported them from preview-fetchers.
+export { entryRank, sortByEntryRank, espnEntries };
 
 function parseESPNStandings(entries: any[], displayName: string): TeamStanding | undefined {
   const e = entries.find((x: any) => x.team?.displayName === displayName);
@@ -1043,13 +1057,13 @@ export async function fetchEPLPreview(
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
     // ESPN v2 standings: data.children[0].standings.entries (not an array)
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseESPNStandings(entries, teamName);
     opponentStanding = parseESPNStandings(entries, opponentName);
     // Full table — used server-side for mathematical clinching/elimination analysis
-    leagueTable = entries.map((e: any, i: number): LeagueTableRow => ({
+    leagueTable = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => ({
       name:     e.team?.displayName ?? '',
-      position: i + 1,
+      position: entryRank(e, i),
       played:   statVal(e.stats ?? [], 'gamesPlayed'),
       wins:     statVal(e.stats ?? [], 'wins'),
       draws:    statVal(e.stats ?? [], 'ties'),
@@ -1074,7 +1088,7 @@ export async function fetchEPLPreview(
           );
           if (res.ok) {
             const data = await res.json();
-            const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+            const entries: any[] = espnEntries(data);
             // Try to find by ESPN ID or by display name
             const found = entries.find((e: any) =>
               String(e.team?.id) === divEntry.espnId ||
@@ -1216,9 +1230,7 @@ export async function fetchRINTPreview(
   if (standRes.status === 'fulfilled' && standRes.value?.ok) {
     const data = await standRes.value.json();
     const entries: any[] =
-      data.children?.[0]?.standings?.entries ??
-      data.standings?.entries ??
-      [];
+      espnEntries(data);
 
     const parseRintStanding = (name: string): TeamStanding | undefined => {
       const idx = entries.findIndex((x: any) =>
@@ -1230,7 +1242,7 @@ export async function fetchRINTPreview(
         Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
       return {
         name,
-        position: idx + 1,
+        position: entryRank(entries[idx], idx),
         played:   sv('gamesPlayed'),
         wins:     sv('wins', 'gamesWon'),
         draws:    sv('ties', 'gamesDrawn'),
@@ -1295,7 +1307,7 @@ function parseSRUStandings(entries: any[], displayName: string, idx: number): Te
     Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
   return {
     name:     displayName,
-    position: idx + 1,
+    position: entryRank(e, idx),
     played:   sv('gamesPlayed'),
     wins:     sv('wins', 'gamesWon'),
     draws:    sv('ties', 'gamesDrawn'),
@@ -1320,9 +1332,7 @@ export async function fetchSRUPreview(
 
   const data = await res.json();
   const entries: any[] =
-    data.children?.[0]?.standings?.entries ??
-    data.standings?.entries ??
-    [];
+    espnEntries(data);
 
   const teamIdx = entries.findIndex((x: any) =>
     x.team?.displayName === teamName || x.team?.name === teamName,
@@ -1337,13 +1347,13 @@ export async function fetchSRUPreview(
   // Full table — Super Rugby has bonus points (max 5/game: 4 win + 1 try bonus)
   // We record raw competition points; the computeCompetitionStatus function uses
   // ppw=5 for SRU to be conservative (only flags clinching when mathematically certain).
-  const leagueTable: LeagueTableRow[] = entries.map((e: any, i: number): LeagueTableRow => {
+  const leagueTable: LeagueTableRow[] = sortByEntryRank(entries).map((e: any, i: number): LeagueTableRow => {
     const stats = e.stats ?? [];
     const sv = (...names: string[]): number =>
       Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
     return {
       name:     e.team?.displayName ?? e.team?.name ?? '',
-      position: i + 1,
+      position: entryRank(e, i),
       played:   sv('gamesPlayed'),
       wins:     sv('wins', 'gamesWon'),
       draws:    sv('ties', 'gamesDrawn'),
@@ -1466,7 +1476,7 @@ function parseNBAStandings(entries: any[], displayName: string): TeamStanding | 
   const pct    = rawPct > 1 ? rawPct : rawPct * 100;
   return {
     name:       displayName,
-    position:   idx + 1,
+    position:   entryRank(entries[idx], idx),
     played,
     wins,
     draws:      0,
@@ -1581,7 +1591,7 @@ export async function fetchNBAPreview(teamId: string, opponentName: string, even
   let opponentStanding: TeamStanding | undefined;
   if (standingsRes.status === 'fulfilled' && standingsRes.value?.ok) {
     const data = await standingsRes.value.json();
-    const entries: any[] = data.children?.[0]?.standings?.entries ?? data.standings?.entries ?? [];
+    const entries: any[] = espnEntries(data);
     teamStanding     = parseNBAStandings(entries, teamName);
     opponentStanding = parseNBAStandings(entries, opponentName);
   }
@@ -1690,7 +1700,7 @@ function parseNHLStandings(entries: any[], displayName: string): TeamStanding | 
     Number(stats.find((s: any) => names.includes(s.name))?.value ?? 0);
   return {
     name:     displayName,
-    position: idx + 1,
+    position: entryRank(entries[idx], idx),
     played:   sv('gamesPlayed'),
     wins:     sv('wins', 'gamesWon'),
     draws:    sv('otLosses', 'ties', 'gamesDrawn'), // OT losses shown in draws column
@@ -1715,8 +1725,7 @@ export async function fetchNHLPreview(teamId: string, opponentName: string, even
   if (standRes.status === 'fulfilled' && standRes.value?.ok) {
     const data    = await standRes.value.json();
     const entries: any[] =
-      data.children?.[0]?.standings?.entries ??
-      data.standings?.entries ?? [];
+      espnEntries(data);
     teamStanding     = parseNHLStandings(entries, teamName);
     opponentStanding = parseNHLStandings(entries, opponentName);
   }

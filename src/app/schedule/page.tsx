@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
@@ -14,10 +16,22 @@ import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
 import { NextGameHeroSh } from '@/components/schedule/next-game-hero-sh';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
-import { GameExpandPanel } from '@/components/schedule/game-expand-panel';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
-import { WcGroupBrowser } from '@/components/schedule/game-expand-panel';
+
+// PERF-1: the expand panel (~1.8k lines incl. WC/F1/cricket/AI sub-views) only
+// renders after a fixture is expanded (everExpandedIds) or, for WcGroupBrowser, when
+// a World Cup team is followed. Both live in the same module, so both are loaded
+// lazily to keep them out of the schedule route's first-load bundle. ssr:false — the
+// panel is purely interactive and reads localStorage/live data on the client.
+const GameExpandPanel = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.GameExpandPanel),
+  { ssr: false, loading: () => <div className="sh-detail-body" style={{ padding: '20px', opacity: 0.6 }}>Loading…</div> },
+);
+const WcGroupBrowser = dynamic(
+  () => import('@/components/schedule/game-expand-panel').then(m => m.WcGroupBrowser),
+  { ssr: false },
+);
 import type { Team, UpcomingGame, SportKey, StandingRow } from '@/types';
 import { wcStageLabel } from '@/lib/world-cup';
 
@@ -319,7 +333,10 @@ interface ScheduleRowProps {
   /** teamId → league position, shown in league-browse mode for AFL/NRL/EPL. */
   standingsMap?: Map<string, number>;
   onHover: (dateKey: string | null) => void;
-  onToggle: () => void;
+  /** Receives the game id so the parent can pass a single stable callback (PERF-2). */
+  onToggle: (id: string) => void;
+  /** id of the expand panel this row controls, for aria-controls (UX-1). */
+  panelId: string;
 }
 
 function ScheduleRow({
@@ -332,6 +349,7 @@ function ScheduleRow({
   standingsMap,
   onHover,
   onToggle,
+  panelId,
 }: ScheduleRowProps) {
   const { team } = game;
   const isF1           = team.league === 'f1';
@@ -409,13 +427,14 @@ function ScheduleRow({
       <article
         className={'sh-fix' + (isExpanded ? ' is-open' : '')}
         style={{ '--accent': team.primaryColor } as React.CSSProperties}
-        onClick={onToggle}
+        onClick={() => onToggle(game.id)}
         onMouseEnter={() => onHover(dateKey)}
         onMouseLeave={() => onHover(null)}
         role="button"
         aria-expanded={isExpanded}
+        aria-controls={panelId}
         tabIndex={0}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
         <div className="sh-fix-wm" aria-hidden="true">
@@ -515,13 +534,14 @@ function ScheduleRow({
             ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
             : undefined,
       }}
-      onClick={onToggle}
+      onClick={() => onToggle(game.id)}
       onMouseEnter={() => onHover(dateKey)}
       onMouseLeave={() => onHover(null)}
       role="button"
       aria-expanded={isExpanded}
+        aria-controls={panelId}
       tabIndex={0}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
     >
       {/* ── Team-colour ambient tint (sits above glass, below content) ── */}
       <div
@@ -877,7 +897,14 @@ function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow:
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// PERF-2: memoized so a hover/glow state change in the parent only re-renders the
+// row whose isHighlighted/isExpanded actually changed, not the whole fixture list.
+// Relies on stable props (toggleExpand/handleCalendarHover are useCallback,
+// standingsMap is useMemo) — keep them stable or memoization is defeated.
+const ScheduleRowMemo = memo(ScheduleRow);
+
 export default function SchedulePage() {
+  const router = useRouter();
   const [teams,    setTeams]    = useState<Team[]>([]);
   const [allGames, setAllGames] = useState<ScheduleEntry[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -929,6 +956,23 @@ export default function SchedulePage() {
     window.addEventListener('sporthouse:open-calendar', handler);
     return () => window.removeEventListener('sporthouse:open-calendar', handler);
   }, [openCalendar]);
+
+  // UX-2: the mobile calendar is a modal sheet — close on Escape, move focus into it
+  // on open, and restore focus to the previously-focused element on close.
+  const calendarCloseRef = useRef<HTMLButtonElement | null>(null);
+  const calendarReturnFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!calendarOpen) return;
+    calendarReturnFocusRef.current = (document.activeElement as HTMLElement) ?? null;
+    const t = setTimeout(() => calendarCloseRef.current?.focus(), 50);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeCalendar(); };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('keydown', onKey);
+      calendarReturnFocusRef.current?.focus?.();
+    };
+  }, [calendarOpen, closeCalendar]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('cal') === '1') {
@@ -1089,6 +1133,10 @@ export default function SchedulePage() {
     const eg = [...allGames, ...currentLeagueGames].find(g => g.id === expandedId);
     if (eg?.opponentId) ids.push(eg.opponentId);
     return new Set(ids);
+    // leagueCacheVersion is a deliberate recompute trigger: this reads from
+    // leagueCacheRef.current (a ref, which doesn't re-render), so the version bump is
+    // how cache mutations propagate. eslint sees it as "unused" — it is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teams, expandedId, allGames, activeLeagueId, leagueCacheVersion]);
 
   const isLeagueMode = activeLeagueId !== null;
@@ -1106,6 +1154,8 @@ export default function SchedulePage() {
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
       return true;
     });
+    // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
@@ -1206,9 +1256,11 @@ export default function SchedulePage() {
 
   // Calendar interaction handlers
   const handleCalendarHover = useCallback((dk: string | null) => setHoveredDateKey(dk), []);
+  // UX-5: SPA navigation instead of a full page reload (the results page scrolls to
+  // the #result-date-* hash once its data loads).
   const handlePastDayClick  = useCallback((dk: string) => {
-    window.location.href = `/results#result-date-${dk}`;
-  }, []);
+    router.push(`/results#result-date-${dk}`);
+  }, [router]);
 
   const handleDayClick = useCallback((dk: string) => {
     const el = document.getElementById(`date-section-${dk}`);
@@ -1431,7 +1483,7 @@ export default function SchedulePage() {
                                 : undefined,
                           }}
                         >
-                          <ScheduleRow
+                          <ScheduleRowMemo
                             game={game}
                             userTz={userTz}
                             dateKey={dateKey}
@@ -1440,10 +1492,16 @@ export default function SchedulePage() {
                             isFollowed={isFollowed}
                             standingsMap={standingsMap}
                             onHover={handleCalendarHover}
-                            onToggle={() => toggleExpand(game.id)}
+                            onToggle={toggleExpand}
+                            panelId={`fixpanel-${game.id}`}
                           />
                           {everExpandedIds.has(game.id) && (
-                            <div style={{ display: isExpanded ? 'block' : 'none' }}>
+                            <div
+                              id={`fixpanel-${game.id}`}
+                              role="region"
+                              aria-label="Match details"
+                              style={{ display: isExpanded ? 'block' : 'none' }}
+                            >
                               <GameExpandPanel
                                 game={game}
                                 compact={isLeagueMode}
@@ -1540,6 +1598,9 @@ export default function SchedulePage() {
           />
           {/* Sheet — slides up on open, down on close */}
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Calendar"
             className={[
               'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
               'transition-transform duration-[420ms] ease-out',
@@ -1549,7 +1610,9 @@ export default function SchedulePage() {
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold text-white/80">Calendar</p>
               <button
+                ref={calendarCloseRef}
                 onClick={() => closeCalendar()}
+                aria-label="Close calendar"
                 className="text-white/40 hover:text-white transition-colors p-1"
               >
                 <X className="h-5 w-5" />

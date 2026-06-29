@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { TeamStanding } from '@/types';
 import { F1_DRIVERS, F1_CONSTRUCTOR_TEAMS, ERGAST_ID_TO_TEAM_ID } from '@/lib/f1-data';
 import { fetchTimeout } from '@/lib/espn';
+import { espnEntries, entryRank, sortByEntryRank } from '@/lib/espn-standings';
 import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID } from '@/lib/world-cup';
 
 export type StandingRow = TeamStanding & { teamId?: string };
@@ -94,11 +95,11 @@ async function fetchNRLStandings(): Promise<StandingRow[]> {
   );
   if (!res.ok) return [];
   const data    = await res.json();
-  const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+  const entries: any[] = sortByEntryRank(espnEntries(data));
   const stat = (e: any, n: string) =>
     (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
   return entries.map((e, i): StandingRow => {
-    const cur  = i + 1;
+    const cur  = entryRank(e, i);
     const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name:       e.team?.displayName ?? '',
@@ -146,11 +147,11 @@ async function fetchEPLStandings(): Promise<StandingRow[]> {
   );
   if (!res.ok) return [];
   const data    = await res.json();
-  const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+  const entries: any[] = sortByEntryRank(espnEntries(data));
   const stat = (e: any, n: string) =>
     (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
   return entries.map((e, i): StandingRow => {
-    const cur  = i + 1;
+    const cur  = entryRank(e, i);
     const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name:         e.team?.displayName ?? '',
@@ -199,14 +200,12 @@ async function fetchSuperRugbyStandings(): Promise<StandingRow[]> {
   const data = await res.json();
   // Super Rugby may use a conference structure; try children[0] then root
   const entries: any[] =
-    data.children?.[0]?.standings?.entries ??
-    data.standings?.entries ??
-    [];
+    sortByEntryRank(espnEntries(data));
   const stat = (e: any, ...names: string[]) =>
     names.reduce((v, n) => v || ((e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0), 0 as number);
   return entries.map((e, i): StandingRow => {
     const name = e.team?.displayName ?? e.team?.name ?? '';
-    const cur  = i + 1;
+    const cur  = entryRank(e, i);
     const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name,
@@ -243,15 +242,13 @@ async function fetchRINTStandings(): Promise<StandingRow[]> {
   if (!res.ok) return [];
   const data = await res.json();
   const entries: any[] =
-    data.children?.[0]?.standings?.entries ??
-    data.standings?.entries ??
-    [];
+    sortByEntryRank(espnEntries(data));
   const stat = (e: any, ...names: string[]) =>
     names.reduce((v, n) => v || ((e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0), 0 as number);
 
   return entries.map((e, i): StandingRow => {
     const name = e.team?.displayName ?? e.team?.name ?? '';
-    const cur  = i + 1;
+    const cur  = entryRank(e, i);
     const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     return {
       name,
@@ -406,11 +403,11 @@ async function fetchBBLStandings(): Promise<StandingRow[]> {
   );
   if (!res.ok) return [];
   const data    = await res.json();
-  const entries: any[] = data.children?.[0]?.standings?.entries ?? [];
+  const entries: any[] = sortByEntryRank(espnEntries(data));
   const stat = (e: any, n: string) =>
     (e.stats as any[])?.find((s: any) => s.name === n)?.value ?? 0;
   return entries.map((e, i): StandingRow => {
-    const cur  = i + 1;
+    const cur  = entryRank(e, i);
     const prev = typeof e.previousRank === 'number' ? e.previousRank : undefined;
     const nrr  = stat(e, 'netrr');
     return {
@@ -462,7 +459,7 @@ async function fetchWorldCupStandings(teamId?: string): Promise<StandingRow[]> {
       return {
         name,
         teamId:       WC_ESPN_NAME_TO_ID[name],
-        position:     i + 1,
+        position:     entryRank(e, i),
         played:       stat(e, 'gamesPlayed', 'played'),
         wins:         stat(e, 'wins'),
         draws:        stat(e, 'ties', 'draws'),

@@ -6,6 +6,7 @@ import { Plus, Settings, LayoutGrid } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, PREFS_UPDATED_EVENT } from '@/lib/user-prefs';
 import { LEAGUES } from '@/lib/teams';
+import { contrastColor } from '@/lib/utils';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { TeamFeedCard } from '@/components/dashboard/team-feed-card';
 import { SkeletonCard } from '@/components/ui/skeleton';
@@ -97,8 +98,8 @@ export default function DashboardPage() {
                         style={{ color: 'var(--text-2)' }}
                       >
                         <span
-                          className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[9px] font-black shrink-0 transition-opacity"
-                          style={{ backgroundColor: team.primaryColor }}
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-black shrink-0 transition-opacity"
+                          style={{ backgroundColor: team.primaryColor, color: contrastColor(team.primaryColor) }}
                         >
                           {team.abbreviation.slice(0, 2)}
                         </span>

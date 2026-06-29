@@ -9,7 +9,8 @@
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow, WorldCupGroupRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
+import { wcStageLabel, wcKnockoutStake, WC_KNOCKOUT_ROUNDS, makeWCH2H, rankWorldCupGroup } from '@/lib/world-cup';
+import type { WCGroupH2H, WCGroupMeeting } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
@@ -202,7 +203,13 @@ function computeCompetitionStatus(
   const totalRounds = LEAGUE_TOTAL_ROUNDS[league];
   if (!maxPpg || !totalRounds || table.length === 0) return [];
 
-  const sorted = [...table].sort((a, b) => b.points - a.points);
+  // ONE canonical ladder order — the feed's own `position` (the live, authoritative
+  // order incl. the league's official tiebreakers), the same order buildDerivedFacts
+  // and buildTableSection use. Do NOT re-derive from points + hardcoded tiebreakers:
+  // that would reintroduce per-season "rules from memory" staleness and could replace
+  // a correct feed order with a wrong one. (World Cup recomputes separately because
+  // its feed `position` is draw-seeding, not the live group rank.)
+  const sorted = [...table].sort((a, b) => a.position - b.position);
   const notes: string[] = [];
   const rem = (t: LeagueTableRow) => Math.max(0, totalRounds - t.played);
 
@@ -407,6 +414,22 @@ function buildDerivedFacts(
     'DERIVED FACTS — pre-computed from the table above. Use these numbers verbatim; do NOT recalculate:',
   ];
 
+  // ── Authoritative ladder position ─────────────────────────────────────────
+  // The single source for any "Nth" the prose may state about a fixture team — the
+  // ordinal LEADS so adjacent zone/range descriptors below (e.g. the AFL "wildcard
+  // band") can't be misread as the team's own position. Bound deterministically by
+  // validateLadderPosition. Uses the feed's `position` (canonical order); for World
+  // Cup the position is the recomputed group rank (handled in the group block).
+  {
+    const posBits: string[] = [];
+    for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
+      if (row && row.points > 0) posBits.push(`${name} — ${ordinalSuffix(row.position)} of ${sorted.length}`);
+    }
+    if (posBits.length > 0) {
+      facts.push(`  • LADDER POSITION (use this exact ordinal for each team; do not restate it as any other number): ${posBits.join('; ')}.`);
+    }
+  }
+
   // ── Head-to-head gap ──────────────────────────────────────────────────────
   if (teamRow && oppRow && (teamRow.points > 0 || oppRow.points > 0)) {
     const diff = (teamRow.points) - (oppRow.points);
@@ -415,19 +438,24 @@ function buildDerivedFacts(
     } else if (diff < 0) {
       facts.push(`  • ${opponentName} leads ${teamName} by ${Math.abs(diff)} competition point${Math.abs(diff) === 1 ? '' : 's'} on the table.`);
     } else {
-      // Level on competition points — for AFL, percentage is the tiebreaker
+      // Level on competition points — emit the SHARED points figure (bind-the-value,
+      // same discipline as COR-1) so a correct "level on N points" prose cites the
+      // real number instead of being flagged unsourced, and the model is anchored on
+      // the true figure (curbing adjacent inventions like "1 point clear"). For AFL,
+      // percentage is the official tiebreaker.
+      const pts = teamRow.points;
       if (league === 'afl' && teamRow.percentage !== undefined && oppRow.percentage !== undefined) {
         const tPct = teamRow.percentage;
         const oPct = oppRow.percentage;
         if (tPct > oPct) {
-          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${teamName} hold the higher ladder position on percentage (${tPct.toFixed(1)}% vs ${oPct.toFixed(1)}%) — AFL official tiebreaker.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them). ${teamName} hold the higher ladder position on percentage (${tPct.toFixed(1)}% vs ${oPct.toFixed(1)}%) — AFL official tiebreaker.`);
         } else if (oPct > tPct) {
-          facts.push(`  • ${teamName} and ${opponentName} are level on competition points. ${opponentName} hold the higher ladder position on percentage (${oPct.toFixed(1)}% vs ${tPct.toFixed(1)}%) — AFL official tiebreaker.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them). ${opponentName} hold the higher ladder position on percentage (${oPct.toFixed(1)}% vs ${tPct.toFixed(1)}%) — AFL official tiebreaker.`);
         } else {
-          facts.push(`  • ${teamName} and ${opponentName} are level on both competition points and percentage.`);
+          facts.push(`  • ${teamName} and ${opponentName} are level on both competition points (${pts} each) and percentage.`);
         }
       } else {
-        facts.push(`  • ${teamName} and ${opponentName} are level on competition points.`);
+        facts.push(`  • ${teamName} and ${opponentName} are level on ${pts} competition points (0 points between them).`);
       }
     }
   }
@@ -449,7 +477,10 @@ function buildDerivedFacts(
       } else if (pos <= finalsN) {
         const insideTen = row.points - (wildcardRow?.points ?? 0);
         const outsideSix = (directRow?.points ?? 0) - row.points;
-        facts.push(`  • ${name} are ${ordinalSuffix(pos)} — in the wildcard zone (7th–10th, would play a wildcard final): ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
+        // Ordinal stands alone as its own sentence with an "of N" anchor; the band is
+        // a separate descriptive clause so its 7th–10th range can't be misread as the
+        // team's position (the 8→7 collapse this fix targets).
+        facts.push(`  • ${name} sit ${ordinalSuffix(pos)} of ${sorted.length}. That is inside the wildcard band — the teams finishing 7th through 10th play a wildcard final — ${outsideSix} point${outsideSix === 1 ? '' : 's'} outside the top-${aflDirect} direct line and ${insideTen} inside the top-${finalsN} finals cutoff.`);
       } else {
         const gap = (wildcardRow?.points ?? 0) - row.points;
         facts.push(`  • ${name} are ${ordinalSuffix(pos)} — outside the top ${finalsN} (out of finals), ${gap} point${gap === 1 ? '' : 's'} behind the wildcard cutoff (${ordinalSuffix(finalsN)} is ${wildcardRow?.name ?? 'n/a'} with ${wildcardRow?.points ?? 0} pts).`);
@@ -570,99 +601,13 @@ function buildDerivedFacts(
 }
 
 /**
- * GROUP TOURNAMENT derived facts (World Cup). The live feed's `position` is the
- * DRAW/seeding order, NOT the live group rank — it lists 0-pt teams above 3-pt
- * teams — so we recompute the standing from the rules (points → goal difference →
- * goals scored). Emits each fixture team's GROUP record bound verbatim plus a
- * conservative stake. The context field must use THIS group record, never the
- * all-competitions RECENT FORM line (the source of the WC group-record error).
+ * GROUP TOURNAMENT derived facts (World Cup). Emits each fixture team's GROUP record
+ * bound verbatim plus a conservative stake. The context field must use THIS group
+ * record, never the all-competitions RECENT FORM line (the source of the WC
+ * group-record error). rankWorldCupGroup and makeWCH2H live in world-cup.ts.
  *
  * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
  */
-/**
- * Result of a played group match between two teams, both from the FIRST team's
- * perspective. `null` from the provider means the two teams have not met. Used to
- * apply the 2026 head-to-head-first tiebreaker among teams level on points.
- */
-export interface WCGroupMeeting { aPts: number; bPts: number; aGF: number; bGF: number }
-export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null;
-
-/**
- * Rank a World Cup group applying the 2026 in-group order: points first, then —
- * among teams LEVEL on points — head-to-head (H2H points → H2H GD → H2H goals),
- * then overall goal difference, then overall goals scored. (Reverses the pre-2026
- * overall-GD-first rule.)
- *
- * Conservatism: H2H is applied to a level cluster ONLY when EVERY pair in that
- * cluster has been played (the mini-table is complete). If any pair has not met
- * (e.g. teams level on points who have not yet played, or a partially-played 3-way
- * tie), it falls back to overall GD provisionally — never asserting an order it
- * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
- * which preserves the prior behaviour exactly.
- */
-/**
- * Build the head-to-head provider from completed intra-group results. Returns a
- * function answering h2h(a, b) → their group meeting (a's perspective) or null if
- * they have not met. Only COMPLETED matches are passed in, so a scheduled meeting
- * is naturally "not met" (the not-met branch falls back to overall GD).
- */
-export function makeWCH2H(
-  results?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>,
-): WCGroupH2H | undefined {
-  if (!results || results.length === 0) return undefined;
-  return (aName, bName) => {
-    for (const r of results) {
-      const aIsA = r.teamA === aName && r.teamB === bName;
-      const aIsB = r.teamA === bName && r.teamB === aName;
-      if (!aIsA && !aIsB) continue;
-      const aGF = aIsA ? r.goalsA : r.goalsB;
-      const bGF = aIsA ? r.goalsB : r.goalsA;
-      const aPts = aGF > bGF ? 3 : aGF === bGF ? 1 : 0;
-      const bPts = bGF > aGF ? 3 : aGF === bGF ? 1 : 0;
-      return { aPts, bPts, aGF, bGF };
-    }
-    return null;
-  };
-}
-
-export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
-  const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
-    b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
-
-  const orderCluster = (cluster: WorldCupGroupRow[]): WorldCupGroupRow[] => {
-    if (cluster.length <= 1 || !h2h) return [...cluster].sort(byOverall);
-    const names = cluster.map(r => r.teamName);
-    const mini = new Map(names.map(n => [n, { pts: 0, gd: 0, gf: 0 }]));
-    let allPairsMet = true;
-    for (let a = 0; a < names.length; a++) {
-      for (let b = a + 1; b < names.length; b++) {
-        const r = h2h(names[a], names[b]);
-        if (!r) { allPairsMet = false; continue; }
-        const A = mini.get(names[a])!, B = mini.get(names[b])!;
-        A.pts += r.aPts; B.pts += r.bPts;
-        A.gd  += r.aGF - r.bGF; B.gd += r.bGF - r.aGF;
-        A.gf  += r.aGF; B.gf += r.bGF;
-      }
-    }
-    // Incomplete mini-table ⇒ no confident H2H order; fall back to overall GD.
-    if (!allPairsMet) return [...cluster].sort(byOverall);
-    return [...cluster].sort((a, b) => {
-      const A = mini.get(a.teamName)!, B = mini.get(b.teamName)!;
-      return (B.pts - A.pts) || (B.gd - A.gd) || (B.gf - A.gf) || byOverall(a, b);
-    });
-  };
-
-  const byPoints = [...rows].sort((a, b) => b.points - a.points);
-  const out: WorldCupGroupRow[] = [];
-  for (let i = 0; i < byPoints.length;) {
-    let j = i;
-    while (j + 1 < byPoints.length && byPoints[j + 1].points === byPoints[i].points) j++;
-    out.push(...orderCluster(byPoints.slice(i, j + 1)));
-    i = j + 1;
-  }
-  return out;
-}
-
 function buildWorldCupGroupFacts(
   rows: WorldCupGroupRow[],
   group: string,
@@ -1484,6 +1429,24 @@ function deriveSeriesState(
   ].join(' ');
 }
 
+/**
+ * SEC-4: defang external feed free-text (news headlines/descriptions) before it
+ * enters the LLM prompt. Strips control characters and neutralises common
+ * prompt-injection markers so a compromised or odd feed item can't issue
+ * instructions to the model. Only neutralises (keeps text readable); the strong
+ * OUTPUT validators remain the primary faithfulness guard.
+ */
+function sanitizeFeedText(s: string): string {
+  return s
+    .replace(/[\u0000-\u001F\u007F]/g, ' ') // control chars (SEC-4)
+    .replace(/```/g, "'''")                                                              // code fences
+    .replace(/<\/?(system|user|assistant)>/gi, '')                                       // fake role tags
+    .replace(/\b(ignore|disregard|forget)\b(\s+(?:all|any|the|previous|above|prior))/gi, '[$1]$2') // "ignore previous…"
+    .replace(/\bsystem\s+prompt\b/gi, 'system-prompt')
+    .replace(/\s{3,}/g, ' ')
+    .trim();
+}
+
 export function buildDataBlock(
   league: string,
   teamName: string,
@@ -1741,8 +1704,19 @@ export function buildDataBlock(
     lines.push('');
   }
 
-  // World Cup: group standings table + advancement scenario
-  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
+  // World Cup: knockout-stage block (stage & stakes — no group table for knockout fixtures)
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup && context.worldCup.stage !== 'group') {
+    const wc = context.worldCup;
+    const ko = WC_KNOCKOUT_ROUNDS.find(r => r.stage === wc.stage);
+    lines.push(`STAGE & STAKES: ${ko?.label ?? wcStageLabel(wc.stage)} — SINGLE-ELIMINATION — the loser is eliminated; this is not a dead rubber.`);
+    lines.push(wcKnockoutStake(wc.stage));
+    if (wc.group) lines.push(`${teamName} qualified from Group ${wc.group}.`);
+    if (wc.opponentGroup) lines.push(`${opponentName} qualified from Group ${wc.opponentGroup}.`);
+    lines.push('');
+  }
+
+  // World Cup: group standings table + advancement scenario (group stage only)
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.stage === 'group' && context.worldCup.groupTable && context.worldCup.groupTable.length > 0) {
     const wc = context.worldCup;
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
     const groupNotStarted = wcGroupTable.every(r => r.played === 0);
@@ -2085,12 +2059,12 @@ export function buildDataBlock(
       if (hasNews) {
         lines.push('  RECENT HEADLINES (may be speculative or outdated):');
         teamNews.slice(0, 3).forEach(n => {
-          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-          lines.push(`    ${teamName}: "${n.headline}"${desc}`);
+          const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
+          lines.push(`    ${teamName}: "${sanitizeFeedText(n.headline)}"${desc}`);
         });
         oppNews.slice(0, 3).forEach(n => {
-          const desc = n.description ? ` — ${n.description.slice(0, 100)}` : '';
-          lines.push(`    ${opponentName}: "${n.headline}"${desc}`);
+          const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
+          lines.push(`    ${opponentName}: "${sanitizeFeedText(n.headline)}"${desc}`);
         });
       }
       if (hasTips) {
@@ -2146,35 +2120,6 @@ export function buildDataBlock(
   return lines.join('\n');
 }
 
-/**
- * Assembles the LLM user-message from the fixture context.
- *
- * @param enabledBlocks - when provided, only these blocks are included. When omitted, all blocks
- *   are included and the output is byte-identical to buildDataBlock with the same args.
- */
-export function assemblePrompt(
-  league: string,
-  teamName: string,
-  opponentName: string,
-  context: PreviewContext,
-  teamResults: GameResult[],
-  oppResults: GameResult[],
-  competition?: string,
-  compact?: boolean,
-  weather?: WeatherData,
-  venue?: string,
-  isHome?: boolean,
-  teamId?: string,
-  opponentId?: string,
-  seriesSummary?: string,
-  enabledBlocks?: Set<BlockId>,
-): string {
-  return buildDataBlock(
-    league, teamName, opponentName, context, teamResults, oppResults,
-    competition, compact, weather, venue, isHome, teamId, opponentId, seriesSummary,
-    enabledBlocks,
-  );
-}
 
 /** Finds lines present in `full` but absent in `without` (preserving order). */
 function diffRemoved(full: string, without: string): string {
@@ -2276,52 +2221,6 @@ export function buildBlocks(
   return { blocks, footer };
 }
 
-export function buildUpdatePrompt(
-  previous: AIPreview,
-  teamName: string,
-  opponentName: string,
-  teamNews: { headline: string; description?: string }[],
-  oppNews:  { headline: string; description?: string }[],
-  context?: PreviewContext,
-): string {
-  const lines: string[] = [
-    'The following match preview was generated earlier. It remains accurate for the fixture context, tactical analysis, and ladder positions.',
-    '',
-    'EXISTING PREVIEW:',
-    JSON.stringify(previous),
-    '',
-    'NEW INFORMATION has emerged since this preview was written:',
-    'UPDATED TEAM NEWS & HEADLINES:',
-  ];
-  teamNews.slice(0, 4).forEach(n => {
-    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
-    lines.push(`  ${teamName}: "${n.headline}"${desc}`);
-  });
-  oppNews.slice(0, 4).forEach(n => {
-    const desc = n.description ? ` — ${n.description.slice(0, 120)}` : '';
-    lines.push(`  ${opponentName}: "${n.headline}"${desc}`);
-  });
-  // Include squad/injury updates if available
-  if (context?.teamSquad?.length || context?.opponentSquad?.length) {
-    lines.push('');
-    lines.push('UPDATED SQUAD DATA (official selection for this game):');
-    if (context.teamSquad?.length)   lines.push(`  ${teamName}: ${context.teamSquad.join(', ')}`);
-    if (context.opponentSquad?.length) lines.push(`  ${opponentName}: ${context.opponentSquad.join(', ')}`);
-  }
-  if (context?.teamInjuryReport?.length || context?.opponentInjuryReport?.length) {
-    lines.push('');
-    lines.push('UPDATED INJURY REPORT:');
-    const fmtInj = (injuries: Array<{ name: string; status: string }>) =>
-      injuries.map(i => `${i.name} (${i.status})`).join(', ');
-    if (context?.teamInjuryReport?.length)     lines.push(`  ${teamName}: ${fmtInj(context.teamInjuryReport)}`);
-    if (context?.opponentInjuryReport?.length) lines.push(`  ${opponentName}: ${fmtInj(context.opponentInjuryReport)}`);
-  }
-  lines.push('');
-  lines.push(
-    'Return the same JSON structure. Update only the sections directly affected by this new information (e.g. playerSpotlight if an injury is mentioned, verdict if significant news shifts the outlook). If squad or injury data has changed, update tactical analysis, playerSpotlight, and verdict as needed. Preserve analysis that remains accurate. Do not invent new facts beyond what is provided above.'
-  );
-  return lines.join('\n');
-}
 
 // ─── Convenience wrapper ────────────────────────────────────────────────────────
 

@@ -17,6 +17,12 @@ import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
 import { getSupabaseServer } from '@/lib/supabase/server';
+import { enforceRateLimit, secretsMatch } from '@/lib/request-guards';
+
+// SEC-1: require a *non-anonymous* session for this expensive LLM route. Off by
+// default so the app can stay publicly usable (anonymous sessions allowed); flip
+// REQUIRE_AUTH_FOR_AI_REVIEW=true to lock it to signed-in users. Product decision.
+const REQUIRE_AUTH = process.env.REQUIRE_AUTH_FOR_AI_REVIEW === 'true';
 
 const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3001';
 
@@ -141,15 +147,26 @@ const SAFE_STR = /^[\w\s'.&\-,()]+$/;
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  // Auth gate — cron poller bypasses Supabase auth via shared secret; all other
-  // callers require a valid session (anonymous included).
-  const cronSecret = req.headers.get('x-cron-secret');
-  const isCron     = cronSecret && cronSecret === process.env.CRON_SECRET;
+  // Auth gate — cron poller bypasses Supabase auth via a timing-safe shared-secret
+  // check (SEC-3); all other callers require a valid session.
+  const isCron = secretsMatch(req.headers.get('x-cron-secret'), process.env.CRON_SECRET);
   if (!isCron) {
+    // SEC-2: rate-limit the expensive LLM route for non-cron callers.
+    const limited = enforceRateLimit(req, 'ai-review', 30);
+    if (limited) return limited;
+
     const sb = getSupabaseServer();
-    const { data: { user } } = (await sb?.auth.getUser()) ?? { data: { user: null } };
+    // SEC-1: fail CLOSED when Supabase is unconfigured — never implicitly open the
+    // LLM endpoint. (Previously a missing client silently fell through to a 401.)
+    if (!sb) {
+      return NextResponse.json({ error: 'Auth unavailable' }, { status: 503 });
+    }
+    const { data: { user } } = await sb.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (REQUIRE_AUTH && user.is_anonymous) {
+      return NextResponse.json({ error: 'Sign-in required' }, { status: 401 });
     }
   }
 

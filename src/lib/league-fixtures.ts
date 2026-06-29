@@ -18,7 +18,7 @@ import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
-import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
+import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStageWithDateFallback, espnRoundToGroup } from '@/lib/world-cup';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
@@ -1060,7 +1060,7 @@ export async function fetchWorldCupFixtures(lookbackDays = 0): Promise<UpcomingG
       if (!homeId) return acc;
 
       const roundHints = [e.name ?? '', comp.notes?.[0]?.headline ?? '', comp.type?.text ?? ''].join(' ');
-      const stage      = espnRoundToStage(roundHints);
+      const stage      = espnRoundToStageWithDateFallback(roundHints, e.date ?? new Date().toISOString());
       const group      = espnRoundToGroup(roundHints);
       const isComplete = e.status?.type?.completed === true;
 

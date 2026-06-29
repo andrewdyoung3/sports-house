@@ -147,6 +147,27 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
 }
 
 /**
+ * WC knockout-stakes binding: when the data block declares SINGLE-ELIMINATION
+ * (emitted by the knockout block for R32/R16/QF/SF/Final), the prose must not
+ * use dead-rubber language — every knockout match is always high-stakes.
+ * Same design as validatePhaseStakes; bound to the STAGE & STAKES marker.
+ */
+function validateWCKnockoutStakes(output: AIPreview, prompt: string): string[] {
+  if (!/STAGE & STAKES:.*SINGLE-ELIMINATION/.test(prompt)) return [];
+  const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const badRe = /\b(dead rubber|no further progression|nothing at stake|nothing to play for|symbolic only|already qualified|already eliminated|purely symbolic|meaningless(?: result| fixture| game| match)?|a formality|of no consequence)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(badRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`WC knockout stakes contradiction "${m[0]}" — STAGE & STAKES says this is single-elimination knockout, not a dead rubber`);
+  }
+  return violations;
+}
+
+/**
  * World Cup group-record binding: the GROUP DERIVED FACTS block states each team's
  * group games played. A team that has played ≤1 group game cannot have a two-result
  * group record — so a "win and a draw" / "one win and one loss" / "two wins" style
@@ -287,6 +308,92 @@ function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const violations: string[] = [];
   for (const m of outputText.matchAll(imminenceRe)) {
     violations.push(`finals-imminence language "${m[0].slice(0, 80)}" in ${phase} phase`);
+  }
+  return violations;
+}
+
+// ─── Ladder-position validator ─────────────────────────────────────────────────
+
+const ORDINAL_WORD: Record<string, number> = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
+  eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13,
+  fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18,
+  nineteenth: 19, twentieth: 20,
+};
+const ordinalToNum = (s: string): number | null => {
+  const w = s.toLowerCase();
+  if (ORDINAL_WORD[w] !== undefined) return ORDINAL_WORD[w];
+  const m = w.match(/^(\d+)(?:st|nd|rd|th)$/);
+  return m ? parseInt(m[1], 10) : null;
+};
+const ordSuffix = (n: number): string => {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
+};
+
+/**
+ * Ladder-position binding (the 8→7 "occupy 7th" class). buildDerivedFacts emits one
+ * authoritative `LADDER POSITION` fact per fixture team; the prose must not state a
+ * DIFFERENT positional ordinal for either team. Deterministic — reject → retry →
+ * refuse-to-store (REL-1). Tightly scoped to ordinals in a POSITIONAL context near a
+ * fixture team so "4-point lead", "top 10", "fourth straight win", "third quarter"
+ * never fire.
+ */
+export function validateLadderPosition(output: AIPreview, prompt: string): string[] {
+  // 1. Authoritative positions from the LADDER POSITION derived fact.
+  const factLine = prompt.match(/LADDER POSITION[^\n]*?:\s*([^\n]+)/);
+  if (!factLine) return [];
+  const expected: { name: string; pos: number; tokens: string[] }[] = [];
+  for (const m of factLine[1].matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s*[—–-]\s*(\d+)(?:st|nd|rd|th)\s+of\s+\d+/g)) {
+    const name   = m[1].trim();
+    const pos    = parseInt(m[2], 10);
+    const tokens = name.toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+    if (tokens.length > 0) expected.push({ name, pos, tokens });
+  }
+  if (expected.length === 0) return [];
+
+  // 2. Factual prose only (mediaWatch is attributed editorial).
+  const prose = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ').toLowerCase();
+
+  // 3. Positional-ordinal claims (two directions; non-positional nouns excluded).
+  const ORD = `\\d+(?:st|nd|rd|th)|${Object.keys(ORDINAL_WORD).join('|')}`;
+  const NON_POS = `(?:straight|consecutive|successive|in\\s+a\\s+row|wins?|won|losses?|loss|defeats?|draws?|quarters?|halves|half|years?|seasons?|times?|minutes?|goals?|tr(?:y|ies)|rounds?|legs?|gear|innings)`;
+  const reVerb = new RegExp(`\\b(?:sit|sits|sitting|occupy|occupies|occupying|are|in|placed|ranked|rank|languish|languishing|down\\s+in)\\s+(?:in\\s+|at\\s+)?(${ORD})\\b(?!\\s+${NON_POS})`, 'gi');
+  const rePhrase = new RegExp(`\\b(${ORD})\\b(?:[-\\s]placed)?\\s+(?:on\\s+the\\s+(?:ladder|table)|in\\s+the\\s+(?:ladder|table|standings)|place|spot|position)\\b`, 'gi');
+
+  const claims: { num: number; idx: number }[] = [];
+  for (const re of [reVerb, rePhrase]) {
+    for (const m of prose.matchAll(re)) {
+      const num = ordinalToNum(m[1]);
+      if (num !== null) claims.push({ num, idx: m.index ?? 0 });
+    }
+  }
+  if (claims.length === 0) return [];
+
+  // 4. Attribute each claim to the nearest fixture-team mention (≤70 chars before,
+  //    ≤40 after) and flag any contradiction with that team's authoritative position.
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const c of claims) {
+    let best: { team: typeof expected[number]; dist: number } | null = null;
+    for (const t of expected) {
+      for (const tok of t.tokens) {
+        for (let at = prose.indexOf(tok); at >= 0; at = prose.indexOf(tok, at + tok.length)) {
+          const dist = c.idx - (at + tok.length);          // >0: team before ordinal
+          if (dist < -40 || dist > 70) continue;
+          const ad = Math.abs(dist);
+          if (!best || ad < best.dist) best = { team: t, dist: ad };
+        }
+      }
+    }
+    if (best && c.num !== best.team.pos) {
+      const key = `${best.team.name}:${c.num}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        violations.push(`ladder position: prose places ${best.team.name} ${ordSuffix(c.num)} but the table has them ${ordSuffix(best.team.pos)} (LADDER POSITION fact)`);
+      }
+    }
   }
   return violations;
 }
@@ -479,12 +586,40 @@ function stripUnsourcedMediaWatch(output: AIPreview, prompt: string): AIPreview 
 
 // ─── Ollama call ──────────────────────────────────────────────────────────────
 
-export async function callOllama(
+/**
+ * Single source of truth for the output validator set. Run the full faithfulness
+ * suite over a candidate preview and return every violation. Used by both the
+ * generate-with-retry path and the storage gate so the two can never drift.
+ */
+function collectViolations(v: AIPreview, prompt: string): string[] {
+  return [
+    ...validatePointsClaims(v, prompt),
+    ...validateFinalsImminence(v, prompt),
+    ...validatePhaseStakes(v, prompt),
+    ...validateWCKnockoutStakes(v, prompt),
+    ...validateLadderPosition(v, prompt),
+    ...validateWorldCupGroupRecord(v, prompt),
+    ...validateWorldCupGroupLetter(v, prompt),
+    ...validateF1ChampionshipClaims(v, prompt),
+    ...validatePlayerNames(v, prompt),
+    ...validateInventedStatlines(v, prompt),
+    ...validateInventedYears(v, prompt),
+  ];
+}
+
+/**
+ * Generate a preview (with a one-shot retry on validation failure) and return it
+ * ALONGSIDE any violations that remain after the retry. The caller — never this
+ * function — decides what to do with a still-violating preview (REL-1: the
+ * storage gate refuses to persist it). The validators are unchanged; this only
+ * stops their result from being silently discarded at the boundary.
+ */
+export async function callOllamaValidated(
   prompt: string,
   compact = false,
   maxTokensOverride?: number,
   modelOverride?: string,
-): Promise<AIPreview> {
+): Promise<{ preview: AIPreview; violations: string[] }> {
   const doGenerate = async (): Promise<AIPreview> => {
     const response = await ollamaClient.chat.completions.create({
       model:      modelOverride ?? AI_MODEL,
@@ -527,38 +662,75 @@ export async function callOllama(
     result = await doGenerate();
   }
 
-  const allViolations = (v: AIPreview) => [
-    ...validatePointsClaims(v, prompt),
-    ...validateFinalsImminence(v, prompt),
-    ...validatePhaseStakes(v, prompt),
-    ...validateWorldCupGroupRecord(v, prompt),
-    ...validateWorldCupGroupLetter(v, prompt),
-    ...validateF1ChampionshipClaims(v, prompt),
-    ...validatePlayerNames(v, prompt),
-    ...validateInventedStatlines(v, prompt),
-    ...validateInventedYears(v, prompt),
-  ];
-  const violations = allViolations(result);
-  if (violations.length > 0) {
-    aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
-    try {
-      const retry      = await doGenerate();
-      const retryViols = allViolations(retry);
-      if (retryViols.length === 0) {
-        aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
-        return stripUnsourcedMediaWatch(retry, prompt);
-      }
-      aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — returning first attempt`);
-    } catch (e) {
-      aiLog(`retry-error elapsed=${Date.now() - t0}ms err=${e}`);
-    }
-  } else {
+  const violations = collectViolations(result, prompt);
+  if (violations.length === 0) {
     aiLog(`done elapsed=${Date.now() - t0}ms`);
+    return { preview: stripUnsourcedMediaWatch(result, prompt), violations: [] };
   }
-  return stripUnsourcedMediaWatch(result, prompt);
+
+  aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
+  try {
+    const retry      = await doGenerate();
+    const retryViols = collectViolations(retry, prompt);
+    if (retryViols.length === 0) {
+      aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
+      return { preview: stripUnsourcedMediaWatch(retry, prompt), violations: [] };
+    }
+    // Both attempts violate — surface the better attempt AND its remaining
+    // violations so the caller can refuse to store (REL-1). We no longer return a
+    // "clean-looking" first attempt that silently buries caught hallucinations.
+    aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — both attempts violate, will not store`);
+    const best = retryViols.length < violations.length
+      ? { preview: retry,  violations: retryViols }
+      : { preview: result, violations };
+    return { preview: stripUnsourcedMediaWatch(best.preview, prompt), violations: best.violations };
+  } catch (e) {
+    aiLog(`retry-error elapsed=${Date.now() - t0}ms err=${e}`);
+    return { preview: stripUnsourcedMediaWatch(result, prompt), violations };
+  }
+}
+
+/**
+ * Back-compat wrapper: returns just the preview. Prefer callOllamaValidated on any
+ * path that persists output so caught violations can block storage.
+ */
+export async function callOllama(
+  prompt: string,
+  compact = false,
+  maxTokensOverride?: number,
+  modelOverride?: string,
+): Promise<AIPreview> {
+  return (await callOllamaValidated(prompt, compact, maxTokensOverride, modelOverride)).preview;
 }
 
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
+
+/**
+ * DAT-3: stable fingerprint of the news-ish signals that should trigger a future
+ * regeneration (headlines + injuries + named squad). Persisted to
+ * game_previews.news_fingerprint so the column is no longer permanently NULL and a
+ * later staleness trigger can compare it (the trigger itself is deferred — see
+ * CHANGES.md). Mirrors the client's buildFingerprint in spirit (sorted, hashed);
+ * results/weather are intentionally excluded here (the client folds those into its
+ * own localStorage cache key).
+ */
+export function computeNewsFingerprint(ctx: Partial<PreviewContext>): string | null {
+  const headlines = [
+    ...(ctx.teamNews ?? []).map(n => n.headline),
+    ...(ctx.opponentNews ?? []).map(n => n.headline),
+  ].sort();
+  const injuries = [
+    ...(ctx.teamInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+    ...(ctx.opponentInjuryReport ?? []).map(i => `${i.name}:${i.status}`),
+  ].sort();
+  const squad = [
+    ...(ctx.teamSquad ?? []),
+    ...(ctx.opponentSquad ?? []),
+  ].sort().join(',').slice(0, 80);
+  if (headlines.length === 0 && injuries.length === 0 && squad.length === 0) return null;
+  const parts = [...headlines, ...injuries, squad].join('\x00');
+  return Buffer.from(parts).toString('base64').slice(0, 48);
+}
 
 export function isValidPreview(v: unknown): v is AIPreview {
   if (!v || typeof v !== 'object') return false;
@@ -634,14 +806,24 @@ export async function generateAndStorePreview(
       fixture.seriesSummary,
     );
 
-    const preview = await callOllama(prompt, false, maxTokens);
+    const { preview, violations } = await callOllamaValidated(prompt, false, maxTokens);
+
+    // REL-1: the validators are the faithfulness backbone — never store output that
+    // still violates them after the retry. Returning ok:false marks the job failed
+    // (poller retries up to MAX_ATTEMPTS); a missing preview is strictly better than
+    // a persisted one that asserts wrong facts. Do NOT relax this to "store anyway".
+    if (violations.length > 0) {
+      aiLog(`refuse-store gameId=${fixture.id} violations=${JSON.stringify(violations)}`);
+      return { ok: false, error: `validation: ${violations.join('; ')}`.slice(0, 480) };
+    }
 
     if (isValidPreview(preview)) {
-      await upsertPreview(fixture.id, preview, AI_MODEL, null);
+      const newsFingerprint = computeNewsFingerprint(ctx);  // DAT-3
+      await upsertPreview(fixture.id, preview, AI_MODEL, newsFingerprint);
       // Representative games (State of Origin) key per perspective on the display
       // side — upsert the SAME payload under the mirror key(s) so both resolve.
       for (const mirrorId of fixture.mirrorGameIds ?? []) {
-        await upsertPreview(mirrorId, preview, AI_MODEL, null);
+        await upsertPreview(mirrorId, preview, AI_MODEL, newsFingerprint);
       }
       return { ok: true };
     }

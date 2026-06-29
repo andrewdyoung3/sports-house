@@ -32,6 +32,10 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
   const [results,    setResults]    = useState<GameResult[]>([]);
   const [news,       setNews]       = useState<NewsItem[]>([]);
   const [dataLoaded, setDataLoaded] = useState(!REAL_DATA_LEAGUES.has(team.league));
+  // UX-3: distinguish a fetch FAILURE (all three requests errored) from a genuine
+  // "no data" result, so an outage doesn't masquerade as an empty feed.
+  const [loadError,  setLoadError]  = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     try { setUserTz(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch { /* keep default */ }
@@ -39,6 +43,7 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
 
   useEffect(() => {
     if (!REAL_DATA_LEAGUES.has(team.league)) return;
+    setLoadError(false);
 
     Promise.all([
       fetch(`/api/fixtures?league=${team.league}&teamId=${team.id}`).then(r => r.ok ? r.json() : null).catch(() => null),
@@ -48,9 +53,11 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
       if (Array.isArray(gamesData)   && gamesData.length > 0)   setGames(gamesData.slice(0, 2));
       if (Array.isArray(resultsData) && resultsData.length > 0) setResults(resultsData);
       if (Array.isArray(newsData)    && newsData.length > 0)    setNews(newsData);
+      // All three null ⇒ every request failed (not merely empty) ⇒ surface an error.
+      if (gamesData === null && resultsData === null && newsData === null) setLoadError(true);
       setDataLoaded(true);
-    });
-  }, [team.id, team.league]);
+    }).catch(() => { setLoadError(true); setDataLoaded(true); });
+  }, [team.id, team.league, refreshKey]);
 
   // W/L record from real recent form only
   const wins   = results.filter(r => r.isWin).length;
@@ -118,6 +125,22 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
           </div>
         </div>
       </CardHeader>
+
+      {/* UX-3: fetch failure (vs empty) — offer a retry instead of looking blank. */}
+      {loadError && (
+        <CardSection>
+          <div className="flex items-center justify-between gap-3 text-xs" style={{ color: 'var(--text-3)' }}>
+            <span>Couldn’t load this team’s latest data.</span>
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              className="px-2 py-1 rounded-lg font-semibold hover:bg-white/[0.06] transition-colors"
+              style={{ color: 'var(--text-2)' }}
+            >
+              Retry
+            </button>
+          </div>
+        </CardSection>
+      )}
 
       {/* ── Recent Form ── */}
       <CardSection>

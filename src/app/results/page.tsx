@@ -430,11 +430,14 @@ interface ResultsCalendarProps {
 }
 
 function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick }: ResultsCalendarProps) {
-  const now = new Date();
+  // Mount-stable "now" — used only for the initial view month/year and today's key,
+  // which don't need to track render time. Stabilising it lets todayKey list it as a
+  // dep without recomputing every render (CQ-5).
+  const now = useMemo(() => new Date(), []);
   const [viewYear,  setViewYear]  = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth());
 
-  const todayKey = useMemo(() => datekeyInZone(now.toISOString(), userTz), [userTz]);
+  const todayKey = useMemo(() => datekeyInZone(now.toISOString(), userTz), [now, userTz]);
 
   const resultsByDate = useMemo(() => {
     const map = new Map<string, ResultEntry[]>();
@@ -715,6 +718,24 @@ export default function ResultsPage() {
   useEffect(() => {
     try { setUserTz(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch {}
   }, []);
+
+  // UX-5: when navigated here with a #result-date-* hash (from the schedule calendar's
+  // past-day click), scroll to that date once results have loaded — the anchor does not
+  // exist until then, so native hash scrolling on load can't reach it.
+  useEffect(() => {
+    if (loading) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith('#result-date-')) return;
+    const dk = hash.slice('#result-date-'.length);
+    const t = setTimeout(() => {
+      const el = document.getElementById(`result-date-${dk}`);
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }
+    }, 100);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   useEffect(() => {
     // Reset accumulator so a followed-teams change (prefsVersion, e.g. the post-sign-in

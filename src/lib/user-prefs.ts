@@ -129,10 +129,6 @@ export function saveFollowedTeams(teams: Team[]): void {
   void pushToSupabase(teams.map(t => t.id));
 }
 
-export function isFollowing(teamId: string): boolean {
-  return getFollowedTeams().some(t => t.id === teamId);
-}
-
 /** Toggle a team and return the updated array. */
 export function toggleTeam(team: Team): Team[] {
   const current = getFollowedTeams();
@@ -155,11 +151,6 @@ async function warmTeamPreviews(teamId: string, league: string): Promise<void> {
       body:    JSON.stringify({ teamId, league }),
     });
   } catch { /* non-fatal */ }
-}
-
-export function clearFollowedTeams(): void {
-  if (typeof window !== 'undefined') localStorage.removeItem(STORAGE_KEY);
-  void pushToSupabase([]);
 }
 
 // ─── Supabase (per-identity row + RLS) ──────────────────────────────────────────

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Check, X, Search } from 'lucide-react';
 
 import { LEAGUES, filterTeams } from '@/lib/teams';
+import { contrastColor } from '@/lib/utils';
 
 // Leagues with real data built — NFL and MLB excluded (no fixture/results API yet)
 const BUILT_LEAGUE_IDS = new Set([
@@ -100,6 +101,7 @@ export default function OnboardingPage() {
         <div className="mb-5 max-w-md">
           <Input
             icon
+            aria-label="Search teams"
             placeholder="Search teams, cities…"
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -144,8 +146,8 @@ export default function OnboardingPage() {
                   {selected.slice(0, 6).map(t => (
                     <span
                       key={t.id}
-                      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg shrink-0 text-white"
-                      style={{ backgroundColor: t.primaryColor }}
+                      className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg shrink-0"
+                      style={{ backgroundColor: t.primaryColor, color: contrastColor(t.primaryColor) }}
                     >
                       {t.abbreviation}
                       <button

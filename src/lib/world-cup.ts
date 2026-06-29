@@ -14,7 +14,7 @@
  *   • Knockout: R32 → R16 → QF → SF → 3rd-place play-off + Final
  */
 
-import type { WorldCupStage } from '@/types';
+import type { WorldCupStage, WorldCupGroupRow } from '@/types';
 
 // ─── Group labels ─────────────────────────────────────────────────────────────
 
@@ -139,6 +139,39 @@ export function espnRoundToStage(roundName: string | undefined): WorldCupStage {
   for (const { pattern, stage } of ESPN_ROUND_MAP) {
     if (pattern.test(roundName)) return stage;
   }
+  return 'group';
+}
+
+/**
+ * Hard boundary between the 2026 WC group stage and the Round of 32.
+ * The last group games kick off at 2026-06-28T02:00Z; the first R32 game kicks off
+ * at 2026-06-28T19:00Z. Noon UTC on June 28 sits safely between the two windows
+ * (17 hours of headroom each way) so no group game is ever mislabelled knockout
+ * and no R32 game is ever mislabelled group.
+ */
+const WC_GROUP_STAGE_END = new Date('2026-06-28T12:00:00Z');
+
+/**
+ * Like espnRoundToStage but falls back to a date-based classification when the
+ * round string is absent or matches nothing. This is the primary classifier for
+ * WC fixture ingestion — use instead of espnRoundToStage in league-fixtures.ts.
+ *
+ * Primary signal: date past group-stage window ⇒ knockout.
+ * Round-string patterns always win when present; the date is a fallback only.
+ */
+export function espnRoundToStageWithDateFallback(
+  roundHints: string | undefined,
+  kickoffISO: string,
+): WorldCupStage {
+  // Try explicit pattern match first — if we get a reliable hit, use it.
+  if (roundHints) {
+    for (const { pattern, stage } of ESPN_ROUND_MAP) {
+      if (pattern.test(roundHints)) return stage;
+    }
+  }
+  // No pattern matched — classify by kickoff date.
+  const kickoff = new Date(kickoffISO);
+  if (kickoff >= WC_GROUP_STAGE_END) return 'r32';
   return 'group';
 }
 
@@ -337,3 +370,86 @@ export const WC_ID_TO_ESPN_NAME: Record<string, string> = Object.fromEntries(
     .filter(([espnName]) => !['USA', 'Turkey', 'Korea Republic', 'Congo DR', 'Ivory Coast', 'IR Iran', 'Curacao', 'Czechia', 'Bosnia and Herzegovina', 'Cabo Verde'].includes(espnName))
     .map(([espnName, id]) => [id, espnName]),
 );
+
+// ─── Group ranking (moved from preview-prompt.ts so preview-context can import) ─
+
+/** One meeting between two group teams, from team A's perspective. */
+export interface WCGroupMeeting { aPts: number; bPts: number; aGF: number; bGF: number }
+
+/** Function answering h2h(a, b) → meeting result (a's perspective) or null if not met. */
+export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null;
+
+/**
+ * Build the head-to-head provider from completed intra-group results. Returns a
+ * function answering h2h(a, b) → their group meeting (a's perspective) or null if
+ * they have not met. Only COMPLETED matches are passed in, so a scheduled meeting
+ * is naturally "not met" (the not-met branch falls back to overall GD).
+ */
+export function makeWCH2H(
+  results?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>,
+): WCGroupH2H | undefined {
+  if (!results || results.length === 0) return undefined;
+  return (aName, bName) => {
+    for (const r of results) {
+      const aIsA = r.teamA === aName && r.teamB === bName;
+      const aIsB = r.teamA === bName && r.teamB === aName;
+      if (!aIsA && !aIsB) continue;
+      const aGF = aIsA ? r.goalsA : r.goalsB;
+      const bGF = aIsA ? r.goalsB : r.goalsA;
+      const aPts = aGF > bGF ? 3 : aGF === bGF ? 1 : 0;
+      const bPts = bGF > aGF ? 3 : aGF === bGF ? 1 : 0;
+      return { aPts, bPts, aGF, bGF };
+    }
+    return null;
+  };
+}
+
+/**
+ * Rank a World Cup group applying the 2026 in-group order: points first, then —
+ * among teams LEVEL on points — head-to-head (H2H points → H2H GD → H2H goals),
+ * then overall goal difference, then overall goals scored. (Reverses the pre-2026
+ * overall-GD-first rule.)
+ *
+ * Conservatism: H2H is applied to a level cluster ONLY when EVERY pair in that
+ * cluster has been played (the mini-table is complete). If any pair has not met
+ * (e.g. teams level on points who have not yet played, or a partially-played 3-way
+ * tie), it falls back to overall GD provisionally — never asserting an order it
+ * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
+ * which preserves the prior behaviour exactly.
+ */
+export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
+  const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
+    b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
+
+  const orderCluster = (cluster: WorldCupGroupRow[]): WorldCupGroupRow[] => {
+    if (cluster.length <= 1 || !h2h) return [...cluster].sort(byOverall);
+    const names = cluster.map(r => r.teamName);
+    const mini = new Map(names.map(n => [n, { pts: 0, gd: 0, gf: 0 }]));
+    let allPairsMet = true;
+    for (let a = 0; a < names.length; a++) {
+      for (let b = a + 1; b < names.length; b++) {
+        const r = h2h(names[a], names[b]);
+        if (!r) { allPairsMet = false; continue; }
+        const A = mini.get(names[a])!, B = mini.get(names[b])!;
+        A.pts += r.aPts; B.pts += r.bPts;
+        A.gd  += r.aGF - r.bGF; B.gd += r.bGF - r.aGF;
+        A.gf  += r.aGF; B.gf += r.bGF;
+      }
+    }
+    if (!allPairsMet) return [...cluster].sort(byOverall);
+    return [...cluster].sort((a, b) => {
+      const A = mini.get(a.teamName)!, B = mini.get(b.teamName)!;
+      return (B.pts - A.pts) || (B.gd - A.gd) || (B.gf - A.gf) || byOverall(a, b);
+    });
+  };
+
+  const byPoints = [...rows].sort((a, b) => b.points - a.points);
+  const out: WorldCupGroupRow[] = [];
+  for (let i = 0; i < byPoints.length;) {
+    let j = i;
+    while (j + 1 < byPoints.length && byPoints[j + 1].points === byPoints[i].points) j++;
+    out.push(...orderCluster(byPoints.slice(i, j + 1)));
+    i = j + 1;
+  }
+  return out;
+}

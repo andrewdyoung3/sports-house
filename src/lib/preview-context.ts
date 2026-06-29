@@ -15,7 +15,7 @@
  */
 
 import { MANAGER } from './managers';
-import { WC_TEAM_GROUPS, WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, computeGroupAdvancementScenario } from './world-cup';
+import { WC_TEAM_GROUPS, WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, computeGroupAdvancementScenario, rankWorldCupGroup, makeWCH2H } from './world-cup';
 import { TEAMS } from '@/lib/teams';
 import {
   fetchAFLPreview, fetchNRLPreview, fetchEPLPreview, fetchSRUPreview,
@@ -45,6 +45,19 @@ let _wcRaw: unknown = null;
 // Kickoff weather, keyed by venue+kickoff so repeated fixtures share one fetch
 // and prod/sandbox stay deterministic within a process run.
 const _weatherCache = new Map<string, import('@/types').WeatherData | undefined>();
+
+// PERF-4: cap in-process cache age. The heartbeat runs as a fresh process per run,
+// but a long-running server (dev / persistent host / sandbox routes) would otherwise
+// serve these module caches indefinitely (e.g. _wcRaw never expired → days-old WC
+// standings). The underlying fetches are still Next-cached with their own revalidate
+// windows; this only bounds the extra in-process memo on top.
+const CACHE_TTL_MS = 30 * 60_000;
+let _cacheBornAt = Date.now();
+function freshenCachesIfStale(): void {
+  if (Date.now() - _cacheBornAt <= CACHE_TTL_MS) return;
+  clearPreviewContextCache();
+  _cacheBornAt = Date.now();
+}
 
 async function _cachedWeather(
   venue: string | undefined,
@@ -129,8 +142,12 @@ async function cachedRichContext(
   try {
     ctx = await fetchRichContext(league, fixture, teamName);
   } catch (err) {
+    // REL-2: a transient fetch error must NOT be cached as {} — doing so blanked
+    // the fixture's entire context for the whole process run (every later call
+    // returned the empty object, so the preview generated from no data). Return
+    // empty for THIS call but leave the cache unset so a later call retries.
     console.warn(`[preview-context] rich fetch failed league=${league} team=${fixture.teamId}: ${err instanceof Error ? err.message : err}`);
-    ctx = {};
+    return {};
   }
   _richCache.set(key, ctx);
   return ctx;
@@ -263,12 +280,21 @@ async function _buildWCMatchContext(
   teamName: string,
   teamId: string,
   worldCupStage: string | undefined,
+  opponentId?: string,
 ): Promise<WorldCupMatchContext | undefined> {
+  const stage  = (worldCupStage ?? 'group') as WorldCupStage;
+  const group  = WC_TEAM_GROUPS[teamId];
+  const opponentGroup = opponentId ? WC_TEAM_GROUPS[opponentId] : undefined;
+
+  // Knockout stage: no group table or advancement scenario — only stage + qualifying groups.
+  if (stage !== 'group') {
+    return { stage, group, opponentGroup };
+  }
+
   try {
     // Group letter from our own deterministic map drives the lookup (robust to the
     // ESPN/our name divergence — e.g. "Türkiye" vs "Turkey" — that previously
     // dropped the whole group context and let the model invent the group letter).
-    const group  = WC_TEAM_GROUPS[teamId];
     const { wcRows } = await _wcGroupForTeam(teamName, group);
     if (wcRows.length === 0) return undefined;
     const ourRow = wcRows.find(r =>
@@ -284,15 +310,25 @@ async function _buildWCMatchContext(
       ? await _wcGroupResults(groupTeams)
       : [];
 
+    // Compute the RULES rank (points → GD → GF → H2H) instead of the feed's seeding
+    // position (which ranks 0-pt teams above 3-pt teams — the wrong order). This fixes
+    // the rank source used in advancementScenario AND the prompt's group derived facts.
+    const wcH2H     = makeWCH2H(groupResults);
+    const ranked    = rankWorldCupGroup(wcRows, wcH2H);
+    const rulesRank = ranked.findIndex(r =>
+      r.teamName === teamName || teamName.includes(r.teamName.split(' ')[0]),
+    );
+    const rankInGroup = rulesRank >= 0 ? rulesRank + 1 : (ourRow?.position ?? 1);
+
     return {
-      stage:               (worldCupStage ?? 'group') as WorldCupStage,
+      stage,
       group,
       groupTable:          wcRows,
       gamesPlayed:         played,
       gamesRemaining,
       groupResults,
       advancementScenario: ourRow
-        ? computeGroupAdvancementScenario(teamName, ourRow.points, played, gamesRemaining, ourRow.position)
+        ? computeGroupAdvancementScenario(teamName, ourRow.points, played, gamesRemaining, rankInGroup)
         : '',
     };
   } catch (err) {
@@ -306,31 +342,45 @@ async function _buildWorldCupContext(
   teamName: string,
 ): Promise<Partial<PreviewContext>> {
   const ctx: Partial<PreviewContext> = {};
-  let table: LeagueTableRow[] = [];
-  try {
-    table = (await _wcGroupForTeam(teamName)).table;
-  } catch (err) {
-    console.warn(`[preview-context] WC standings fetch failed: ${err instanceof Error ? err.message : err}`);
+  const isGroupStage = !fixture.worldCupStage || fixture.worldCupStage === 'group';
+
+  // Group table / standings are only relevant during the group stage. Knockout
+  // fixtures must not receive a group table — it only shows one team's group (the
+  // followed team's), not the opponent's, so it would be actively misleading.
+  if (isGroupStage) {
+    let table: LeagueTableRow[] = [];
+    try {
+      table = (await _wcGroupForTeam(teamName)).table;
+    } catch (err) {
+      console.warn(`[preview-context] WC standings fetch failed: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // REL-4: an empty group table for a followed WC team is the silent-drop symptom
+    // (ESPN name-variant drift or feed change). Surface it instead of producing a
+    // contentless group block. check-team-coverage guards the static name maps.
+    if (table.length === 0) {
+      console.warn(`[preview-context] WC group table empty for "${teamName}" (id=${fixture.teamId}) — group/form context will be missing`);
+    }
+
+    if (table.length > 0) {
+      const sorted  = [...table].sort((a, b) => a.position - b.position);
+      const teamRow = sorted.find(r =>
+        r.name === teamName ||
+        teamName.includes(r.name.split(' ')[0]) ||
+        r.name.includes(teamName.split(' ')[0]),
+      );
+      const oppRow = sorted.find(r =>
+        r.name === fixture.opponent ||
+        fixture.opponent.includes(r.name.split(' ')[0]) ||
+        r.name.includes(fixture.opponent.split(' ')[0]),
+      );
+      ctx.leagueTable = table;
+      if (teamRow) ctx.teamStanding     = { ...teamRow };
+      if (oppRow)  ctx.opponentStanding = { ...oppRow };
+    }
   }
 
-  if (table.length > 0) {
-    const sorted  = [...table].sort((a, b) => a.position - b.position);
-    const teamRow = sorted.find(r =>
-      r.name === teamName ||
-      teamName.includes(r.name.split(' ')[0]) ||
-      r.name.includes(teamName.split(' ')[0]),
-    );
-    const oppRow = sorted.find(r =>
-      r.name === fixture.opponent ||
-      fixture.opponent.includes(r.name.split(' ')[0]) ||
-      r.name.includes(fixture.opponent.split(' ')[0]),
-    );
-    ctx.leagueTable = table;
-    if (teamRow) ctx.teamStanding     = { ...teamRow };
-    if (oppRow)  ctx.opponentStanding = { ...oppRow };
-  }
-
-  const wcCtx = await _buildWCMatchContext(teamName, fixture.teamId, fixture.worldCupStage);
+  const wcCtx = await _buildWCMatchContext(teamName, fixture.teamId, fixture.worldCupStage, fixture.opponentId);
   if (wcCtx) ctx.worldCup = wcCtx;
 
   // Recent form / head-to-head / lineups from the fixture's ESPN summary.
@@ -362,6 +412,7 @@ export async function buildPreviewContext(
   fixture: UpcomingGame,
   teamName: string,
 ): Promise<Partial<PreviewContext>> {
+  freshenCachesIfStale();  // PERF-4: bound in-process cache age on long-running servers
   const ctx: Partial<PreviewContext> = league === 'world_cup'
     ? await _buildWorldCupContext(fixture, teamName)
     : { ...(await cachedRichContext(league, fixture, teamName)) };
@@ -389,4 +440,5 @@ export function clearPreviewContextCache(): void {
   _weatherCache.clear();
   _wcRaw = null;
   _wcScoreboard = null;
+  _cacheBornAt = Date.now();
 }

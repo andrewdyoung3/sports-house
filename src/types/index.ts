@@ -31,8 +31,10 @@ export type WorldCupStage =
 /** Structural context for a World Cup match, passed to the AI preview. */
 export interface WorldCupMatchContext {
   stage: WorldCupStage;
-  /** Group label (A–L) — only present for group-stage matches. */
+  /** Group label (A–L) — the followed team's qualifying group. Present for both group and knockout stages. */
   group?: string;
+  /** Opponent's qualifying group label — populated for knockout-stage fixtures so the prompt can name both paths. */
+  opponentGroup?: string;
   /** Full group standings table (4 entries) — only for group-stage matches. */
   groupTable?: WorldCupGroupRow[];
   /** Completed GROUP-STAGE results among this group's teams (who-beat-whom), for
