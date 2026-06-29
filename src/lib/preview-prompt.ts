@@ -9,7 +9,8 @@
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow, WorldCupGroupRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { wcStageLabel, wcKnockoutStake } from '@/lib/world-cup';
+import { wcStageLabel, wcKnockoutStake, WC_KNOCKOUT_ROUNDS, makeWCH2H, rankWorldCupGroup } from '@/lib/world-cup';
+import type { WCGroupH2H, WCGroupMeeting } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
@@ -600,99 +601,13 @@ function buildDerivedFacts(
 }
 
 /**
- * GROUP TOURNAMENT derived facts (World Cup). The live feed's `position` is the
- * DRAW/seeding order, NOT the live group rank — it lists 0-pt teams above 3-pt
- * teams — so we recompute the standing from the rules (points → goal difference →
- * goals scored). Emits each fixture team's GROUP record bound verbatim plus a
- * conservative stake. The context field must use THIS group record, never the
- * all-competitions RECENT FORM line (the source of the WC group-record error).
+ * GROUP TOURNAMENT derived facts (World Cup). Emits each fixture team's GROUP record
+ * bound verbatim plus a conservative stake. The context field must use THIS group
+ * record, never the all-competitions RECENT FORM line (the source of the WC
+ * group-record error). rankWorldCupGroup and makeWCH2H live in world-cup.ts.
  *
  * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
  */
-/**
- * Result of a played group match between two teams, both from the FIRST team's
- * perspective. `null` from the provider means the two teams have not met. Used to
- * apply the 2026 head-to-head-first tiebreaker among teams level on points.
- */
-export interface WCGroupMeeting { aPts: number; bPts: number; aGF: number; bGF: number }
-export type WCGroupH2H = (aName: string, bName: string) => WCGroupMeeting | null;
-
-/**
- * Rank a World Cup group applying the 2026 in-group order: points first, then —
- * among teams LEVEL on points — head-to-head (H2H points → H2H GD → H2H goals),
- * then overall goal difference, then overall goals scored. (Reverses the pre-2026
- * overall-GD-first rule.)
- *
- * Conservatism: H2H is applied to a level cluster ONLY when EVERY pair in that
- * cluster has been played (the mini-table is complete). If any pair has not met
- * (e.g. teams level on points who have not yet played, or a partially-played 3-way
- * tie), it falls back to overall GD provisionally — never asserting an order it
- * cannot compute. `h2h` undefined (no match data wired) ⇒ always the GD fallback,
- * which preserves the prior behaviour exactly.
- */
-/**
- * Build the head-to-head provider from completed intra-group results. Returns a
- * function answering h2h(a, b) → their group meeting (a's perspective) or null if
- * they have not met. Only COMPLETED matches are passed in, so a scheduled meeting
- * is naturally "not met" (the not-met branch falls back to overall GD).
- */
-export function makeWCH2H(
-  results?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>,
-): WCGroupH2H | undefined {
-  if (!results || results.length === 0) return undefined;
-  return (aName, bName) => {
-    for (const r of results) {
-      const aIsA = r.teamA === aName && r.teamB === bName;
-      const aIsB = r.teamA === bName && r.teamB === aName;
-      if (!aIsA && !aIsB) continue;
-      const aGF = aIsA ? r.goalsA : r.goalsB;
-      const bGF = aIsA ? r.goalsB : r.goalsA;
-      const aPts = aGF > bGF ? 3 : aGF === bGF ? 1 : 0;
-      const bPts = bGF > aGF ? 3 : aGF === bGF ? 1 : 0;
-      return { aPts, bPts, aGF, bGF };
-    }
-    return null;
-  };
-}
-
-export function rankWorldCupGroup(rows: WorldCupGroupRow[], h2h?: WCGroupH2H): WorldCupGroupRow[] {
-  const byOverall = (a: WorldCupGroupRow, b: WorldCupGroupRow) =>
-    b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.teamName.localeCompare(b.teamName);
-
-  const orderCluster = (cluster: WorldCupGroupRow[]): WorldCupGroupRow[] => {
-    if (cluster.length <= 1 || !h2h) return [...cluster].sort(byOverall);
-    const names = cluster.map(r => r.teamName);
-    const mini = new Map(names.map(n => [n, { pts: 0, gd: 0, gf: 0 }]));
-    let allPairsMet = true;
-    for (let a = 0; a < names.length; a++) {
-      for (let b = a + 1; b < names.length; b++) {
-        const r = h2h(names[a], names[b]);
-        if (!r) { allPairsMet = false; continue; }
-        const A = mini.get(names[a])!, B = mini.get(names[b])!;
-        A.pts += r.aPts; B.pts += r.bPts;
-        A.gd  += r.aGF - r.bGF; B.gd += r.bGF - r.aGF;
-        A.gf  += r.aGF; B.gf += r.bGF;
-      }
-    }
-    // Incomplete mini-table ⇒ no confident H2H order; fall back to overall GD.
-    if (!allPairsMet) return [...cluster].sort(byOverall);
-    return [...cluster].sort((a, b) => {
-      const A = mini.get(a.teamName)!, B = mini.get(b.teamName)!;
-      return (B.pts - A.pts) || (B.gd - A.gd) || (B.gf - A.gf) || byOverall(a, b);
-    });
-  };
-
-  const byPoints = [...rows].sort((a, b) => b.points - a.points);
-  const out: WorldCupGroupRow[] = [];
-  for (let i = 0; i < byPoints.length;) {
-    let j = i;
-    while (j + 1 < byPoints.length && byPoints[j + 1].points === byPoints[i].points) j++;
-    out.push(...orderCluster(byPoints.slice(i, j + 1)));
-    i = j + 1;
-  }
-  return out;
-}
-
 function buildWorldCupGroupFacts(
   rows: WorldCupGroupRow[],
   group: string,
@@ -1789,8 +1704,19 @@ export function buildDataBlock(
     lines.push('');
   }
 
-  // World Cup: group standings table + advancement scenario
-  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.groupTable && context.worldCup.groupTable.length > 0) {
+  // World Cup: knockout-stage block (stage & stakes — no group table for knockout fixtures)
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup && context.worldCup.stage !== 'group') {
+    const wc = context.worldCup;
+    const ko = WC_KNOCKOUT_ROUNDS.find(r => r.stage === wc.stage);
+    lines.push(`STAGE & STAKES: ${ko?.label ?? wcStageLabel(wc.stage)} — SINGLE-ELIMINATION — the loser is eliminated; this is not a dead rubber.`);
+    lines.push(wcKnockoutStake(wc.stage));
+    if (wc.group) lines.push(`${teamName} qualified from Group ${wc.group}.`);
+    if (wc.opponentGroup) lines.push(`${opponentName} qualified from Group ${wc.opponentGroup}.`);
+    lines.push('');
+  }
+
+  // World Cup: group standings table + advancement scenario (group stage only)
+  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.stage === 'group' && context.worldCup.groupTable && context.worldCup.groupTable.length > 0) {
     const wc = context.worldCup;
     const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
     const groupNotStarted = wcGroupTable.every(r => r.played === 0);

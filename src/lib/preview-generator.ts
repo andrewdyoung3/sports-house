@@ -147,6 +147,27 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
 }
 
 /**
+ * WC knockout-stakes binding: when the data block declares SINGLE-ELIMINATION
+ * (emitted by the knockout block for R32/R16/QF/SF/Final), the prose must not
+ * use dead-rubber language — every knockout match is always high-stakes.
+ * Same design as validatePhaseStakes; bound to the STAGE & STAKES marker.
+ */
+function validateWCKnockoutStakes(output: AIPreview, prompt: string): string[] {
+  if (!/STAGE & STAKES:.*SINGLE-ELIMINATION/.test(prompt)) return [];
+  const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
+  const badRe = /\b(dead rubber|no further progression|nothing at stake|nothing to play for|symbolic only|already qualified|already eliminated|purely symbolic|meaningless(?: result| fixture| game| match)?|a formality|of no consequence)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(badRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`WC knockout stakes contradiction "${m[0]}" — STAGE & STAKES says this is single-elimination knockout, not a dead rubber`);
+  }
+  return violations;
+}
+
+/**
  * World Cup group-record binding: the GROUP DERIVED FACTS block states each team's
  * group games played. A team that has played ≤1 group game cannot have a two-result
  * group record — so a "win and a draw" / "one win and one loss" / "two wins" style
@@ -575,6 +596,7 @@ function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
+    ...validateWCKnockoutStakes(v, prompt),
     ...validateLadderPosition(v, prompt),
     ...validateWorldCupGroupRecord(v, prompt),
     ...validateWorldCupGroupLetter(v, prompt),
