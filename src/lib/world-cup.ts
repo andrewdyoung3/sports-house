@@ -143,12 +143,13 @@ export function espnRoundToStage(roundName: string | undefined): WorldCupStage {
 }
 
 /**
- * Last day of the 2026 World Cup group stage (UTC). Any fixture with a kickoff
- * strictly after this timestamp is in the knockout rounds. Used as a date-based
- * fallback when ESPN's round/type strings are absent (the live case: R32 fixtures
- * arrive with empty note/type fields shortly after bracket formation).
+ * Hard boundary between the 2026 WC group stage and the Round of 32.
+ * The last group games kick off at 2026-06-28T02:00Z; the first R32 game kicks off
+ * at 2026-06-28T19:00Z. Noon UTC on June 28 sits safely between the two windows
+ * (17 hours of headroom each way) so no group game is ever mislabelled knockout
+ * and no R32 game is ever mislabelled group.
  */
-const WC_GROUP_STAGE_END = new Date('2026-06-28T00:00:00Z');
+const WC_GROUP_STAGE_END = new Date('2026-06-28T12:00:00Z');
 
 /**
  * Like espnRoundToStage but falls back to a date-based classification when the

@@ -259,12 +259,19 @@ console.log('\nespnRoundToStageWithDateFallback:');
   expect('in-window case: empty round string, group-stage date (Jun 20) → group',
     espnRoundToStageWithDateFallback('', '2026-06-20T18:00:00Z') === 'group');
 
-  // Boundary: June 27 (last group day) → still group; June 28 → r32
-  expect('boundary: Jun 27 23:59 UTC → group',
-    espnRoundToStageWithDateFallback(undefined, '2026-06-27T23:59:00Z') === 'group');
+  // Boundary: last group games are 2026-06-28T02:00Z; first R32 game is 2026-06-28T19:00Z.
+  // The constant is 12:00Z — safely between the two.
+  expect('boundary: last group game (Jun 28 02:00Z) → group',
+    espnRoundToStageWithDateFallback(undefined, '2026-06-28T02:00:00Z') === 'group');
 
-  expect('boundary: Jun 28 00:00 UTC → r32',
-    espnRoundToStageWithDateFallback(undefined, '2026-06-28T00:00:00Z') === 'r32');
+  expect('boundary: just before noon UTC → group',
+    espnRoundToStageWithDateFallback(undefined, '2026-06-28T11:59:00Z') === 'group');
+
+  expect('boundary: noon UTC (Jun 28 12:00Z) → r32',
+    espnRoundToStageWithDateFallback(undefined, '2026-06-28T12:00:00Z') === 'r32');
+
+  expect('boundary: first R32 game (Jun 28 19:00Z) → r32',
+    espnRoundToStageWithDateFallback(undefined, '2026-06-28T19:00:00Z') === 'r32');
 }
 
 // ─── Rank-source fix (rules rank vs feed seeding) ────────────────────────────────
