@@ -49,7 +49,6 @@ const PREFIX_TO_LEAGUE: Record<string, string> = {
   soo:  'nrl',   // State of Origin rep fixtures live in the NRL fixture list
   epl:  'epl',
   sru:  'super_rugby',
-  wc:   'world_cup',
   nba:  'nba',
   f1:   'f1',
   rint: 'rugby_int',
@@ -91,7 +90,7 @@ async function main() {
 
   const league = deriveLeague(gameId);
   if (!league) {
-    console.error(`Unknown gameId prefix: "${gameId}". Expected e.g. afl-38612, nrl-603376, wc-760421`);
+    console.error(`Unknown gameId prefix: "${gameId}". Expected e.g. afl-38612, nrl-603376, f1-12345`);
     process.exit(1);
   }
 
@@ -152,7 +151,6 @@ async function main() {
       teamName,
       fixture.opponent,
       played,
-      ctx.worldCup,
       fixture.date,
     );
     console.log(`  FIXTURE CONTEXT:`);
@@ -160,9 +158,6 @@ async function main() {
     console.log(`    Stakes: ${fixtureCtx.stakes}${fixtureCtx.explanation ? ` — ${fixtureCtx.explanation}` : ''}`);
     if (fixtureCtx.stakes === 'STANDARD') {
       console.log(`    (STANDARD → block suppressed in prompt)`);
-    }
-    if (ctx.worldCup) {
-      console.log(`  WC group ${ctx.worldCup.group}  played=${ctx.worldCup.gamesPlayed}  remaining=${ctx.worldCup.gamesRemaining}`);
     }
     if (ctx.leagueTable && ctx.leagueTable.length > 0) {
       console.log(`  standings  ${ctx.leagueTable.length} rows  team=${ctx.teamStanding?.position ?? '?'}  opp=${ctx.opponentStanding?.position ?? '?'}`);

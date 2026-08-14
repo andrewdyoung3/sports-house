@@ -49,7 +49,7 @@ try {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'world_cup', 'nba', 'cricket_int', 'bbl'] as const;
+const LEAGUES = ['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'f1', 'nba', 'cricket_int', 'bbl'] as const;
 
 const LOG_FILE = '/tmp/sporthouse-ai.log';
 

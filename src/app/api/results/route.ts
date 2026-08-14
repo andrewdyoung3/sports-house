@@ -16,7 +16,6 @@ import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange } from '@/
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
 import { enforceRateLimit } from '@/lib/request-guards';
-import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, espnRoundToStage, espnRoundToGroup } from '@/lib/world-cup';
 
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
 
@@ -962,80 +961,6 @@ async function fetchCricketIntResults(teamId: string): Promise<GameResult[]> {
     .slice(0, 5);
 }
 
-// ─── World Cup — ESPN public API (soccer/fifa.world) ─────────────────────────
-
-const fetchWorldCupResults = unstable_cache(
-  async (teamId: string): Promise<GameResult[]> => {
-    const teamName = WC_ID_TO_ESPN_NAME[teamId];
-    if (!teamName) return [];
-
-    const now   = new Date();
-    const start = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-    const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-    const range = `${fmt(start)}-${fmt(now)}`;
-
-    const res = await fetchTimeout(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${range}&limit=200`,
-      { cache: 'no-store' },
-    );
-    if (!res.ok) return [];
-
-    const data = await res.json();
-
-    const events = ((data.events ?? []) as any[]).filter((e: any) => {
-      if (e.status?.type?.completed !== true) return false;
-      const competitors: any[] = e.competitions?.[0]?.competitors ?? [];
-      return competitors.some((c: any) => c.team?.displayName === teamName);
-    });
-
-    return events
-      .map((e: any): GameResult => {
-        const comp: any = e.competitions?.[0] ?? {};
-        const competitors: any[] = comp.competitors ?? [];
-        const home = competitors.find((c: any) => c.homeAway === 'home');
-        const away = competitors.find((c: any) => c.homeAway === 'away');
-
-        const isHome  = home?.team?.displayName === teamName;
-        const ourComp = isHome ? home : away;
-        const oppComp = isHome ? away : home;
-        const oppName = oppComp?.team?.displayName ?? 'Unknown';
-
-        const teamScore = Number(ourComp?.score ?? 0);
-        const oppScore  = Number(oppComp?.score  ?? 0);
-
-        const ourWinner = ourComp?.winner === true || ourComp?.winner === 'true';
-        const oppWinner = oppComp?.winner === true || oppComp?.winner === 'true';
-        const isDraw    = !ourWinner && !oppWinner;
-
-        const roundHints = [
-          e.name ?? '',
-          comp.notes?.[0]?.headline ?? '',
-          comp.type?.text ?? '',
-        ].join(' ');
-        const stage = espnRoundToStage(roundHints);
-        const group = espnRoundToGroup(roundHints);
-
-        return {
-          opponent:        oppName,
-          opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
-          opponentLogoUrl: (oppComp?.team?.logo as string | undefined),
-          opponentId:      WC_ESPN_NAME_TO_ID[oppName],
-          isHome,
-          isWin:           ourWinner,
-          isDraw:          isDraw || undefined,
-          teamScore,
-          opponentScore:   oppScore,
-          date:            new Date(e.date).toISOString(),
-          worldCupStage:   stage,
-          worldCupGroup:   group,
-        };
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 5);
-  },
-  ['res-world-cup'],
-  { revalidate: 3600 },
-);
 
 // ─── NBA — ESPN scoreboard ────────────────────────────────────────────────────
 
@@ -1173,7 +1098,7 @@ async function fetchNBAResults(teamId: string): Promise<GameResult[]> {
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup', 'nba']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'nba']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
@@ -1219,7 +1144,6 @@ export async function GET(req: NextRequest) {
     else if (league === 'f1')          results = await fetchF1Results(teamId);
     else if (league === 'bbl')         results = await fetchBBLResults(teamId);
     else if (league === 'cricket_int') results = await fetchCricketIntResults(teamId);
-    else if (league === 'world_cup')   results = await fetchWorldCupResults(teamId);
     else if (league === 'nba')         results = await fetchNBAResults(teamId);
 
     return NextResponse.json(results, { headers: CACHE_HEADERS });

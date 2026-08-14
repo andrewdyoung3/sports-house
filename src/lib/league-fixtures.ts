@@ -18,7 +18,6 @@ import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
-import { WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, espnRoundToStageWithDateFallback, espnRoundToGroup } from '@/lib/world-cup';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
@@ -1015,83 +1014,6 @@ export async function fetchCricketFixtureById(
   return { fixture, teamName };
 }
 
-// ─── World Cup ────────────────────────────────────────────────────────────────
-
-const WC_BROADCAST = { broadcast: ['SBS'], streaming: ['Paramount+'] };
-
-export async function fetchWorldCupFixtures(lookbackDays = 0): Promise<UpcomingGame[]> {
-  const nowMs      = Date.now();
-  const lookbackMs = lookbackDays * 86400_000;
-  const cutoff     = nowMs - lookbackMs;
-
-  const nowDate = new Date(nowMs);
-  const end     = new Date(nowMs + 35 * 86400_000);
-  const start   = lookbackDays > 0 ? new Date(nowMs - lookbackMs) : nowDate;
-  const fmt     = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-
-  const res = await fetchTimeout(
-    `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
-    { cache: 'no-store' },
-  );
-  if (!res.ok) return [];
-
-  const data = await res.json();
-  const seen = new Set<string>();
-
-  return ((data.events ?? []) as any[])
-    .filter((e: any) => {
-      const isComplete = e.status?.type?.completed === true;
-      if (isComplete) return lookbackDays > 0 && new Date(e.date).getTime() >= cutoff;
-      return true;
-    })
-    .reduce<UpcomingGame[]>((acc, e: any) => {
-      if (seen.has(e.id)) return acc;
-      seen.add(e.id);
-
-      const comp: any        = e.competitions?.[0] ?? {};
-      const competitors: any[] = comp.competitors ?? [];
-      const homeComp = competitors.find((c: any) => c.homeAway === 'home') ?? competitors[0];
-      const awayComp = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1];
-      if (!homeComp) return acc;
-
-      const homeName: string = homeComp.team?.displayName ?? '';
-      const awayName: string = awayComp?.team?.displayName ?? '';
-      const homeId = WC_ESPN_NAME_TO_ID[homeName];
-      if (!homeId) return acc;
-
-      const roundHints = [e.name ?? '', comp.notes?.[0]?.headline ?? '', comp.type?.text ?? ''].join(' ');
-      const stage      = espnRoundToStageWithDateFallback(roundHints, e.date ?? new Date().toISOString());
-      const group      = espnRoundToGroup(roundHints);
-      const isComplete = e.status?.type?.completed === true;
-
-      const utcDate  = new Date(e.date);
-      const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
-
-      acc.push({
-        id:              `wc-${e.id}`,
-        teamId:          homeId,
-        opponent:        awayName || 'TBD',
-        opponentAbbr:    awayComp?.team?.abbreviation ?? (awayName ? awayName.slice(0, 3).toUpperCase() : 'TBD'),
-        opponentColor:   '#6B7280',
-        isHome:          true,
-        date:            utcDate.toISOString(),
-        time:            aestDisplay(aestDate),
-        venue:           comp.venue?.fullName ?? '',
-        broadcast:       WC_BROADCAST.broadcast,
-        streaming:       WC_BROADCAST.streaming,
-        opponentLogoUrl: awayName === 'Australia'
-          ? TEAM_LOGOS['wc-australia']
-          : (awayComp?.team?.logo as string | undefined),
-        opponentId:      WC_ESPN_NAME_TO_ID[awayName],
-        worldCupStage:   stage,
-        worldCupGroup:   WC_TEAM_GROUPS[homeId] ?? group,
-        completed:       isComplete || undefined,
-      });
-      return acc;
-    }, [])
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-}
-
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /**
@@ -1108,7 +1030,6 @@ export async function fetchLeagueFixtures(league: string, lookbackDays = 0): Pro
   else if (league === 'f1')          return fetchF1Fixtures(lookbackDays);
   else if (league === 'bbl')         return fetchBBLFixtures(lookbackDays);
   else if (league === 'cricket_int') return fetchCricketIntFixtures(lookbackDays);
-  else if (league === 'world_cup')   return fetchWorldCupFixtures(lookbackDays);
   else if (league === 'nba')         return fetchNBAFixtures(lookbackDays);
   return [];
 }

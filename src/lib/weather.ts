@@ -14,7 +14,7 @@ import { fetchTimeout } from '@/lib/espn';
 
 /** Leagues whose fixtures are played outdoors and are weather-affected. */
 export const OUTDOOR_LEAGUES = new Set([
-  'afl', 'nrl', 'super_rugby', 'rugby_int', 'epl', 'world_cup',
+  'afl', 'nrl', 'super_rugby', 'rugby_int', 'epl',
 ]);
 
 // ─── Venue → [lat, lon] lookup ────────────────────────────────────────────────

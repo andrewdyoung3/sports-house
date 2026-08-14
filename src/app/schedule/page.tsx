@@ -19,28 +19,22 @@ import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 
-// PERF-1: the expand panel (~1.8k lines incl. WC/F1/cricket/AI sub-views) only
-// renders after a fixture is expanded (everExpandedIds) or, for WcGroupBrowser, when
-// a World Cup team is followed. Both live in the same module, so both are loaded
-// lazily to keep them out of the schedule route's first-load bundle. ssr:false — the
-// panel is purely interactive and reads localStorage/live data on the client.
+// PERF-1: the expand panel (~1.8k lines incl. F1/cricket/AI sub-views) only
+// renders after a fixture is expanded (everExpandedIds). Loaded lazily to keep
+// it out of the schedule route's first-load bundle. ssr:false — the panel is
+// purely interactive and reads localStorage/live data on the client.
 const GameExpandPanel = dynamic(
   () => import('@/components/schedule/game-expand-panel').then(m => m.GameExpandPanel),
   { ssr: false, loading: () => <div className="sh-detail-body" style={{ padding: '20px', opacity: 0.6 }}>Loading…</div> },
 );
-const WcGroupBrowser = dynamic(
-  () => import('@/components/schedule/game-expand-panel').then(m => m.WcGroupBrowser),
-  { ssr: false },
-);
 import type { Team, UpcomingGame, SportKey, StandingRow } from '@/types';
-import { wcStageLabel } from '@/lib/world-cup';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ScheduleEntry = UpcomingGame & { team: Team };
 
 /** All competitions with browse support (real or mock fixtures + standings). */
-const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'f1', 'bbl', 'cricket_int', 'world_cup']);
+const BROWSABLE_LEAGUE_IDS = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'f1', 'bbl', 'cricket_int']);
 
 /** Ordered list for the competition filter pills. */
 const BROWSABLE_LEAGUES = LEAGUES.filter(l => BROWSABLE_LEAGUE_IDS.has(l.id));
@@ -223,10 +217,6 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   cricket_int: {
     symbol: '🏏', label: 'Cricket',
     bg: '#0a1a00', color: '#78be20', border: '#78be2050',
-  },
-  world_cup: {
-    symbol: '🏆', label: 'World Cup', abbr: 'WC',
-    bg: '#1a0a00', color: '#c8922a', border: 'rgba(200,146,42,0.40)',
   },
 };
 
@@ -642,14 +632,6 @@ function ScheduleRow({
             </>
           )}
           {!isF1 && team.league !== 'cricket_int' && <FixtureBadge league={team.league} competition={game.competition} compact={compactBadge} />}
-          {team.league === 'world_cup' && game.worldCupStage && (
-            <span
-              className="inline-flex items-center text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none border"
-              style={{ color: '#c8922a', background: 'rgba(200,146,42,0.12)', borderColor: 'rgba(200,146,42,0.35)' }}
-            >
-              {wcStageLabel(game.worldCupStage, game.worldCupGroup)}
-            </span>
-          )}
           {isCricket && game.cricketFormat && (
             <span
               className="inline-flex items-center text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none border"
@@ -798,17 +780,11 @@ function LeagueFilterPill({
   leagueId: string; active: boolean; onClick: () => void;
 }) {
   const meta = LEAGUE_BADGE[leagueId];
-  const isWC = leagueId === 'world_cup';
-  const wcInactiveStyle = isWC && !active ? {
-    borderColor: 'rgba(200,146,42,0.55)',
-    boxShadow: '0 0 10px rgba(200,146,42,0.22), inset 0 0 6px rgba(200,146,42,0.06)',
-    color: 'rgba(224,170,60,0.95)',
-  } : undefined;
   return (
     <button
       onClick={onClick}
       className={'sh-chip' + (active ? ' is-active' : '')}
-      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : wcInactiveStyle}
+      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : undefined}
     >
       <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
@@ -1313,10 +1289,6 @@ export default function SchedulePage() {
       ?? (heroExpanded ? heroGame?.team.league : undefined)
   ) as SportKey | undefined;
   const standingsBadge = standingsTableLeague ? LEAGUE_BADGE[standingsTableLeague] : undefined;
-  // Task 2: hide the WC group-standings sidebar widget when the in-preview group table is already
-  // visible (hero expanded or a schedule row expanded). Other leagues are never affected.
-  const hideWcSidebarStandings = standingsTableLeague === 'world_cup' && (heroExpanded || expandedId !== null);
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
 
@@ -1386,7 +1358,7 @@ export default function SchedulePage() {
               {/* Browse competition (pills) */}
               <div>
                 <div className="sh-chips">
-                  {BROWSABLE_LEAGUES.filter(l => l.id === 'world_cup' || teams.some(t => t.league === l.id)).map(league => (
+                  {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill
                       key={league.id}
                       leagueId={league.id}
@@ -1541,40 +1513,15 @@ export default function SchedulePage() {
             />
           )}
 
-          {/* League standings / WC groups — shown in league-browse mode, when a team is selected, or when a card is expanded.
-              WC group standings are hidden when any expand panel is open (the in-preview group table is already visible). */}
-          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null || heroExpanded) && !hideWcSidebarStandings && (
-            standingsTableLeague === 'world_cup' ? (
-              <div className="sh-card sh-standings">
-                <div className="sh-card-head">
-                  <span className="sh-comptag" style={{ '--c': LEAGUE_BADGE['world_cup']?.color ?? '#c8922a' } as React.CSSProperties}>WC</span>
-                  <span className="sh-card-head-label">Group Standings</span>
-                </div>
-                <div style={{ padding: '8px 12px 12px' }}>
-                  <WcGroupBrowser
-                    standings={standings}
-                    followedTeamId={teams.find(t => t.league === 'world_cup')?.id ?? ''}
-                    teamGroup={
-                      (() => {
-                        const wcTeamId = teams.find(t => t.league === 'world_cup')?.id;
-                        return wcTeamId
-                          ? (standings.find(r => r.teamId === wcTeamId)?.group
-                            ?? allGames.find(g => g.team.id === wcTeamId && g.worldCupGroup)?.worldCupGroup)
-                          : undefined;
-                      })()
-                    }
-                  />
-                </div>
-              </div>
-            ) : (
-              <LeagueTableSh
-                league={standingsTableLeague as SportKey}
-                rows={standings}
-                followedTeamIds={followedTeamIds}
-                compColor={standingsBadge?.color}
-                compShort={standingsBadge?.abbr ?? standingsBadge?.label}
-              />
-            )
+          {/* League standings — shown in league-browse mode, when a team is selected, or when a card is expanded. */}
+          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null || heroExpanded) && (
+            <LeagueTableSh
+              league={standingsTableLeague as SportKey}
+              rows={standings}
+              followedTeamIds={followedTeamIds}
+              compColor={standingsBadge?.color}
+              compShort={standingsBadge?.abbr ?? standingsBadge?.label}
+            />
           )}
 
           {/* Followed teams — always show in league mode so user sees who they follow */}

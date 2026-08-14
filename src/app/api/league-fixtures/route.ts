@@ -19,7 +19,6 @@ import {
   fetchF1Fixtures,
   fetchBBLFixtures,
   fetchCricketIntFixtures,
-  fetchWorldCupFixtures,
 } from '@/lib/league-fixtures';
 
 // Server-side data cache (deduplicates concurrent requests to ESPN during busy periods).
@@ -29,7 +28,7 @@ const fetchNBALeague  = unstable_cache(fetchNBAFixtures,  ['lf-nba'], { revalida
 
 const ALLOWED = new Set([
   'afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl',
-  'f1', 'bbl', 'cricket_int', 'world_cup',
+  'f1', 'bbl', 'cricket_int',
 ]);
 
 export async function GET(req: NextRequest) {
@@ -49,7 +48,6 @@ export async function GET(req: NextRequest) {
     else if (league === 'f1')          fixtures = await fetchF1Fixtures();
     else if (league === 'bbl')         fixtures = await fetchBBLFixtures();
     else if (league === 'cricket_int') fixtures = await fetchCricketIntFixtures();
-    else if (league === 'world_cup')   fixtures = await fetchWorldCupFixtures();
     return NextResponse.json(fixtures, {
       headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' },
     });

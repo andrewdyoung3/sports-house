@@ -18,7 +18,6 @@
 export type Archetype =
   | 'ladder-finals'    // round-robin table → finals (AFL, NRL, Super Rugby)
   | 'table-no-finals'  // round-robin table, no finals (EPL — CL/relegation)
-  | 'group-knockout'   // group tables → knockout (World Cup)
   | 'championship'     // cumulative points championship (F1 — Phase C)
   | 'series'           // best-of-N head-to-head (State of Origin)
   | 'cricket';         // tournament table + NRR / bilateral series (BBL, internationals)
@@ -108,14 +107,6 @@ export const COMP_RULES: Record<string, CompRules> = {
     clSpots: 5,
     season: '2025-26',
     source: 'premierleague.com — 5 CL spots via European Performance Spot',
-  },
-
-  // ── GROUP TOURNAMENT (Phase B) ───────────────────────────────────────────
-  world_cup: {
-    archetype: 'group-knockout',
-    winsPoints: 3, maxPpg: 3,
-    season: '2026',
-    source: 'FIFA 2026 — 12 groups × 4, 3 games each, top 2 + 8 best thirds → R32',
   },
 
   // ── CHAMPIONSHIP POINTS (Phase C) ────────────────────────────────────────

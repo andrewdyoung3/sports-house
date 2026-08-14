@@ -41,7 +41,6 @@ const PREFIX_TO_LEAGUE: Record<string, string> = {
   nrl:  'nrl',
   epl:  'epl',
   sru:  'super_rugby',
-  wc:   'world_cup',
   nba:  'nba',
   f1:   'f1',
   rint: 'rugby_int',
@@ -106,9 +105,6 @@ async function main() {
   const ctx = await buildPreviewContext(league, fixture, teamName);
 
   console.log(`  standings  ${ctx.leagueTable?.length ?? 0} rows`);
-  if (ctx.worldCup) {
-    console.log(`  wc-group  ${ctx.worldCup.group}  played=${ctx.worldCup.gamesPlayed}  remaining=${ctx.worldCup.gamesRemaining}  rows=${ctx.worldCup.groupTable?.length}`);
-  }
   if (ctx.teamManager || ctx.opponentManager) {
     console.log(`  coaches  ${ctx.teamManager ?? '?'} vs ${ctx.opponentManager ?? '(unknown)'}`);
   }

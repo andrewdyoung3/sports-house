@@ -6,22 +6,19 @@
  * Pure prompt building: no network calls, no Anthropic SDK, not wired into runtime.
  */
 
-import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow, WorldCupGroupRow } from '@/types';
+import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { wcStageLabel, wcKnockoutStake, WC_KNOCKOUT_ROUNDS, makeWCH2H, rankWorldCupGroup } from '@/lib/world-cup';
-import type { WCGroupH2H, WCGroupMeeting } from '@/lib/world-cup';
 import { resolveCompetitionContext } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
 
 export type BlockId =
-  | 'matchFacts'        // FIXTURE + VENUE + COMPETITION + WC tournament stage + cup stage (always-on anchor)
+  | 'matchFacts'        // FIXTURE + VENUE + COMPETITION + cup stage (always-on anchor)
   | 'fixtureContext'    // DOMESTIC COMPETITION STATUS + FIXTURE CONTEXT block
   | 'competitionProfile' // COMPETITION PROFILE text
   | 'sportContext'      // SPORT vocab + SEASON STATE + HEAD COACHES (with trailing blank)
-  | 'worldCupGroup'     // GROUP X STANDINGS (WC only)
   | 'standings'         // cup group standings + LEAGUE TABLE + COMPETITION STATUS + DERIVED FACTS
   | 'recentForm'        // RECENT FORM
   | 'headToHead'        // HEAD-TO-HEAD — recent meetings between the two sides
@@ -31,7 +28,7 @@ export type BlockId =
 
 export const BLOCK_ORDER: readonly BlockId[] = [
   'matchFacts', 'fixtureContext', 'competitionProfile', 'sportContext',
-  'worldCupGroup', 'standings', 'recentForm', 'headToHead', 'personnel', 'mediaWatch', 'weather',
+  'standings', 'recentForm', 'headToHead', 'personnel', 'mediaWatch', 'weather',
 ] as const;
 
 export const ALL_BLOCKS: ReadonlySet<BlockId> = new Set(BLOCK_ORDER);
@@ -41,7 +38,6 @@ export const BLOCK_LABELS: Record<BlockId, string> = {
   fixtureContext:      'Fixture context (stakes / phase)',
   competitionProfile:  'Competition profile',
   sportContext:        'Sport vocab + season state + coaches',
-  worldCupGroup:       'World Cup group standings',
   standings:           'League table & derived facts',
   recentForm:          'Recent form',
   headToHead:          'Head-to-head meetings',
@@ -113,7 +109,6 @@ const SPORT_CONTEXT: Record<string, string> = {
   epl: `English Premier League (association football). Use EPL-specific terminology: pressing triggers, high block/low block, inverted wingers, full-backs overlapping, false nine, set-piece delivery, high line, offside trap, the run-in, relegation scrap, top-four race, Europa spot. The table is called "the Table". Use "pitch" not "ground". Use "half" not "period".`,
   super_rugby: `Super Rugby Pacific (15-man rugby union code). Use rugby union terminology: scrum dominance, lineout, breakdown, ruck, maul, gainline, high ball, box kick, garryowen, carrying game, wide channels, jackal, the carrying game, phases. The table is called "the Table".`,
   rugby_int: `International Rugby Union Test match (15-man code) — the pinnacle of the game. Use rugby union terminology: set-piece, scrum, lineout, breakdown, maul, territorial kicking, box kick, garryowen, gainline, the contact area, Test rugby, the jersey, Test debut. This is a Test match — tone should reflect the magnitude. The table is called "the Table".`,
-  world_cup: `FIFA World Cup 2026 (international association football). Use football/soccer terminology: pressing, compactness, high line, transitions, set pieces, dead-ball situations, penalty shootout, extra time, group stage, knockout rounds, elimination, goal difference. The World Cup is the pinnacle of international football; each national team represents its entire nation — the stakes carry cultural as well as sporting weight. Write in the voice of a football analyst: discuss systems, pressing triggers, defensive shape, attacking patterns, wide-play vs central build-up. Use "pitch" not "ground" or "field". Use "half" not "period". Use "manager" or "head coach" for national team coaches.`,
   f1: `Formula 1 — 2026 season. This season operates under completely new technical regulations that have reset the competitive order. You MUST incorporate the following 2026-specific context into every preview:
 
 ACTIVE AERODYNAMICS (replaces DRS): Traditional DRS has been abolished. All cars run active aerodynamics that continuously transition between High Downforce mode (cornering) and Low Drag mode (straights). Unlike DRS — which was driver-activated in fixed zones — active aero operates algorithmically. Overtaking is less zone-predictable; opportunities depend more on raw pace differential and corner exit speed. On circuits where DRS was previously decisive (long straights, tight hairpins), the racing dynamics have changed significantly.
@@ -136,7 +131,6 @@ const LEAGUE_LABELS: Record<string, string> = {
   super_rugby: 'Super Rugby Pacific',
   rugby_int:   'International Rugby Union',
   f1:          'Formula 1',
-  world_cup:   'FIFA World Cup 2026',
   bbl:         'Big Bash League',
   cricket_int: 'International Cricket',
 };
@@ -598,102 +592,6 @@ function buildDerivedFacts(
   // Only the header with no facts → skip
   if (facts.length <= 1) return [];
   return facts;
-}
-
-/**
- * GROUP TOURNAMENT derived facts (World Cup). Emits each fixture team's GROUP record
- * bound verbatim plus a conservative stake. The context field must use THIS group
- * record, never the all-competitions RECENT FORM line (the source of the WC
- * group-record error). rankWorldCupGroup and makeWCH2H live in world-cup.ts.
- *
- * Returns `ranked` (corrected standing for display) and `lines` (the facts block).
- */
-function buildWorldCupGroupFacts(
-  rows: WorldCupGroupRow[],
-  group: string,
-  teamName: string,
-  opponentName: string,
-  h2h?: WCGroupH2H,
-): { ranked: WorldCupGroupRow[]; lines: string[] } {
-  const ranked = rankWorldCupGroup(rows, h2h);
-  const rankOf = (name: string) => ranked.findIndex(r => r.teamName === name) + 1;
-
-  const lines: string[] = [
-    `GROUP ${group} DERIVED FACTS — computed from the live group table (ranked by points, then goal difference, then goals scored). Use these GROUP records verbatim; do NOT use the all-competitions RECENT FORM line for any group-standing or qualification claim:`,
-  ];
-
-  for (const name of [teamName, opponentName]) {
-    const row = ranked.find(r => r.teamName === name);
-    if (!row) continue;
-    const rank      = rankOf(name);
-    const remaining = Math.max(0, 3 - row.played);
-    const gd        = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
-    const rec       = `${row.wins}W-${row.draws}D-${row.losses}L`;
-    const maxPts    = row.points + 3 * remaining;
-    const others    = ranked.filter(r => r.teamName !== name);
-    // Conservative: only claim a strong stake when mathematically provable.
-    const canReachOrExceed = others.filter(r => (r.points + 3 * Math.max(0, 3 - r.played)) >= row.points).length;
-    const alreadyBeyondMax = others.filter(r => r.points > maxPts).length;
-
-    let stake: string;
-    if (row.played >= 3 && rank <= 2) {
-      stake = 'group complete — finished in the automatic top 2, through to the Round of 32';
-    } else if (rank <= 2 && remaining > 0 && canReachOrExceed <= 1) {
-      stake = 'have mathematically secured a top-2 finish — through to the Round of 32';
-    } else if (alreadyBeyondMax >= 2) {
-      stake = `can no longer finish in the automatic top 2 (already beyond their maximum of ${maxPts} pts); only a best-third-place path remains`;
-    } else if (rank <= 2) {
-      stake = `currently in a qualifying position (the top 2 of the group go through) — but with ${remaining} game${remaining === 1 ? '' : 's'} still to play this is NOT yet secured; do not call them "qualified" or "through"`;
-    } else if (rank === 3) {
-      stake = 'currently 3rd — in contention for a best-third-place spot (the 8 best third-placed teams across the 12 groups also advance), NOT yet through';
-    } else {
-      stake = 'currently bottom of the group';
-    }
-
-    lines.push(
-      `  • ${name}: ${row.points} group point${row.points === 1 ? '' : 's'} from ${row.played} game${row.played === 1 ? '' : 's'} ` +
-      `(${rec}, GD ${gd}), currently ${ordinalSuffix(rank)} of ${ranked.length} in Group ${group}; ` +
-      `${remaining} group game${remaining === 1 ? '' : 's'} remaining — ${stake}.`,
-    );
-  }
-
-  // Direct comparison of the two fixture teams — binds the DIRECTION (points and
-  // goal difference) so the model can't reverse who's ahead (a GD-direction slip).
-  const tRow = ranked.find(r => r.teamName === teamName);
-  const oRow = ranked.find(r => r.teamName === opponentName);
-  if (tRow && oRow) {
-    const [hi, lo] = rankOf(teamName) < rankOf(opponentName) ? [tRow, oRow] : [oRow, tRow];
-    const meeting = h2h?.(hi.teamName, lo.teamName);
-    const fmtGD = (r: WorldCupGroupRow) => `${r.goalDifference >= 0 ? '+' : ''}${r.goalDifference}`;
-    let reason: string;
-    if (hi.points !== lo.points) {
-      reason = `on points (${hi.points} vs ${lo.points})`;
-    } else if (meeting && meeting.aPts !== meeting.bPts) {
-      reason = `on the head-to-head result (they have met in the group; this is the FIRST tiebreaker for teams level on points, ahead of goal difference)`;
-    } else if (hi.goalDifference !== lo.goalDifference) {
-      const prov = meeting ? '' : ' (provisional separator — they have not met yet; if they finish level having met, head-to-head decides first)';
-      reason = `on goal difference, level on points (${hi.teamName} GD ${fmtGD(hi)} vs ${lo.teamName} GD ${fmtGD(lo)})${prov}`;
-    } else {
-      reason = `on goals scored, level on points and goal difference`;
-    }
-    lines.push(`  • Between the two: ${hi.teamName} are ahead of ${lo.teamName} in the group ${reason}.`);
-  }
-
-  // 2026 tiebreaker note — only when two teams are level on points (it reverses 2022).
-  const pts = ranked.map(r => r.points);
-  if (pts.some((p, i) => pts.indexOf(p) !== i)) {
-    lines.push(
-      '  • Tiebreaker (2026 rule): teams level on points are separated FIRST by head-to-head record ' +
-      '(H2H points → H2H goal difference → H2H goals), THEN overall goal difference, then overall goals scored ' +
-      '(this reverses the pre-2026 overall-goal-difference-first order).',
-    );
-  }
-  lines.push(
-    `  • Qualification: the top 2 of Group ${group} advance automatically; the 8 best third-placed teams ` +
-    'across all 12 groups also advance (32 of 48 reach the Round of 32).',
-  );
-
-  return { ranked, lines };
 }
 
 /**
@@ -1498,14 +1396,7 @@ export function buildDataBlock(
   const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
-  // World Cup: only the three host nations (USA, Canada, Mexico) have home advantage.
-  // ESPN assigns home/away for scheduling but that designation is meaningless for all
-  // other nations — every non-host game is played on neutral ground.
-  const WC_HOST_IDS = new Set(['wc-usa', 'wc-canada', 'wc-mexico']);
-  const effectiveIsHome = (league === 'world_cup' && !WC_HOST_IDS.has(teamId ?? '') && !WC_HOST_IDS.has(opponentId ?? ''))
-    ? undefined
-    : isHome;
-  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, effectiveIsHome);
+  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome);
   if (venueLine) lines.push(venueLine);
   lines.push(`COMPETITION: ${competition ?? leagueLabel}`);
   if (isOffLeague) {
@@ -1542,20 +1433,6 @@ export function buildDataBlock(
           ? `${teamName} lead ${wins}–${losses}`
           : `${opponentName} lead ${losses}–${wins}`;
       lines.push(`SERIES SCORE (before this game, based on ${total} completed game${total !== 1 ? 's' : ''}): ${scoreLine}`);
-    }
-  }
-  // World Cup: tournament stage label injected early for immediate context
-  if (league === 'world_cup' && context.worldCup) {
-    const { stage, group, opponentTBD, opponentPlaceholder } = context.worldCup;
-    lines.push(`TOURNAMENT STAGE: ${wcStageLabel(stage, group)}`);
-    if (stage !== 'group') {
-      lines.push(`ADVANCEMENT STAKES: ${wcKnockoutStake(stage)}`);
-    }
-    if (opponentTBD) {
-      lines.push(
-        `NOTE: Opponent not yet determined (bracket placeholder: ${opponentPlaceholder ?? 'TBD'}). ` +
-        `Do NOT fabricate an opponent name, predict head-to-head dynamics, or assume a likely opponent from training knowledge.`,
-      );
     }
   }
   // Competition stage (cup/European competitions only)
@@ -1625,7 +1502,6 @@ export function buildDataBlock(
         teamName,
         opponentName,
         fixtureCtxPlayed,
-        context.worldCup ?? undefined,
         context.fixtureDate,
       );
       if (fixtureCtx.stakes !== 'STANDARD') {
@@ -1656,7 +1532,7 @@ export function buildDataBlock(
     lines.push(`SPORT: ${sportCtx}`);
 
     // ── Season state (computed) ──────────────────────────────────────────────────
-    if (!isOffLeague && totalRounds && played !== undefined && league !== 'world_cup') {
+    if (!isOffLeague && totalRounds && played !== undefined) {
       const quarter   = Math.ceil(totalRounds / 4);
       const third     = Math.ceil(totalRounds / 3);
       const runHomeCutoff = Math.floor(totalRounds * 0.65);
@@ -1704,98 +1580,6 @@ export function buildDataBlock(
     lines.push('');
   }
 
-  // World Cup: knockout-stage block (stage & stakes — no group table for knockout fixtures)
-  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup && context.worldCup.stage !== 'group') {
-    const wc = context.worldCup;
-    const ko = WC_KNOCKOUT_ROUNDS.find(r => r.stage === wc.stage);
-    lines.push(`STAGE & STAKES: ${ko?.label ?? wcStageLabel(wc.stage)} — SINGLE-ELIMINATION — the loser is eliminated; this is not a dead rubber.`);
-    lines.push(wcKnockoutStake(wc.stage));
-    if (wc.group) lines.push(`${teamName} qualified from Group ${wc.group}.`);
-    if (wc.opponentGroup) lines.push(`${opponentName} qualified from Group ${wc.opponentGroup}.`);
-    lines.push('');
-  }
-
-  // World Cup: group standings table + advancement scenario (group stage only)
-  if (enabled('worldCupGroup') && league === 'world_cup' && context.worldCup?.stage === 'group' && context.worldCup.groupTable && context.worldCup.groupTable.length > 0) {
-    const wc = context.worldCup;
-    const wcGroupTable = wc.groupTable as WorldCupGroupRow[];
-    const groupNotStarted = wcGroupTable.every(r => r.played === 0);
-
-    // BIND the group letter up front (sourced from world-cup.ts via WC_TEAM_GROUPS).
-    // The model has hallucinated the wrong letter ("Group F" for a Group D fixture);
-    // state it once, unmissably, before any standings the model might re-read. The
-    // best-third carve-out keeps the legitimate "across all 12 groups" phrasing valid.
-    const groupLetter = wc.group ?? '';
-    if (groupLetter) {
-      lines.push(
-        `THIS FIXTURE IS IN GROUP ${groupLetter}. Refer to the group only as "Group ${groupLetter}" — ` +
-        `do NOT name any other group letter for ${teamName} or ${opponentName}. (The "8 best ` +
-        `third-placed teams across all 12 groups" rule references the groups collectively; that is ` +
-        `fine — but THIS match's group is Group ${groupLetter}.)`,
-      );
-      lines.push('');
-    }
-
-    if (groupNotStarted) {
-      // Suppress the all-zeros table — it carries no information and misleads the model.
-      // Instead inject the group composition so the model knows who else they face.
-      lines.push(`GROUP ${wc.group ?? ''} COMPOSITION (group stage not yet begun):`);
-      for (const row of wcGroupTable) {
-        const isTracked = row.teamName === teamName || row.teamName === opponentName;
-        lines.push(`  ${row.position}. ${row.teamName}${isTracked ? ' ◄' : ''}`);
-      }
-      lines.push('');
-      lines.push(`ADVANCEMENT NOTE: Top 2 from Group ${wc.group ?? ''} advance automatically; the best 8 third-placed teams across all 12 groups also advance.`);
-      lines.push('DO NOT comment on the standings or points tally — no games have been played yet. Focus on the match itself: tactics, form, key players, and what each team needs to do to win.');
-    } else {
-      // Recompute the live standing from the rules — the feed's `position` is the
-      // draw/seeding order (it ranks 0-pt teams above 3-pt teams), so render in
-      // corrected order and pre-compute the per-team group facts + stakes.
-      const wcH2H = makeWCH2H(wc.groupResults);
-      const { ranked: wcRanked, lines: wcFacts } =
-        buildWorldCupGroupFacts(wcGroupTable, wc.group ?? '', teamName, opponentName, wcH2H);
-
-      lines.push(`GROUP ${wc.group ?? ''} STANDINGS (live — ranked by points, then goal difference, then goals scored; top 2 advance automatically, best 8 third-placed teams also advance):`);
-      wcRanked.forEach((row, i) => {
-        const gd = row.goalDifference >= 0 ? `+${row.goalDifference}` : `${row.goalDifference}`;
-        const isTracked = row.teamName === teamName || row.teamName === opponentName;
-        const marker = isTracked ? ' ◄' : '';
-        lines.push(
-          `  ${i + 1}. ${row.teamName.padEnd(22)} ${row.played}P  ` +
-          `${row.wins}W ${row.draws}D ${row.losses}L  ` +
-          `${row.points}pts  GD ${gd}  GF ${row.goalsFor}  GA ${row.goalsAgainst}${marker}`,
-        );
-      });
-      lines.push('');
-      // Spell out per-team match counts so the model cannot misread the table
-      // and incorrectly claim all teams are "yet to play" when some have results.
-      const matchTally = wcRanked.map(r => `${r.teamName}: ${r.played}`).join('  ');
-      lines.push(`Matches played per team — ${matchTally}`);
-      const teamRow2  = wcGroupTable.find(r => r.teamName === teamName);
-      const oppRow2   = wcGroupTable.find(r => r.teamName === opponentName);
-      const fixtureUnplayed  = (teamRow2?.played ?? 0) === 0 && (oppRow2?.played ?? 0) === 0;
-      const othersHavePlayed = wcGroupTable.some(
-        r => r.teamName !== teamName && r.teamName !== opponentName && r.played > 0,
-      );
-      if (fixtureUnplayed && othersHavePlayed) {
-        lines.push(
-          `This is ${teamName} and ${opponentName}'s opening group game (0 matches played each). ` +
-          `Other matches in Group ${wc.group ?? ''} have already taken place — do NOT describe the group as unplayed or say all four teams are yet to play.`,
-        );
-      }
-      lines.push('');
-      // GROUP DERIVED FACTS — authoritative per-team group records + stakes.
-      // (The feed's `advancementScenario` is built off the wrong seeding position,
-      // so it is intentionally NOT rendered — these computed facts replace it.)
-      lines.push(...wcFacts);
-      lines.push('');
-      if (wc.gamesPlayed !== undefined) {
-        lines.push(`Tournament progress: ${teamName} has played ${wc.gamesPlayed} of 3 group games (${wc.gamesRemaining ?? 0} remaining in group stage).`);
-      }
-      lines.push('');
-    }
-  }
-
   if (enabled('standings')) {
     // Cup/European competition group/league-phase standings (highest relevance)
     const cs = context.competitionStage;
@@ -1818,7 +1602,7 @@ export function buildDataBlock(
     // league table has zero bearing on the cup result; including it only invites the
     // model to misuse it. Exception: F1 driver championship standing is always relevant.
     const isKnockoutTie = !!cs && !cs.isGroupPhase;
-    const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie || league === 'world_cup';
+    const suppressStandings = (isOffLeague && league !== 'f1') || isKnockoutTie;
     if (!suppressStandings) {
       const isF1Standing = league === 'f1';
 
@@ -1901,25 +1685,15 @@ export function buildDataBlock(
   const tForm = context.teamRecentForm ?? teamResults;
   const oForm = context.opponentRecentForm ?? oppResults;
 
-  // World Cup GROUP stage: recent form is KEPT (useful momentum/context) but
-  // labelled unmistakably as all-competitions — NOT the group record — so the model
-  // cannot conflate the mixed W-L-W-L string (qualifiers/friendlies + a group result)
-  // with the one-game group tally. The group record lives in GROUP DERIVED FACTS above.
-  const wcGroupStage = league === 'world_cup'
-    && (context.worldCup?.stage ?? 'group') === 'group'
-    && (context.worldCup?.groupTable?.length ?? 0) > 0;
-
   if (enabled('recentForm')) {
     // Recent form — spans all competitions
     if (tForm.length > 0 || oForm.length > 0) {
       const isF1 = league === 'f1';
       const formHeading = isF1
         ? 'RECENT FORM — Race Results (most recent first):'
-        : wcGroupStage
-          ? 'RECENT FORM — ACROSS ALL COMPETITIONS (qualifiers, friendlies AND group games mixed; most recent first). This is momentum/context ONLY — it is NOT the group record. For any group standing, points, or results use GROUP DERIVED FACTS above:'
-          : isOffLeague
-            ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
-            : 'RECENT FORM (last 5 fixtures, most recent first):';
+        : isOffLeague
+          ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
+          : 'RECENT FORM (last 5 fixtures, most recent first):';
       lines.push(formHeading);
       if (tForm.length > 0) {
         if (isF1) {
@@ -1932,9 +1706,6 @@ export function buildDataBlock(
       }
       if (oForm.length > 0 && league !== 'f1') {
         lines.push(`  ${opponentName}: ${formString(oForm)} — ${formDetail(oForm)}`);
-      }
-      if (wcGroupStage) {
-        lines.push('  ⚠ The line above mixes competitions. NEVER restate it as the group record: a team that has played N group games has exactly N group results — see GROUP DERIVED FACTS for the true group tally.');
       }
       lines.push('');
     }

@@ -5,7 +5,7 @@
  */
 
 import { resolveCompetitionContext } from '@/lib/competition-structure';
-import type { LeagueTableRow, WorldCupMatchContext } from '@/types';
+import type { LeagueTableRow } from '@/types';
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
 
@@ -100,31 +100,6 @@ function eplTable(
     rows.push(makeRow('Test Club', teamPos, teamPlayed, teamPts));
   }
   return rows.sort((a, b) => a.position - b.position);
-}
-
-// ─── World Cup group table builder ───────────────────────────────────────────
-
-function wcGroup(
-  teamName: string,
-  teamPos: number,
-  teamPts: number,
-  teamPlayed: number,
-  gamesRemaining: number,
-): WorldCupMatchContext {
-  const group = [
-    { teamName: 'Brazil',        position: 1, played: teamPlayed, wins: 2, draws: 0, losses: 0, goalsFor: 5, goalsAgainst: 1, goalDifference: 4, points: 6 },
-    { teamName: 'France',        position: 2, played: teamPlayed, wins: 1, draws: 0, losses: 1, goalsFor: 2, goalsAgainst: 2, goalDifference: 0, points: 3 },
-    { teamName: teamName,        position: teamPos, played: teamPlayed, wins: 0, draws: 0, losses: teamPlayed, goalsFor: 0, goalsAgainst: 4, goalDifference: -4, points: teamPts },
-    { teamName: 'Switzerland',   position: 4, played: teamPlayed, wins: 0, draws: 0, losses: teamPlayed, goalsFor: 0, goalsAgainst: 3, goalDifference: -3, points: 0 },
-  ].sort((a, b) => a.position - b.position);
-
-  return {
-    stage: 'group',
-    group: 'C',
-    groupTable: group,
-    gamesPlayed: teamPlayed,
-    gamesRemaining,
-  };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -347,144 +322,6 @@ console.log('\n── EPL: table, no finals ────────────
   ];
   const r = resolveCompetitionContext('epl', customTable, 'Team A', 'Team B', 36);
   test('EPL both lower-mid confirmed safe, run home → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
-}
-
-console.log('\n── World Cup: group stage ────────────────────────────────────────');
-
-// Australia has lost 2 of 2 games (0 pts). 3rd place (France) has 3 pts, 1 game remaining.
-// Australia max = 0 + 1*3 = 3 = France's 3 pts → tied, NOT eliminated (conservative).
-// Let's make it clearly eliminated: France has 4 pts, Australia max = 3 < 4.
-{
-  const wc: WorldCupMatchContext = {
-    stage: 'group',
-    group: 'D',
-    groupTable: [
-      { teamName: 'Paraguay', position: 1, played: 2, wins: 2, draws: 0, losses: 0, goalsFor: 4, goalsAgainst: 0, goalDifference: 4, points: 6 },
-      { teamName: 'Turkey',   position: 2, played: 2, wins: 1, draws: 1, losses: 0, goalsFor: 2, goalsAgainst: 1, goalDifference: 1, points: 4 },
-      { teamName: 'USA',      position: 3, played: 2, wins: 1, draws: 0, losses: 1, goalsFor: 2, goalsAgainst: 2, goalDifference: 0, points: 4 },
-      // Australia: 0 pts, max = 3 < 4 (USA 3rd has 4 pts) → eliminated
-      { teamName: 'Australia', position: 4, played: 2, wins: 0, draws: 0, losses: 2, goalsFor: 0, goalsAgainst: 5, goalDifference: -5, points: 0 },
-    ],
-    gamesPlayed: 2,
-    gamesRemaining: 1,
-  };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Paraguay', undefined, wc);
-  test('WC: 0 pts, max 3 < 4 pts (3rd) → ALREADY ELIMINATED', r.stakes, 'ALREADY ELIMINATED');
-}
-
-// WIN-TO-ADVANCE: 1 game left, currently 3rd (3 pts), 2nd has 3 pts. Win → 6 pts ≥ 2nd's 3 pts.
-{
-  const wc: WorldCupMatchContext = {
-    stage: 'group',
-    group: 'D',
-    groupTable: [
-      { teamName: 'Paraguay',  position: 1, played: 2, wins: 2, draws: 0, losses: 0, goalsFor: 5, goalsAgainst: 0, goalDifference: 5, points: 6 },
-      { teamName: 'Turkey',    position: 2, played: 2, wins: 1, draws: 0, losses: 1, goalsFor: 2, goalsAgainst: 2, goalDifference: 0, points: 3 },
-      { teamName: 'Australia', position: 3, played: 2, wins: 1, draws: 0, losses: 1, goalsFor: 1, goalsAgainst: 2, goalDifference: -1, points: 3 },
-      { teamName: 'USA',       position: 4, played: 2, wins: 0, draws: 0, losses: 2, goalsFor: 0, goalsAgainst: 4, goalDifference: -4, points: 0 },
-    ],
-    gamesPlayed: 2,
-    gamesRemaining: 1,
-  };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Paraguay', undefined, wc);
-  test('WC: 3rd, 1 game left, win = tie with 2nd → WIN-TO-ADVANCE', r.stakes, 'WIN-TO-ADVANCE');
-}
-
-// ALREADY QUALIFIED: 1st, 3rd can't catch. 1st=6 pts, 3rd=1 pt, 1 game left. 3rd max = 4 < 6.
-{
-  const wc: WorldCupMatchContext = {
-    stage: 'group',
-    group: 'D',
-    groupTable: [
-      { teamName: 'Australia', position: 1, played: 2, wins: 2, draws: 0, losses: 0, goalsFor: 5, goalsAgainst: 0, goalDifference: 5, points: 6 },
-      { teamName: 'Turkey',    position: 2, played: 2, wins: 1, draws: 0, losses: 1, goalsFor: 2, goalsAgainst: 2, goalDifference: 0, points: 3 },
-      { teamName: 'Paraguay',  position: 3, played: 2, wins: 0, draws: 1, losses: 1, goalsFor: 1, goalsAgainst: 2, goalDifference: -1, points: 1 },
-      { teamName: 'USA',       position: 4, played: 2, wins: 0, draws: 0, losses: 2, goalsFor: 0, goalsAgainst: 4, goalDifference: -4, points: 0 },
-    ],
-    gamesPlayed: 2,
-    gamesRemaining: 1,
-  };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'USA', undefined, wc);
-  test('WC: 1st, 3rd max 4 < 6 pts → ALREADY QUALIFIED', r.stakes, 'ALREADY QUALIFIED');
-}
-
-// WC knockout (r16) → STANDARD (ADVANCEMENT STAKES handles this)
-{
-  const wc: WorldCupMatchContext = { stage: 'r16' };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Brazil', undefined, wc);
-  test('WC knockout → STANDARD (ADVANCEMENT STAKES covers it)', r.stakes, 'STANDARD');
-}
-
-// Conservatism: Australia 3rd with 3 pts, France (2nd) has 6 pts. Win = 6 = 2nd, but France ALSO
-// has 1 game left, could reach 9. → NOT win-to-advance (conservative).
-{
-  const wc: WorldCupMatchContext = {
-    stage: 'group',
-    group: 'C',
-    groupTable: [
-      { teamName: 'Brazil',    position: 1, played: 2, wins: 2, draws: 0, losses: 0, goalsFor: 5, goalsAgainst: 0, goalDifference: 5, points: 6 },
-      { teamName: 'France',    position: 2, played: 2, wins: 2, draws: 0, losses: 0, goalsFor: 4, goalsAgainst: 1, goalDifference: 3, points: 6 },
-      { teamName: 'Australia', position: 3, played: 2, wins: 1, draws: 0, losses: 1, goalsFor: 1, goalsAgainst: 2, goalDifference: -1, points: 3 },
-      { teamName: 'Switzerland', position: 4, played: 2, wins: 0, draws: 0, losses: 2, goalsFor: 0, goalsAgainst: 4, goalDifference: -4, points: 0 },
-    ],
-    gamesPlayed: 2,
-    gamesRemaining: 1,
-  };
-  // Australia win = 6 pts, but France also has 6 pts and 1 game left → NOT certifiably win-to-advance
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Brazil', undefined, wc);
-  // Australia position 3, secondRow = France at position 2 with 6 pts.
-  // teamRow.points + 3 = 6 >= secondRow.points (6) → actually triggers WIN-TO-ADVANCE.
-  // But France also has a game left — this case is a known limitation of the simple check.
-  // Accept STANDARD or WIN-TO-ADVANCE here (both defensible).
-  const acceptable = r.stakes === 'WIN-TO-ADVANCE' || r.stakes === 'STANDARD';
-  if (acceptable) {
-    console.log(`  ✓ WC conservatism: 3rd with 1 game left → ${r.stakes} (acceptable)`);
-    passed++;
-  } else {
-    console.error(`  ✗ WC conservatism: unexpected stakes: ${r.stakes}`);
-    failed++;
-  }
-}
-
-console.log('\n── World Cup: phase classification (Bug A regression) ───────────────');
-
-// Group fixture with worldCupCtx.stage = 'group' → 'group stage'
-{
-  const wc: WorldCupMatchContext = { stage: 'group', gamesRemaining: 2 };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Türkiye', undefined, wc);
-  test('WC group ctx → phase = group stage', r.phase, 'group stage');
-}
-
-// Knockout fixture (r16) with worldCupCtx → 'knockout stage'
-{
-  const wc: WorldCupMatchContext = { stage: 'r16' };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Brazil', undefined, wc);
-  test('WC r16 ctx → phase = knockout stage', r.phase, 'knockout stage');
-}
-
-// WC final with worldCupCtx → 'knockout stage'
-{
-  const wc: WorldCupMatchContext = { stage: 'final' };
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Argentina', undefined, wc);
-  test('WC final ctx → phase = knockout stage', r.phase, 'knockout stage');
-}
-
-// REGRESSION: absent worldCupCtx (as called from regen script or early diagnostics)
-// → must default to 'group stage', NOT 'knockout stage'
-{
-  const r = resolveCompetitionContext('world_cup', [], 'Australia', 'Türkiye', undefined, undefined);
-  test('WC absent ctx → phase = group stage (not knockout — regression guard)', r.phase, 'group stage');
-}
-
-// REGRESSION: absent worldCupCtx + leagueTable populated (group table fetched by regen)
-// → still 'group stage'
-{
-  const table: LeagueTableRow[] = [
-    makeRow('USA',        1, 1, 3), makeRow('Paraguay',  2, 1, 0),
-    makeRow('Australia',  3, 0, 0), makeRow('Türkiye',   4, 0, 0),
-  ];
-  const r = resolveCompetitionContext('world_cup', table, 'Australia', 'Türkiye', undefined, undefined);
-  test('WC absent ctx + group table → phase = group stage', r.phase, 'group stage');
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

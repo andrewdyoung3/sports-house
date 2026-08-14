@@ -67,11 +67,6 @@ export const COMPETITION_PROFILES: Record<string, CompetitionProfile> = {
     profile:
       `82-game regular season; 30 teams, Eastern and Western Conferences. Top 6 teams per conference qualify directly for the playoffs. Teams 7th–10th play the Play-In Tournament to decide the 7th and 8th seeds. Playoffs are single-elimination best-of-7 series: the first team to win 4 games advances. Conference Quarterfinals (Round 1) → Conference Semifinals → Conference Finals → NBA Finals. The NBA Finals is the championship series between the Eastern and Western Conference champions; the first team to win 4 games becomes NBA Champion. Home court advantage in a series belongs to the higher seed (more regular-season wins). SERIES SCORE: take the SERIES SCORE line in this data block as the authoritative current state — never invent or assume it from game number alone. If the series score shows one team leads 3-1, the trailing team must win 3 consecutive games to claim the series; the leading team needs only 1 more win for the championship. NO relegation — all 30 NBA franchises are permanent members.`,
   },
-  world_cup: {
-    name: 'FIFA World Cup 2026',
-    profile:
-      `48-team tournament hosted across the United States, Canada, and Mexico. GROUP STAGE: 12 groups (A–L) of 4 teams each; every team plays 3 group games. Top 2 from each group advance automatically. The 8 best third-placed teams (ranked by points, then goal difference, then goals scored, then head-to-head) also advance — making 32 qualifiers in total. Points: 3 for a win, 1 for a draw, 0 for a loss. KNOCKOUT STAGE: Round of 32 → Round of 16 → Quarter-finals → Semi-finals → Third-place match → Final. Every knockout game is single-leg and decisive — 90 minutes; if level after 90, 30 minutes of extra time; if still level, penalty shootout decides. No away-goals rule, no second legs. Losing a knockout game ends the team's World Cup immediately. The final is at MetLife Stadium, New Jersey. NO relegation — this is a standalone tournament. The World Cup is the pinnacle of international football; every group game carries full consequence from the opening minute.`,
-  },
 };
 
 /** Returns the competition profile for a league, or null if not configured. */

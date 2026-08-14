@@ -7,14 +7,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { PreviewContext, WorldCupStage } from '@/types';
+import type { PreviewContext } from '@/types';
 import { SQUIGGLE_NAME } from '@/lib/afl';
-import { WC_ID_TO_ESPN_NAME } from '@/lib/world-cup';
 import { lookupManager } from '@/lib/managers';
 import {
   fetchAFLPreview, fetchNRLPreview, fetchEPLPreview, fetchSRUPreview,
   fetchRINTPreview, fetchNBAPreview, fetchNHLPreview, fetchF1Preview,
-  fetchWorldCupPreview, ESPN_TEAM_NAME, NRL_ESPN_NAME, SRU_ESPN_NAME,
+  ESPN_TEAM_NAME, NRL_ESPN_NAME, SRU_ESPN_NAME,
   RINT_ESPN_NAME_P,
 } from '@/lib/preview-fetchers';
 
@@ -22,7 +21,7 @@ const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-reval
 
 // ─── Route handler ────────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1', 'world_cup']);
+const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'nba', 'nhl', 'f1']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
 export async function GET(req: NextRequest) {
@@ -56,17 +55,12 @@ export async function GET(req: NextRequest) {
       const roundNumber = parseInt(req.nextUrl.searchParams.get('roundNumber') ?? '0') || undefined;
       ctx = await fetchF1Preview(teamId, raceName, circuitName, sessionType, roundNumber);
     }
-    else if (league === 'world_cup') {
-      const wcStage = (req.nextUrl.searchParams.get('worldCupStage') || undefined) as WorldCupStage | undefined;
-      const wcGroup = req.nextUrl.searchParams.get('worldCupGroup') || undefined;
-      ctx = await fetchWorldCupPreview(teamId, opponentName, wcStage, wcGroup, eventId);
-    }
 
     // Resolve opponent team ID from display name for the manager lookup.
     // We search ESPN_TEAM_NAME / NRL_ESPN_NAME / SQUIGGLE_NAME / SRU_ESPN_NAME / RINT_ESPN_NAME_P
     // by comparing the value against opponentName.
     const nameMaps: Record<string, string>[] = [
-      ESPN_TEAM_NAME, NRL_ESPN_NAME, SQUIGGLE_NAME, SRU_ESPN_NAME, RINT_ESPN_NAME_P, WC_ID_TO_ESPN_NAME,
+      ESPN_TEAM_NAME, NRL_ESPN_NAME, SQUIGGLE_NAME, SRU_ESPN_NAME, RINT_ESPN_NAME_P,
     ];
     let oppTeamId: string | undefined;
     for (const map of nameMaps) {

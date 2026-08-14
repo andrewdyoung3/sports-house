@@ -47,7 +47,7 @@ import type { PreviewContext } from '@/types';
 const BASE = process.env.SANDBOX_BASE ?? 'http://localhost:3001';
 
 const PREFIX_TO_LEAGUE: Record<string, string> = {
-  afl: 'afl', nrl: 'nrl', soo: 'nrl', epl: 'epl', sru: 'super_rugby', wc: 'world_cup',
+  afl: 'afl', nrl: 'nrl', soo: 'nrl', epl: 'epl', sru: 'super_rugby',
   nba: 'nba', f1: 'f1', rint: 'rugby_int', bbl: 'bbl', cint: 'cricket_int',
 };
 

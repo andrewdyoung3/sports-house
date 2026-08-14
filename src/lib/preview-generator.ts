@@ -152,28 +152,6 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
  * use dead-rubber language — every knockout match is always high-stakes.
  * Same design as validatePhaseStakes; bound to the STAGE & STAKES marker.
  */
-function validateWCKnockoutStakes(output: AIPreview, prompt: string): string[] {
-  if (!/STAGE & STAKES:.*SINGLE-ELIMINATION/.test(prompt)) return [];
-  const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
-  const badRe = /\b(dead rubber|no further progression|nothing at stake|nothing to play for|symbolic only|already qualified|already eliminated|purely symbolic|meaningless(?: result| fixture| game| match)?|a formality|of no consequence)\b/gi;
-  const violations: string[] = [];
-  const seen = new Set<string>();
-  for (const m of factual.matchAll(badRe)) {
-    const hit = m[0].toLowerCase();
-    if (seen.has(hit)) continue;
-    seen.add(hit);
-    violations.push(`WC knockout stakes contradiction "${m[0]}" — STAGE & STAKES says this is single-elimination knockout, not a dead rubber`);
-  }
-  return violations;
-}
-
-/**
- * World Cup group-record binding: the GROUP DERIVED FACTS block states each team's
- * group games played. A team that has played ≤1 group game cannot have a two-result
- * group record — so a "win and a draw" / "one win and one loss" / "two wins" style
- * claim in the context field is the all-competitions-form-conflation error (reading
- * the RECENT FORM line as the group record). Reject → retry.
- */
 /**
  * F1 championship-gap binding: the model miscalculates points margins ("121-point
  * lead over Red Bull" when the real gap is 173). When CHAMPIONSHIP DERIVED FACTS is
@@ -192,107 +170,6 @@ export function validateF1ChampionshipClaims(output: AIPreview, prompt: string):
     if (!n || promptNums.has(n) || seen.has(n)) continue;
     seen.add(n);
     violations.push(`F1 championship gap "${m[0].slice(0, 50)}" — ${n} is not a figure in the data block; use the CHAMPIONSHIP DERIVED FACTS gaps verbatim`);
-  }
-  return violations;
-}
-
-export function validateWorldCupGroupRecord(output: AIPreview, prompt: string): string[] {
-  if (!/GROUP\s+\S+\s+DERIVED FACTS/.test(prompt)) return [];
-  // team → group games played, parsed from the derived-facts lines.
-  const played = new Map<string, number>();
-  for (const m of prompt.matchAll(/•\s*(.+?):\s*\d+ group points? from (\d+) game/gi)) {
-    played.set(m[1].trim().toLowerCase(), parseInt(m[2], 10));
-  }
-  const ctx = output.context ?? '';
-  const violations: string[] = [];
-  const seen = new Set<string>();
-
-  // (a) ARITHMETIC IMPOSSIBILITY (count-based, not phrasing-based): a team that has
-  //     played N group games has at most N group results. Count the result-outcomes
-  //     claimed in a RECORD framing and reject when they exceed games played — this
-  //     catches any wording, including ones never enumerated. Scoped to avoid false
-  //     positives on conditionals ("a win would…") and legit all-comps form refs.
-  const playedVals = [...played.values()];
-  if (playedVals.length > 0) {
-    const nMin = Math.min(...playedVals);
-    const RES = /\b(wins?|won|victor(?:y|ies)|loss(?:es)?|lost|defeats?|defeated|beaten|draws?|drew|tie[ds]?|tied)\b/gi;
-    const PAST = /\b(won|lost|drew|beaten|defeated|tied)\b/i;
-    const multOf = (w: string): number => (({ two: 2, '2': 2, both: 2, three: 3, '3': 3 }) as Record<string, number>)[w.toLowerCase()] ?? 1;
-
-    // Locate every result token with its outcome-count (a count word adjacent before/after).
-    const hits: Array<{ idx: number; end: number; n: number; tok: string }> = [];
-    for (const m of ctx.matchAll(RES)) {
-      const i = m.index ?? 0;
-      const before = (ctx.slice(Math.max(0, i - 12), i).trim().split(/\s+/).pop() ?? '');
-      const after  = (ctx.slice(i + m[0].length).match(/^\s+(\w+)/)?.[1] ?? '');
-      hits.push({ idx: i, end: i + m[0].length, n: Math.max(multOf(before), multOf(after)), tok: m[0] });
-    }
-
-    // Cluster adjacent result tokens (within 35 chars) → a single record phrase.
-    for (let i = 0; i < hits.length;) {
-      let j = i, outcomes = hits[i].n;
-      while (j + 1 < hits.length && hits[j + 1].idx - hits[j].end <= 35) { j++; outcomes += hits[j].n; }
-      if (outcomes > nMin) {
-        const start = hits[i].idx, fin = hits[j].end;
-        const phrase = ctx.slice(start, fin);
-        const lead   = ctx.slice(Math.max(0, start - 30), start);
-        const around = ctx.slice(Math.max(0, start - 55), fin + 45);
-        const isRecord     = PAST.test(phrase) || /\b(with|have|has|hold(?:ing)?|after|from|record|to (?:their|its) name|both|each|sit(?:ting)? on|level on)\b/i.test(lead);
-        const isConditional = /\b(would|could|should|if|might|may|will)\b|'d\b/i.test(around);
-        const oppAttached   = /\b(?:to|against|over|beat|def\.?|past|by|versus|vs\.?)\s+[A-ZÀ-Þ]/.test(around);
-        const formFramed    = /\b(form|all competitions|recent(?:ly)?|qualifier|friendl|warm-?up|last (?:five|5))\b/i.test(around);
-        if (isRecord && !isConditional && !oppAttached && !formFramed) {
-          violations.push(`WC group-record arithmetic "${phrase.slice(0, 55)}" — implies ${outcomes} group results, but a tracked team has played only ${nMin} group game(s); a one-game record is a single result (see GROUP DERIVED FACTS)`);
-        }
-      }
-      i = j + 1;
-    }
-  }
-
-  // (b) Over-claimed qualification: if the derived facts mark NO tracked team as
-  //     mathematically secured/through, prose must not assert qualification.
-  const someoneThrough = /(mathematically secured a top-2|through to the Round of 32|finished in the automatic top 2)/i.test(prompt);
-  if (!someoneThrough) {
-    const overclaimRe = /\b(guaranteed (?:a )?(?:top-two|top two|qualification|progression|advancement)|already qualified|assured of (?:qualification|a top-two|progression)|through to the (?:round of 32|knockout)|secured (?:qualification|a top-two|progression|their place)|no (?:immediate )?(?:impact|bearing) on (?:advancement|qualification)|nothing to play for)\b/gi;
-    for (const m of ctx.matchAll(overclaimRe)) {
-      const hit = m[0].toLowerCase();
-      if (seen.has(hit)) continue;
-      seen.add(hit);
-      violations.push(`WC over-claim "${m[0]}" — no tracked team is mathematically through per GROUP DERIVED FACTS; a current top-2 position is NOT secured qualification`);
-    }
-  }
-  return violations;
-}
-
-/**
- * WC group-letter binding. The fixture's group is stated authoritatively in the
- * data block (THIS FIXTURE IS IN GROUP <X> / GROUP <X> DERIVED FACTS), sourced from
- * world-cup.ts. The model has hallucinated a different letter ("Group F" for a Group
- * D fixture). Reject when prose names a single group letter that differs from the
- * fixture's — but stay conservative: a wrong letter inside a best-third / cross-group
- * clause ("the best third-placed teams across the groups") is a legitimate collective
- * reference, not a mis-stamp of THIS fixture, so it is allowed.
- */
-export function validateWorldCupGroupLetter(output: AIPreview, prompt: string): string[] {
-  const m = prompt.match(/THIS FIXTURE IS IN GROUP ([A-L])\b/)
-    ?? prompt.match(/GROUP ([A-L]) DERIVED FACTS/)
-    ?? prompt.match(/GROUP ([A-L]) (?:STANDINGS|COMPOSITION)/);
-  if (!m) return [];
-  const correct = m[1];
-  const text = [
-    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
-    ...(output.keyInsights ?? []),
-  ].filter(Boolean).join('  ');
-  const violations: string[] = [];
-  const seen = new Set<string>();
-  for (const mm of text.matchAll(/\bGroup\s+([A-L])\b/g)) {
-    const letter = mm[1];
-    if (letter === correct || seen.has(letter)) continue;
-    const i = mm.index ?? 0;
-    const around = text.slice(Math.max(0, i - 80), i + 80).toLowerCase();
-    if (/third|best[-\s]third|across|other group|all 12 group|12 groups|each group|every group/.test(around)) continue;
-    seen.add(letter);
-    violations.push(`WC group letter "Group ${letter}" — this fixture is in Group ${correct} (see GROUP ${correct} DERIVED FACTS); name the group verbatim and do not introduce another group letter`);
   }
   return violations;
 }
@@ -596,10 +473,7 @@ function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
-    ...validateWCKnockoutStakes(v, prompt),
     ...validateLadderPosition(v, prompt),
-    ...validateWorldCupGroupRecord(v, prompt),
-    ...validateWorldCupGroupLetter(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),

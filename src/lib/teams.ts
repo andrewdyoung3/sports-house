@@ -16,11 +16,10 @@ export const LEAGUES: League[] = [
   { id: 'f1',          name: 'F1',           fullName: 'Formula 1 World Championship',  sport: 'Motorsport',                icon: '🏎', country: 'International' },
   { id: 'cricket_int', name: 'Int\'l Cricket', fullName: 'International Cricket',        sport: 'Cricket',                   icon: '🏏', country: 'International' },
   { id: 'bbl',         name: 'Big Bash',       fullName: 'Big Bash League',              sport: 'Cricket',                   icon: '🏏', country: 'Australia' },
-  { id: 'world_cup',   name: 'World Cup',      fullName: 'FIFA World Cup 2026',          sport: 'Football',                  icon: '🏆', country: 'International' },
 ];
 
 /** Leagues backed by real data APIs (fixtures/results/news). All others use deterministic mock data. */
-export const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'world_cup', 'nba']);
+export const REAL_DATA_LEAGUES = new Set<string>(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'nba']);
 
 // ─── All Teams ────────────────────────────────────────────────────────────────
 
@@ -266,72 +265,6 @@ export const TEAMS: Team[] = [
   { id: 'int-zim', name: 'Zimbabwe',     shortName: 'Zimbabwe',     abbreviation: 'ZIM', league: 'cricket_int', sport: 'Cricket', city: 'Harare',        country: 'Zimbabwe',     primaryColor: '#007a3d', secondaryColor: '#ef3340', venue: 'Harare Sports Club' },
   { id: 'int-ire', name: 'Ireland',      shortName: 'Ireland',      abbreviation: 'IRE', league: 'cricket_int', sport: 'Cricket', city: 'Dublin',        country: 'Ireland',      primaryColor: '#169b62', secondaryColor: '#ffffff', venue: 'Malahide Cricket Club' },
   { id: 'int-afg', name: 'Afghanistan',  shortName: 'Afghanistan',  abbreviation: 'AFG', league: 'cricket_int', sport: 'Cricket', city: 'Kabul',         country: 'Afghanistan',  primaryColor: '#000000', secondaryColor: '#d32011', venue: 'Kabul International Cricket Stadium' },
-
-  // ── FIFA World Cup 2026 — National Teams (48 confirmed qualifiers) ────────────
-  // IDs prefixed `wc-` to avoid collisions with cricket/rugby international teams.
-  // primaryColor/secondaryColor = national kit / flag colours for inline theming.
-
-  // CONCACAF Hosts (3)
-  { id: 'wc-usa',         name: 'United States',    shortName: 'USA',              abbreviation: 'USA', league: 'world_cup', sport: 'Football', city: '', country: 'USA',                primaryColor: '#002868', secondaryColor: '#BF0A30', venue: 'MetLife Stadium' },
-  { id: 'wc-canada',      name: 'Canada',           shortName: 'Canada',           abbreviation: 'CAN', league: 'world_cup', sport: 'Football', city: '', country: 'Canada',             primaryColor: '#FF0000', secondaryColor: '#FFFFFF', venue: 'BMO Field' },
-  { id: 'wc-mexico',      name: 'Mexico',           shortName: 'Mexico',           abbreviation: 'MEX', league: 'world_cup', sport: 'Football', city: '', country: 'Mexico',             primaryColor: '#006847', secondaryColor: '#FFFFFF', venue: 'Estadio Azteca' },
-
-  // CONMEBOL (6)
-  { id: 'wc-argentina',   name: 'Argentina',        shortName: 'Argentina',        abbreviation: 'ARG', league: 'world_cup', sport: 'Football', city: '', country: 'Argentina',          primaryColor: '#74ACDF', secondaryColor: '#FFFFFF', venue: 'Estadio Monumental' },
-  { id: 'wc-brazil',      name: 'Brazil',           shortName: 'Brazil',           abbreviation: 'BRA', league: 'world_cup', sport: 'Football', city: '', country: 'Brazil',             primaryColor: '#009C3B', secondaryColor: '#FFDF00', venue: 'Maracana' },
-  { id: 'wc-colombia',    name: 'Colombia',         shortName: 'Colombia',         abbreviation: 'COL', league: 'world_cup', sport: 'Football', city: '', country: 'Colombia',           primaryColor: '#FCD116', secondaryColor: '#003087', venue: 'Estadio El Campin' },
-  { id: 'wc-ecuador',     name: 'Ecuador',          shortName: 'Ecuador',          abbreviation: 'ECU', league: 'world_cup', sport: 'Football', city: '', country: 'Ecuador',            primaryColor: '#FFD100', secondaryColor: '#003087', venue: 'Estadio Olimpico' },
-  { id: 'wc-uruguay',     name: 'Uruguay',          shortName: 'Uruguay',          abbreviation: 'URU', league: 'world_cup', sport: 'Football', city: '', country: 'Uruguay',            primaryColor: '#5EB6E4', secondaryColor: '#FFFFFF', venue: 'Estadio Centenario' },
-  { id: 'wc-paraguay',    name: 'Paraguay',         shortName: 'Paraguay',         abbreviation: 'PAR', league: 'world_cup', sport: 'Football', city: '', country: 'Paraguay',           primaryColor: '#D52B1E', secondaryColor: '#FFFFFF', venue: 'Estadio Defensores del Chaco' },
-
-  // CONCACAF non-hosts (3)
-  { id: 'wc-panama',      name: 'Panama',           shortName: 'Panama',           abbreviation: 'PAN', league: 'world_cup', sport: 'Football', city: '', country: 'Panama',             primaryColor: '#DA121A', secondaryColor: '#003087', venue: 'Estadio Rommel Fernandez' },
-  { id: 'wc-curacao',     name: 'Curaçao',          shortName: 'Curaçao',          abbreviation: 'CUW', league: 'world_cup', sport: 'Football', city: '', country: 'Curaçao',            primaryColor: '#003DA5', secondaryColor: '#F7D117', venue: 'Ergilio Hato Stadium' },
-  { id: 'wc-haiti',       name: 'Haiti',            shortName: 'Haiti',            abbreviation: 'HAI', league: 'world_cup', sport: 'Football', city: '', country: 'Haiti',              primaryColor: '#00209F', secondaryColor: '#D21034', venue: 'Sylvio Cator Stadium' },
-
-  // UEFA (16)
-  { id: 'wc-france',      name: 'France',           shortName: 'France',           abbreviation: 'FRA', league: 'world_cup', sport: 'Football', city: '', country: 'France',             primaryColor: '#002395', secondaryColor: '#FFFFFF', venue: 'Stade de France' },
-  { id: 'wc-spain',       name: 'Spain',            shortName: 'Spain',            abbreviation: 'ESP', league: 'world_cup', sport: 'Football', city: '', country: 'Spain',              primaryColor: '#AA151B', secondaryColor: '#F1BF00', venue: 'Estadio Santiago Bernabeu' },
-  { id: 'wc-england',     name: 'England',          shortName: 'England',          abbreviation: 'ENG', league: 'world_cup', sport: 'Football', city: '', country: 'England',            primaryColor: '#FFFFFF', secondaryColor: '#CF142B', venue: 'Wembley Stadium' },
-  { id: 'wc-germany',     name: 'Germany',          shortName: 'Germany',          abbreviation: 'GER', league: 'world_cup', sport: 'Football', city: '', country: 'Germany',            primaryColor: '#000000', secondaryColor: '#FFFFFF', venue: 'Olympiastadion Berlin' },
-  { id: 'wc-portugal',    name: 'Portugal',         shortName: 'Portugal',         abbreviation: 'POR', league: 'world_cup', sport: 'Football', city: '', country: 'Portugal',           primaryColor: '#006600', secondaryColor: '#FF0000', venue: 'Estadio da Luz' },
-  { id: 'wc-netherlands', name: 'Netherlands',      shortName: 'Netherlands',      abbreviation: 'NED', league: 'world_cup', sport: 'Football', city: '', country: 'Netherlands',        primaryColor: '#FF6600', secondaryColor: '#FFFFFF', venue: 'Johan Cruyff Arena' },
-  { id: 'wc-belgium',     name: 'Belgium',          shortName: 'Belgium',          abbreviation: 'BEL', league: 'world_cup', sport: 'Football', city: '', country: 'Belgium',            primaryColor: '#000000', secondaryColor: '#EF0029', venue: 'King Baudouin Stadium' },
-  { id: 'wc-croatia',     name: 'Croatia',          shortName: 'Croatia',          abbreviation: 'CRO', league: 'world_cup', sport: 'Football', city: '', country: 'Croatia',            primaryColor: '#FF0000', secondaryColor: '#FFFFFF', venue: 'Stadion Maksimir' },
-  { id: 'wc-switzerland', name: 'Switzerland',      shortName: 'Switzerland',      abbreviation: 'SUI', league: 'world_cup', sport: 'Football', city: '', country: 'Switzerland',        primaryColor: '#D52B1E', secondaryColor: '#FFFFFF', venue: 'Stade de Suisse' },
-  { id: 'wc-austria',     name: 'Austria',          shortName: 'Austria',          abbreviation: 'AUT', league: 'world_cup', sport: 'Football', city: '', country: 'Austria',            primaryColor: '#ED2939', secondaryColor: '#FFFFFF', venue: 'Ernst-Happel-Stadion' },
-  { id: 'wc-sweden',      name: 'Sweden',           shortName: 'Sweden',           abbreviation: 'SWE', league: 'world_cup', sport: 'Football', city: '', country: 'Sweden',             primaryColor: '#006AA7', secondaryColor: '#FECC02', venue: 'Friends Arena' },
-  { id: 'wc-norway',      name: 'Norway',           shortName: 'Norway',           abbreviation: 'NOR', league: 'world_cup', sport: 'Football', city: '', country: 'Norway',             primaryColor: '#EF2B2D', secondaryColor: '#FFFFFF', venue: 'Ullevaal Stadion' },
-  { id: 'wc-scotland',    name: 'Scotland',         shortName: 'Scotland',         abbreviation: 'SCO', league: 'world_cup', sport: 'Football', city: '', country: 'Scotland',           primaryColor: '#003087', secondaryColor: '#FFFFFF', venue: 'Hampden Park' },
-  { id: 'wc-turkey',      name: 'Turkey',           shortName: 'Turkey',           abbreviation: 'TUR', league: 'world_cup', sport: 'Football', city: '', country: 'Turkey',             primaryColor: '#E30A17', secondaryColor: '#FFFFFF', venue: 'Ataturk Olympic Stadium' },
-  { id: 'wc-czechia',     name: 'Czech Republic',   shortName: 'Czechia',          abbreviation: 'CZE', league: 'world_cup', sport: 'Football', city: '', country: 'Czech Republic',     primaryColor: '#D7141A', secondaryColor: '#FFFFFF', venue: 'Fortuna Arena' },
-  { id: 'wc-bosnia',      name: 'Bosnia & Herzegovina', shortName: 'Bosnia',       abbreviation: 'BIH', league: 'world_cup', sport: 'Football', city: '', country: 'Bosnia & Herzegovina',primaryColor: '#003D87', secondaryColor: '#FFCB00', venue: 'Bilino Polje' },
-
-  // CAF — Africa (10)
-  { id: 'wc-morocco',     name: 'Morocco',          shortName: 'Morocco',          abbreviation: 'MAR', league: 'world_cup', sport: 'Football', city: '', country: 'Morocco',            primaryColor: '#C1272D', secondaryColor: '#006233', venue: 'Complexe Sportif Prince Moulay Abdellah' },
-  { id: 'wc-senegal',     name: 'Senegal',          shortName: 'Senegal',          abbreviation: 'SEN', league: 'world_cup', sport: 'Football', city: '', country: 'Senegal',            primaryColor: '#00853F', secondaryColor: '#FDEF42', venue: 'Stade Leopold Sedar Senghor' },
-  { id: 'wc-ivorycoast',  name: 'Ivory Coast',      shortName: 'Ivory Coast',      abbreviation: 'CIV', league: 'world_cup', sport: 'Football', city: '', country: 'Ivory Coast',        primaryColor: '#F77F00', secondaryColor: '#009A44', venue: 'Stade Felix Houphouet-Boigny' },
-  { id: 'wc-algeria',     name: 'Algeria',          shortName: 'Algeria',          abbreviation: 'ALG', league: 'world_cup', sport: 'Football', city: '', country: 'Algeria',            primaryColor: '#006233', secondaryColor: '#FFFFFF', venue: 'Stade Mustapha Tchaker' },
-  { id: 'wc-egypt',       name: 'Egypt',            shortName: 'Egypt',            abbreviation: 'EGY', league: 'world_cup', sport: 'Football', city: '', country: 'Egypt',              primaryColor: '#CE1126', secondaryColor: '#FFFFFF', venue: 'Cairo International Stadium' },
-  { id: 'wc-tunisia',     name: 'Tunisia',          shortName: 'Tunisia',          abbreviation: 'TUN', league: 'world_cup', sport: 'Football', city: '', country: 'Tunisia',            primaryColor: '#E70013', secondaryColor: '#FFFFFF', venue: 'Stade Olympique de Rades' },
-  { id: 'wc-drcongo',     name: 'DR Congo',         shortName: 'DR Congo',         abbreviation: 'COD', league: 'world_cup', sport: 'Football', city: '', country: 'DR Congo',           primaryColor: '#007FFF', secondaryColor: '#F7D900', venue: 'Stade des Martyrs' },
-  { id: 'wc-ghana',       name: 'Ghana',            shortName: 'Ghana',            abbreviation: 'GHA', league: 'world_cup', sport: 'Football', city: '', country: 'Ghana',              primaryColor: '#EF3340', secondaryColor: '#FFFFFF', venue: 'Accra Sports Stadium' },
-  { id: 'wc-capeverde',   name: 'Cape Verde',       shortName: 'Cape Verde',       abbreviation: 'CPV', league: 'world_cup', sport: 'Football', city: '', country: 'Cape Verde',         primaryColor: '#003893', secondaryColor: '#CF2027', venue: 'Estadio Nacional' },
-  { id: 'wc-southafrica', name: 'South Africa',     shortName: 'South Africa',     abbreviation: 'RSA', league: 'world_cup', sport: 'Football', city: '', country: 'South Africa',       primaryColor: '#007A4D', secondaryColor: '#FFB612', venue: 'FNB Stadium' },
-
-  // AFC — Asia (9)
-  { id: 'wc-japan',       name: 'Japan',            shortName: 'Japan',            abbreviation: 'JPN', league: 'world_cup', sport: 'Football', city: '', country: 'Japan',              primaryColor: '#003087', secondaryColor: '#FFFFFF', venue: 'Japan National Stadium' },
-  { id: 'wc-iran',        name: 'Iran',             shortName: 'Iran',             abbreviation: 'IRN', league: 'world_cup', sport: 'Football', city: '', country: 'Iran',               primaryColor: '#239F40', secondaryColor: '#DA0000', venue: 'Azadi Stadium' },
-  { id: 'wc-southkorea',  name: 'South Korea',      shortName: 'South Korea',      abbreviation: 'KOR', league: 'world_cup', sport: 'Football', city: '', country: 'South Korea',        primaryColor: '#CE1126', secondaryColor: '#003087', venue: 'Seoul World Cup Stadium' },
-  { id: 'wc-australia',   name: 'Australia',        shortName: 'Australia',        abbreviation: 'AUS', league: 'world_cup', sport: 'Football', city: '', country: 'Australia',          primaryColor: '#FFD700', secondaryColor: '#00843D', venue: 'Stadium Australia' },
-  { id: 'wc-qatar',       name: 'Qatar',            shortName: 'Qatar',            abbreviation: 'QAT', league: 'world_cup', sport: 'Football', city: '', country: 'Qatar',              primaryColor: '#8D153A', secondaryColor: '#FFFFFF', venue: 'Khalifa International Stadium' },
-  { id: 'wc-saudiarabia', name: 'Saudi Arabia',     shortName: 'Saudi Arabia',     abbreviation: 'KSA', league: 'world_cup', sport: 'Football', city: '', country: 'Saudi Arabia',       primaryColor: '#006C35', secondaryColor: '#FFFFFF', venue: 'King Fahd International Stadium' },
-  { id: 'wc-uzbekistan',  name: 'Uzbekistan',       shortName: 'Uzbekistan',       abbreviation: 'UZB', league: 'world_cup', sport: 'Football', city: '', country: 'Uzbekistan',         primaryColor: '#1EB53A', secondaryColor: '#0099B5', venue: 'Pakhtakor Central Stadium' },
-  { id: 'wc-jordan',      name: 'Jordan',           shortName: 'Jordan',           abbreviation: 'JOR', league: 'world_cup', sport: 'Football', city: '', country: 'Jordan',             primaryColor: '#007A3D', secondaryColor: '#CE1126', venue: 'King Abdullah II Stadium' },
-  { id: 'wc-iraq',        name: 'Iraq',             shortName: 'Iraq',             abbreviation: 'IRQ', league: 'world_cup', sport: 'Football', city: '', country: 'Iraq',               primaryColor: '#007A3D', secondaryColor: '#CE1126', venue: 'Al-Shaab International Stadium' },
-
-  // OFC — Oceania (1)
-  { id: 'wc-newzealand',  name: 'New Zealand',      shortName: 'New Zealand',      abbreviation: 'NZL', league: 'world_cup', sport: 'Football', city: '', country: 'New Zealand',        primaryColor: '#000000', secondaryColor: '#FFFFFF', venue: 'Eden Park' },
 
   // ── Big Bash League (BBL) ────────────────────────────────────────────────
   { id: 'bbl-scorchers',  name: 'Perth Scorchers',    shortName: 'Scorchers',  abbreviation: 'PS',  league: 'bbl', sport: 'Cricket', city: 'Perth',     country: 'Australia', primaryColor: '#ef660b', secondaryColor: '#ffffff', venue: 'Optus Stadium' },

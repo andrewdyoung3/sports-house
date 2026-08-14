@@ -10,7 +10,7 @@ import { contrastColor } from '@/lib/utils';
 // Leagues with real data built — NFL and MLB excluded (no fixture/results API yet)
 const BUILT_LEAGUE_IDS = new Set([
   'afl', 'nrl', 'epl', 'super_rugby', 'rugby_int',
-  'nba', 'f1', 'cricket_int', 'bbl', 'world_cup',
+  'nba', 'f1', 'cricket_int', 'bbl',
 ]);
 const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';
@@ -72,7 +72,6 @@ export default function OnboardingPage() {
         {/* Sport filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4">
           {[{ id: 'all' as const, name: 'All', icon: '🏆' }, ...BUILT_LEAGUES].map(league => {
-            const isWC = league.id === 'world_cup';
             const isActive = activeSport === league.id;
             return (
               <button
@@ -81,14 +80,9 @@ export default function OnboardingPage() {
                 className={[
                   'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all',
                   isActive
-                    ? isWC
-                      ? 'bg-amber-500/20 text-amber-200 border border-amber-500/60 shadow-[0_0_16px_rgba(200,146,42,0.4)]'
-                      : 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
-                    : isWC
-                      ? 'bg-white/8 text-amber-300/80 hover:text-amber-200 border border-amber-600/40 hover:border-amber-500/60'
-                      : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white',
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
+                    : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white',
                 ].join(' ')}
-                style={isWC && !isActive ? { boxShadow: '0 0 10px rgba(200,146,42,0.2)' } : undefined}
               >
                 <SportBall league={league.id} size={14} />
                 {league.name}

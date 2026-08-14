@@ -189,7 +189,7 @@ function ResultColumn({
 // ─── Main sandbox component ───────────────────────────────────────────────────
 
 export default function SandboxClient() {
-  const [gameId, setGameId]               = useState('wc-760421');
+  const [gameId, setGameId]               = useState('');
   const [loading, setLoading]             = useState(false);
   const [loadError, setLoadError]         = useState<string | null>(null);
   const [contextData, setContextData]     = useState<ContextData | null>(null);
@@ -335,7 +335,7 @@ export default function SandboxClient() {
           value={gameId}
           onChange={e => setGameId(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleLoad()}
-          placeholder="Game ID e.g. wc-760421"
+          placeholder="Game ID e.g. afl-123456"
           className="bg-white/5 border border-white/10 rounded px-3 py-1.5 text-sm text-white/80 w-48 font-mono"
         />
         <button

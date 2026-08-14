@@ -12,7 +12,7 @@
 
 import type {
   PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage,
-  LeagueTableRow, WorldCupMatchContext, WorldCupGroupRow, WorldCupStage,
+  LeagueTableRow,
   GameResult, HeadToHeadMeeting,
 } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
@@ -20,7 +20,6 @@ import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football
 import { fetchTimeout } from '@/lib/espn';
 import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
-import { WC_ID_TO_ESPN_NAME, WC_ESPN_NAME_TO_ID, WC_TEAM_GROUPS, computeGroupAdvancementScenario } from '@/lib/world-cup';
 import {
   cricketConfigured, cricMatchInfo, cricMatchSquad, cricSeriesInfo, type CricMatch,
 } from '@/lib/cricketdata';
@@ -1916,144 +1915,6 @@ export async function fetchF1Preview(
     f1RaceName:     raceName || undefined,
     f1CircuitName:  circuitName || undefined,
     f1RoundNumber:  roundNumber,
-  };
-}
-
-// ─── FIFA World Cup 2026 ──────────────────────────────────────────────────────
-
-export async function fetchWorldCupPreview(
-  teamId: string,
-  opponentName: string,
-  worldCupStage?: WorldCupStage,
-  worldCupGroup?: string,
-  eventId?: string,
-): Promise<PreviewContext> {
-  const teamName = WC_ID_TO_ESPN_NAME[teamId];
-  if (!teamName) return {};
-
-  const [standingsRes, extras] = await Promise.all([
-    fetchTimeout(
-      'https://site.api.espn.com/apis/v2/sports/soccer/fifa.world/standings',
-      { next: { revalidate: 3600 } },
-    ).catch(() => null),
-    fetchESPNMatchExtras('soccer/fifa.world', eventId, teamName, opponentName),
-  ]);
-
-  let worldCup: WorldCupMatchContext | undefined;
-  let teamStanding: TeamStanding | undefined;
-  let opponentStanding: TeamStanding | undefined;
-
-  if (standingsRes?.ok) {
-    const data = await standingsRes.json().catch(() => null);
-    const groups: any[] = data?.children ?? [];
-
-    for (const group of groups) {
-      const entries: any[] = group.standings?.entries ?? [];
-      const ourEntry = entries.find((e: any) => e.team?.displayName === teamName);
-      if (!ourEntry) continue;
-
-      const getStat = (e: any, ...names: string[]): number => {
-        for (const name of names) {
-          const s = (e.stats ?? []).find((st: any) => st.name === name);
-          if (s !== undefined && s.value !== undefined) return Number(s.value);
-        }
-        return 0;
-      };
-
-      const groupTable: WorldCupGroupRow[] = entries.map((e: any, i: number) => {
-        const gf = getStat(e, 'pointsFor', 'goalsFor');
-        const ga = getStat(e, 'pointsAgainst', 'goalsAgainst');
-        return {
-          teamName:       e.team?.displayName ?? '',
-          teamId:         WC_ESPN_NAME_TO_ID[e.team?.displayName ?? ''],
-          position:       i + 1,
-          played:         getStat(e, 'gamesPlayed', 'played'),
-          wins:           getStat(e, 'wins'),
-          draws:          getStat(e, 'ties', 'draws'),
-          losses:         getStat(e, 'losses'),
-          goalsFor:       gf,
-          goalsAgainst:   ga,
-          goalDifference: gf - ga,
-          points:         getStat(e, 'points'),
-        };
-      });
-
-      const ourRow      = groupTable.find(r => r.teamName === teamName);
-      const oppRow      = groupTable.find(r => r.teamName === opponentName);
-      const stage       = worldCupStage ?? 'group';
-      const groupLetter = worldCupGroup ?? WC_TEAM_GROUPS[teamId] ?? group.name?.replace(/^Group\s*/i, '') ?? '';
-
-      if (stage === 'group' && ourRow) {
-        const played         = ourRow.played;
-        const gamesRemaining = Math.max(0, 3 - played);
-        worldCup = {
-          stage:               'group',
-          group:               groupLetter,
-          groupTable,
-          gamesPlayed:         played,
-          gamesRemaining,
-          advancementScenario: computeGroupAdvancementScenario(
-            teamName, ourRow.points, played, gamesRemaining, ourRow.position,
-          ),
-        };
-      } else {
-        worldCup = {
-          stage,
-          group:               groupLetter,
-          opponentTBD:         opponentName === 'TBD',
-          opponentPlaceholder: opponentName === 'TBD' ? opponentName : undefined,
-        };
-      }
-
-      if (ourRow) {
-        teamStanding = {
-          name:         ourRow.teamName,
-          position:     ourRow.position,
-          wins:         ourRow.wins,
-          draws:        ourRow.draws,
-          losses:       ourRow.losses,
-          played:       ourRow.played,
-          points:       ourRow.points,
-          goalsFor:     ourRow.goalsFor,
-          goalsAgainst: ourRow.goalsAgainst,
-        };
-      }
-      if (oppRow) {
-        opponentStanding = {
-          name:         oppRow.teamName,
-          position:     oppRow.position,
-          wins:         oppRow.wins,
-          draws:        oppRow.draws,
-          losses:       oppRow.losses,
-          played:       oppRow.played,
-          points:       oppRow.points,
-          goalsFor:     oppRow.goalsFor,
-          goalsAgainst: oppRow.goalsAgainst,
-        };
-      }
-      break;
-    }
-  }
-
-  // Fallback: stage/group context only (standings unavailable)
-  if (!worldCup && (worldCupStage || worldCupGroup)) {
-    worldCup = {
-      stage:               worldCupStage ?? 'group',
-      group:               worldCupGroup,
-      opponentTBD:         opponentName === 'TBD',
-      opponentPlaceholder: opponentName === 'TBD' ? opponentName : undefined,
-    };
-  }
-
-  return {
-    worldCup,
-    teamStanding,
-    opponentStanding,
-    teamLastLineup:     extras.teamLastLineup,
-    opponentLastLineup: extras.opponentLastLineup,
-    teamRecentForm:     extras.teamRecentForm,
-    opponentRecentForm: extras.opponentRecentForm,
-    headToHead:         extras.headToHead,
   };
 }
 

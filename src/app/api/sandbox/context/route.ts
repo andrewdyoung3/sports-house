@@ -14,7 +14,6 @@ const PREFIX_TO_LEAGUE: Record<string, string> = {
 
   epl:  'epl',
   sru:  'super_rugby',
-  wc:   'world_cup',
   nba:  'nba',
   f1:   'f1',
   rint: 'rugby_int',

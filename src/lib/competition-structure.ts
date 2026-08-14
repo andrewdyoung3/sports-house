@@ -10,11 +10,11 @@
  * when mathematically certain. FINALS RACE / TITLE RACE / RELEGATION BATTLE are
  * directional (near-cutoff + run-home phase) but never contradict the maths.
  *
- * First wave: afl, nrl, super_rugby (ladder→finals), epl (table, no finals),
- * world_cup (group→knockout). All other leagues return STANDARD.
+ * First wave: afl, nrl, super_rugby (ladder→finals), epl (table, no finals).
+ * All other leagues return STANDARD.
  */
 
-import type { LeagueTableRow, WorldCupMatchContext } from '@/types';
+import type { LeagueTableRow } from '@/types';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ export interface CompetitionContext {
  * hardcoded here. Adding/changing a rule is a `competition-rules.ts` edit.
  */
 interface StructureDef {
-  archetype: 'ladder-finals' | 'table-no-finals' | 'group-knockout';
+  archetype: 'ladder-finals' | 'table-no-finals';
   totalRounds?: number;
   finalsTeams?: number;
   /** AFL: top-N go direct; (N+1 … finalsTeams) play a wildcard round. */
@@ -54,8 +54,7 @@ const STRUCTURE: Record<string, StructureDef> = Object.fromEntries(
   Object.entries(COMP_RULES)
     .filter(([, r]) =>
       r.archetype === 'ladder-finals' ||
-      r.archetype === 'table-no-finals' ||
-      r.archetype === 'group-knockout')
+      r.archetype === 'table-no-finals')
     .map(([league, r]) => [league, {
       archetype:         r.archetype as StructureDef['archetype'],
       totalRounds:       r.totalRounds,
@@ -253,81 +252,6 @@ function isDeadRubber(
   return false;
 }
 
-// ─── World Cup stakes ─────────────────────────────────────────────────────────
-
-function resolveWorldCupStakes(
-  wc: WorldCupMatchContext,
-  teamName: string,
-): { stakes: string; explanation?: string } | null {
-  // Knockout: ADVANCEMENT STAKES line already covers this — skip FIXTURE CONTEXT.
-  if (wc.stage !== 'group') return null;
-
-  const groupTable = wc.groupTable;
-  if (!groupTable || groupTable.length === 0) return null;
-
-  // The feed's `position` is the draw/seeding order, not the live rank — recompute
-  // the standing from the rules (points → goal difference → goals scored) so the
-  // stakes below ("top 2", "3rd") reflect the real table, not the seeding.
-  const sorted = [...groupTable].sort((a, b) =>
-    b.points - a.points ||
-    b.goalDifference - a.goalDifference ||
-    b.goalsFor - a.goalsFor ||
-    a.teamName.localeCompare(b.teamName),
-  ).map((r, i) => ({ ...r, position: i + 1 }));
-  // Match by exact name first, then by last word of teamName (e.g. "Socceroos" in "Australia")
-  const lastWord = teamName.split(/\s+/).at(-1)?.toLowerCase() ?? '';
-  const teamRow = sorted.find(r =>
-    r.teamName === teamName ||
-    r.teamName.toLowerCase().includes(teamName.toLowerCase()) ||
-    (lastWord.length > 3 && r.teamName.toLowerCase().includes(lastWord)),
-  );
-  if (!teamRow) return null;
-
-  const gamesLeft = wc.gamesRemaining ?? 0;
-  const thirdRow  = sorted[2];
-  const secondRow = sorted[1];
-
-  // Group complete
-  if (gamesLeft === 0) {
-    if (teamRow.position <= 2) {
-      return { stakes: 'ALREADY QUALIFIED', explanation: 'group stage complete — finished in the top 2' };
-    }
-    return null; // third-place best-eight still TBD — don't claim STANDARD or ELIMINATED
-  }
-
-  // ALREADY ELIMINATED: even with max points, can't overtake 3rd's current total
-  const teamMaxPts = teamRow.points + gamesLeft * 3;
-  if (thirdRow && teamMaxPts < thirdRow.points) {
-    return {
-      stakes: 'ALREADY ELIMINATED',
-      explanation: `cannot reach 3rd place (${thirdRow.teamName}, ${thirdRow.points} pts) even winning all remaining group games`,
-    };
-  }
-
-  // ALREADY QUALIFIED: top-2 and 3rd cannot mathematically catch up
-  if (teamRow.position <= 2 && thirdRow) {
-    const rem3 = Math.max(0, 3 - thirdRow.played);
-    if (thirdRow.points + rem3 * 3 < teamRow.points) {
-      return {
-        stakes: 'ALREADY QUALIFIED',
-        explanation: `top-2 finish is mathematically guaranteed — ${thirdRow.teamName} (${thirdRow.points} pts) cannot catch up`,
-      };
-    }
-  }
-
-  // WIN-TO-ADVANCE: 1 game left, currently 3rd, a win would reach 2nd's current total
-  if (gamesLeft === 1 && teamRow.position === 3 && secondRow) {
-    if (teamRow.points + 3 >= secondRow.points) {
-      return {
-        stakes: 'WIN-TO-ADVANCE',
-        explanation: `a win (${teamRow.points + 3} pts) would match or surpass ${secondRow.teamName} (${secondRow.points} pts) and clinch a top-2 finish`,
-      };
-    }
-  }
-
-  return null; // nothing certifiable — omit FIXTURE CONTEXT for WC group games
-}
-
 // ─── Phase computation ────────────────────────────────────────────────────────
 
 /**
@@ -360,7 +284,6 @@ export function resolveCompetitionContext(
   teamName: string,
   opponentName: string,
   played: number | undefined,
-  worldCupCtx?: WorldCupMatchContext,
   fixtureDate?: string,
 ): CompetitionContext {
   const def = STRUCTURE[league];
@@ -396,18 +319,6 @@ export function resolveCompetitionContext(
   let phase = 'standard';
   if (def.totalRounds && played !== undefined) {
     phase = computePhase(played, def.totalRounds);
-  } else if (def.archetype === 'group-knockout') {
-    // Default to 'group stage' — the safe fallback when worldCupCtx is absent.
-    // Only emit 'knockout stage' when the context is present and explicitly non-group.
-    phase = (worldCupCtx && worldCupCtx.stage !== 'group') ? 'knockout stage' : 'group stage';
-  }
-
-  // ── World Cup ─────────────────────────────────────────────────────────────
-  if (def.archetype === 'group-knockout') {
-    if (!worldCupCtx) return { phase, stakes: 'STANDARD' };
-    const result = resolveWorldCupStakes(worldCupCtx, teamName);
-    if (!result) return { phase, stakes: 'STANDARD' };
-    return { phase, stakes: result.stakes, explanation: result.explanation };
   }
 
   // ── Guard: no table or all-zero (corrupt/pre-season) ─────────────────────

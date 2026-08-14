@@ -13,45 +13,7 @@ export type SportKey =
   | 'nhl'
   | 'f1'
   | 'cricket_int'
-  | 'bbl'
-  | 'world_cup';
-
-// ─── World Cup ────────────────────────────────────────────────────────────────
-
-/** Stage of a 2026 FIFA World Cup match. */
-export type WorldCupStage =
-  | 'group'   // Group stage match (Groups A–L)
-  | 'r32'     // Round of 32
-  | 'r16'     // Round of 16
-  | 'qf'      // Quarter-finals
-  | 'sf'      // Semi-finals
-  | 'third'   // Third-place play-off
-  | 'final';  // Final
-
-/** Structural context for a World Cup match, passed to the AI preview. */
-export interface WorldCupMatchContext {
-  stage: WorldCupStage;
-  /** Group label (A–L) — the followed team's qualifying group. Present for both group and knockout stages. */
-  group?: string;
-  /** Opponent's qualifying group label — populated for knockout-stage fixtures so the prompt can name both paths. */
-  opponentGroup?: string;
-  /** Full group standings table (4 entries) — only for group-stage matches. */
-  groupTable?: WorldCupGroupRow[];
-  /** Completed GROUP-STAGE results among this group's teams (who-beat-whom), for
-   *  the 2026 head-to-head-first tiebreaker. Only finished matches; a scheduled
-   *  meeting is absent (⇒ "not met"). Scores are from each listed team's view. */
-  groupResults?: Array<{ teamA: string; teamB: string; goalsA: number; goalsB: number }>;
-  /** How many group games the followed team has played (0–3). */
-  gamesPlayed?: number;
-  /** How many group games remain for the followed team (0–3). */
-  gamesRemaining?: number;
-  /** Plain-English advancement scenario for the followed team. Computed server-side. */
-  advancementScenario?: string;
-  /** True when the opponent is still TBD (placeholder in the bracket). */
-  opponentTBD?: boolean;
-  /** Placeholder label for TBD opponent, e.g. "Winner Group A" */
-  opponentPlaceholder?: string;
-}
+  | 'bbl';
 
 export interface League {
   id: SportKey;
@@ -79,21 +41,6 @@ export interface Team {
   division?: string;      // Conference / division if applicable
 }
 
-/** One row of a World Cup group table. */
-export interface WorldCupGroupRow {
-  teamName: string;
-  teamId?: string;        // our internal wc-* id when resolvable
-  position: number;       // 1–4 within the group
-  played: number;
-  wins: number;
-  draws: number;
-  losses: number;
-  goalsFor: number;
-  goalsAgainst: number;
-  goalDifference: number;
-  points: number;
-}
-
 // ─── Games / Schedule ─────────────────────────────────────────────────────────
 
 export interface UpcomingGame {
@@ -119,14 +66,6 @@ export interface UpcomingGame {
   cricketFormat?: 'test' | 'odi' | 't20';
   /** Test cricket only — match can span this many days (always 5) */
   matchDays?: number;
-  /** World Cup only — tournament stage */
-  worldCupStage?: WorldCupStage;
-  /** World Cup only — group label for group-stage matches (e.g. "A") */
-  worldCupGroup?: string;
-  /** World Cup only — true when opponent is still TBD (bracket placeholder) */
-  worldCupOpponentTBD?: boolean;
-  /** World Cup only — placeholder label for TBD opponent */
-  worldCupOpponentPlaceholder?: string;
   /** Set by fetchLeagueFixtures when lookbackDays > 0 — true for recently-completed games */
   completed?: boolean;
   /** NBA playoffs — official series score from ESPN (e.g. "NY leads series 3-1") */
@@ -163,10 +102,6 @@ export interface GameResult {
   cricketFormat?: 'test' | 'odi' | 't20';
   /** Test cricket only — structured innings array [{team, score, overs}] */
   cricketInnings?: Array<{ team: string; score: string; overs?: number }>;
-  /** World Cup only — tournament stage */
-  worldCupStage?: WorldCupStage;
-  /** World Cup only — group label for group-stage matches */
-  worldCupGroup?: string;
 }
 
 // ─── News ─────────────────────────────────────────────────────────────────────
@@ -207,7 +142,6 @@ export interface TeamStanding {
   percentage?: number;     // AFL: for/against percentage
   rankChange?: number;     // +ve = moved up, -ve = moved down, 0 = same (from ESPN previousRank)
   constructorName?: string; // F1: constructor/team name for the driver
-  group?: string;          // World Cup: group label 'A'–'L'
 }
 
 export type StandingRow = TeamStanding & { teamId?: string };
@@ -360,9 +294,6 @@ export interface PreviewContext {
   f1FollowedName?: string;
   /** Constructor name for the followed driver (same as f1FollowedName if following constructor) */
   f1FollowedConstructorName?: string;
-  /** World Cup structural context — assembled by /api/preview for world_cup league. */
-  worldCup?: WorldCupMatchContext;
-
   /** Cricket (BBL / internationals) — match + series context from cricketdata.org.
    *  Rendered by the dedicated cricket data block. Squads use teamSquad/opponentSquad. */
   cricketContext?: {

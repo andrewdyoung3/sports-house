@@ -167,7 +167,7 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
                 game={game}
                 teamColor={team.primaryColor}
                 teamShortName={team.shortName}
-                compLabel={game.competition ?? (team.league === 'world_cup' ? 'FIFA World Cup 2026' : team.league.toUpperCase())}
+                compLabel={game.competition ?? team.league.toUpperCase()}
                 userTz={userTz}
               />
             ))}

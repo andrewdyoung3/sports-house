@@ -330,64 +330,6 @@ export const TEAM_LOGOS: Record<string, string> = {
   'bbl-sixers':     `${ESPN}/cricket/500/509673.png`,
   'bbl-thunder':    `${ESPN}/cricket/500/509674.png`,
 
-  // ── FIFA World Cup 2026 — national team flags (48 confirmed qualifiers) ────────
-  // flagcdn.com ISO-3166 codes
-  // CONCACAF hosts
-  'wc-usa':         'https://flagcdn.com/w320/us.png',
-  'wc-canada':      'https://flagcdn.com/w320/ca.png',
-  'wc-mexico':      'https://flagcdn.com/w320/mx.png',
-  // CONMEBOL (6)
-  'wc-argentina':   'https://flagcdn.com/w320/ar.png',
-  'wc-brazil':      'https://flagcdn.com/w320/br.png',
-  'wc-colombia':    'https://flagcdn.com/w320/co.png',
-  'wc-ecuador':     'https://flagcdn.com/w320/ec.png',
-  'wc-uruguay':     'https://flagcdn.com/w320/uy.png',
-  'wc-paraguay':    'https://flagcdn.com/w320/py.png',
-  // CONCACAF non-hosts (3)
-  'wc-panama':      'https://flagcdn.com/w320/pa.png',
-  'wc-curacao':     'https://flagcdn.com/w320/cw.png',
-  'wc-haiti':       'https://flagcdn.com/w320/ht.png',
-  // UEFA (16)
-  'wc-france':      'https://flagcdn.com/w320/fr.png',
-  'wc-spain':       'https://flagcdn.com/w320/es.png',
-  'wc-england':     'https://flagcdn.com/w320/gb-eng.png',
-  'wc-germany':     'https://flagcdn.com/w320/de.png',
-  'wc-portugal':    'https://flagcdn.com/w320/pt.png',
-  'wc-netherlands': 'https://flagcdn.com/w320/nl.png',
-  'wc-belgium':     'https://flagcdn.com/w320/be.png',
-  'wc-croatia':     'https://flagcdn.com/w320/hr.png',
-  'wc-switzerland': 'https://flagcdn.com/w320/ch.png',
-  'wc-austria':     'https://flagcdn.com/w320/at.png',
-  'wc-sweden':      'https://flagcdn.com/w320/se.png',
-  'wc-norway':      'https://flagcdn.com/w320/no.png',
-  'wc-scotland':    'https://flagcdn.com/w320/gb-sct.png',
-  'wc-turkey':      'https://flagcdn.com/w320/tr.png',
-  'wc-czechia':     'https://flagcdn.com/w320/cz.png',
-  'wc-bosnia':      'https://flagcdn.com/w320/ba.png',
-  // CAF — Africa (10)
-  'wc-morocco':     'https://flagcdn.com/w320/ma.png',
-  'wc-senegal':     'https://flagcdn.com/w320/sn.png',
-  'wc-ivorycoast':  'https://flagcdn.com/w320/ci.png',
-  'wc-algeria':     'https://flagcdn.com/w320/dz.png',
-  'wc-egypt':       'https://flagcdn.com/w320/eg.png',
-  'wc-tunisia':     'https://flagcdn.com/w320/tn.png',
-  'wc-drcongo':     'https://flagcdn.com/w320/cd.png',
-  'wc-ghana':       'https://flagcdn.com/w320/gh.png',
-  'wc-capeverde':   'https://flagcdn.com/w320/cv.png',
-  'wc-southafrica': 'https://flagcdn.com/w320/za.png',
-  // AFC — Asia (9)
-  'wc-japan':       'https://flagcdn.com/w320/jp.png',
-  'wc-iran':        'https://flagcdn.com/w320/ir.png',
-  'wc-southkorea':  'https://flagcdn.com/w320/kr.png',
-  'wc-australia':   'https://a.espncdn.com/i/teamlogos/soccer/500/628.png', // Socceroos badge, not flag
-  'wc-qatar':       'https://flagcdn.com/w320/qa.png',
-  'wc-saudiarabia': 'https://flagcdn.com/w320/sa.png',
-  'wc-uzbekistan':  'https://flagcdn.com/w320/uz.png',
-  'wc-jordan':      'https://flagcdn.com/w320/jo.png',
-  'wc-iraq':        'https://flagcdn.com/w320/iq.png',
-  // OFC — Oceania (1)
-  'wc-newzealand':  'https://flagcdn.com/w320/nz.png',
-
   // ── Formula 1 (constructor logos) ──────────────────────────────────────────
   'f1-team-redbull':     'https://a.espncdn.com/i/teamlogos/f1/500/red_bull.png',
   'f1-team-ferrari':     'https://a.espncdn.com/i/teamlogos/f1/500/ferrari.png',
