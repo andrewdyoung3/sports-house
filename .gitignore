@@ -24,6 +24,9 @@ client_secret_*.json
 
 # Generated eval artifacts (scripts/eval-previews.ts)
 eval-output/
+
+# Phase 0 corpus snapshots — live data, not committed
+corpus/
 .DS_Store
 .env.local.save
 *.save

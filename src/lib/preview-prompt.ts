@@ -1689,9 +1689,17 @@ export function buildDataBlock(
     // Recent form — spans all competitions
     if (tForm.length > 0 || oForm.length > 0) {
       const isF1 = league === 'f1';
+      // EPL lastFiveGames mixes PL + FA Cup + EFL Cup + European fixtures, so
+      // league fixtures also need the "all competitions" label (same class as
+      // isOffLeague). Super Rugby teams are franchises, never Test nations, so
+      // their form feed is SRU-only and needs no such label.
+      // GameResult.competition exists but mapEspnGame doesn't yet populate it —
+      // when it does, swap to league-filtered form as default with an all-comps
+      // toggle (see §11 roadmap: competition-tagged form).
+      const isMixedCompForm = isOffLeague || league === 'epl';
       const formHeading = isF1
         ? 'RECENT FORM — Race Results (most recent first):'
-        : isOffLeague
+        : isMixedCompForm
           ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
           : 'RECENT FORM (last 5 fixtures, most recent first):';
       lines.push(formHeading);

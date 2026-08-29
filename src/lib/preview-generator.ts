@@ -26,6 +26,19 @@ export function aiLog(msg: string) {
 
 // ─── Points-claim validator ───────────────────────────────────────────────────
 
+/**
+ * Points-claim binding — three related checks.
+ *
+ * Incident A — level-on-points figure not emitted (commit 1532a7e): when two teams
+ *   were level on points, buildDerivedFacts didn't emit the shared figure, so correct
+ *   prose like "level on 36 competition points" was rejected because 36 was absent
+ *   from DERIVED FACTS. Fixed by emitting the shared figure; this check became the
+ *   backstop for direction-correct totals.
+ * Incident B — direction inversion: model said "2 points outside the finals" when
+ *   DERIVED FACTS said "2 inside". Caught by the derivedDir map + outDirRe check.
+ * Incident C — expert-margin divergence: model cited a margin well outside the
+ *   Squiggle-tip predicted window. Caught when expert margin is present in the prompt.
+ */
 const WORD_NUM: Record<string, string> = {
   zero: '0', one: '1', two: '2', three: '3', four: '4', five: '5', six: '6',
   seven: '7', eight: '8', nine: '9', ten: '10', eleven: '11', twelve: '12',
@@ -128,6 +141,10 @@ export function validatePointsClaims(output: AIPreview, prompt: string): string[
  * frame the game as a regular-season fixture, a dead rubber, or having "no bearing"
  * — the phase line is authoritative. The feed gives no stage label for these games,
  * so the model is prone to reading the regular-season ladder literally.
+ *
+ * Incident: AFL/NRL finals previews described confirmed-finals fixtures as
+ *   "regular-season" or "dead rubbers" because the feed carries no stage label and
+ *   the model read only the ladder context (commit ac36fed).
  */
 function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
   const isFinal = /Stakes:\s*(GRAND FINAL|FINALS)\b/.test(prompt)
@@ -157,6 +174,10 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
  * lead over Red Bull" when the real gap is 173). When CHAMPIONSHIP DERIVED FACTS is
  * present, any "<N> point(s) lead/gap/behind/ahead/clear" in the prose must cite a
  * number that actually appears in the F1 data block (standings or derived gaps).
+ *
+ * Incident: "121-point lead over Red Bull" when the data block's own CHAMPIONSHIP
+ *   DERIVED FACTS stated 173 — the model was computing the gap from memory rather
+ *   than from the provided figures (derived-facts Phase C).
  */
 export function validateF1ChampionshipClaims(output: AIPreview, prompt: string): string[] {
   if (!/CHAMPIONSHIP DERIVED FACTS/.test(prompt)) return [];
@@ -174,6 +195,16 @@ export function validateF1ChampionshipClaims(output: AIPreview, prompt: string):
   return violations;
 }
 
+/**
+ * Finals-imminence language guard. When SEASON STATE is NOT in the run-home or
+ * finals phase, the prose must not use "finals are just around the corner" language
+ * — that framing is factually wrong in early/mid-season and conflicts with the
+ * declared phase.
+ *
+ * Incident: early/mid-season previews (rounds 5–10) wrote "finals are looming"
+ *   regardless of phase, because the model defaulted to building narrative tension
+ *   without checking the phase signal.
+ */
 function validateFinalsImminence(output: AIPreview, prompt: string): string[] {
   const phaseMatch = prompt.match(/SEASON STATE:.*?\(phase:\s*([^)]+)\)/i);
   if (!phaseMatch) return [];
@@ -215,6 +246,11 @@ const ordSuffix = (n: number): string => {
  * refuse-to-store (REL-1). Tightly scoped to ordinals in a POSITIONAL context near a
  * fixture team so "4-point lead", "top 10", "fourth straight win", "third quarter"
  * never fire.
+ *
+ * Incident (commit 447d216): Brisbane Lions were 8th on the ladder; the wildcard-
+ *   band description "7th–10th" in the derived facts caused the model to write
+ *   "occupy 7th". Fixed by emitting the authoritative LADDER POSITION ordinal as a
+ *   separate leading sentence, before the zone text, so the two cannot be conflated.
  */
 export function validateLadderPosition(output: AIPreview, prompt: string): string[] {
   // 1. Authoritative positions from the LADDER POSITION derived fact.
@@ -282,6 +318,10 @@ export function validateLadderPosition(output: AIPreview, prompt: string): strin
  * fabricated. Scans only the factual fields (mediaWatch is attributed editorial
  * and may legitimately echo a real headline's numbers). Excludes "points"/"goals"
  * — those collide with competition points and team scorelines.
+ *
+ * Incident: previews regularly cited "scored three tries", "made 18 tackles" etc.
+ *   when no KEY PERFORMERS data was provided — model drew on training-data player
+ *   statistics for players it believed were in the team.
  */
 function validateInventedStatlines(output: AIPreview, prompt: string): string[] {
   if (/^KEY PERFORMERS/m.test(prompt)) return []; // grounded stats may be present
@@ -304,8 +344,11 @@ function validateInventedStatlines(output: AIPreview, prompt: string): string[] 
 /**
  * Catches invented calendar years. The data block deliberately omits past years
  * (form/H2H carry no dates), so any year in the factual fields that does NOT appear
- * in the prompt (e.g. competition labels like "World Cup 2026") is fabricated —
+ * in the prompt (e.g. competition labels like "2026 season") is fabricated —
  * the classic "winless in 2024" failure. Scans factual fields only.
+ *
+ * Incident: model wrote "first time since 2019" / "winless since 2022" — years
+ *   drawn from training-memory team history, absent from the data block.
  */
 function validateInventedYears(output: AIPreview, prompt: string): string[] {
   const promptYears = new Set([...prompt.matchAll(/\b(?:19|20)\d{2}\b/g)].map(m => m[0]));
@@ -344,6 +387,19 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
   'between', 'within', 'beyond', 'before', 'after', 'during', 'through',
 ]);
 
+/**
+ * Player-name whitelist: any name in the prose's player-spotlight or (when player
+ * data is absent) all factual fields must appear in the data block's whitelist
+ * (lineups, squads, key performers, injury lists, news headlines).
+ *
+ * Incident A: invented player names in the spotlight field — model used training-
+ *   knowledge team rosters when no lineup data was provided for the fixture.
+ * Incident B — F1 false positives (commit fea4207): "Group D's" possessive was
+ *   parsed as a two-token name candidate and flagged. F1 driver and constructor
+ *   names from the championship standings block were not reaching the whitelist.
+ *   Fixed: 'group' added to PLAYER_NAME_SAFE_WORDS; single-letter tokens treated as
+ *   non-evidence; driver/constructor names now seeded via collectPlayerWhitelist.
+ */
 export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
 
@@ -468,7 +524,7 @@ function stripUnsourcedMediaWatch(output: AIPreview, prompt: string): AIPreview 
  * suite over a candidate preview and return every violation. Used by both the
  * generate-with-retry path and the storage gate so the two can never drift.
  */
-function collectViolations(v: AIPreview, prompt: string): string[] {
+export function collectViolations(v: AIPreview, prompt: string): string[] {
   return [
     ...validatePointsClaims(v, prompt),
     ...validateFinalsImminence(v, prompt),
