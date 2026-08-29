@@ -60,7 +60,9 @@ export async function fetchAFLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
       const home = AFL_TEAMS[g.hteam];
       const away = AFL_TEAMS[g.ateam];
-      if (!home) return acc;
+      // Finals fixtures with a not-yet-determined opponent carry hteam/ateam
+      // as null in Squiggle until the prior final resolves — skip, not a real fixture yet.
+      if (!home || !g.ateam) return acc;
 
       const tz         = (g.tz as string) ?? '+10:00';
       const d          = new Date(g.date.replace(' ', 'T') + tz);
