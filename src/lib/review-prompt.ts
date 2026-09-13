@@ -8,7 +8,7 @@
  * as do scripts/audit-review-position.ts and scripts/snapshot-corpus.ts.
  */
 
-import type { LeagueTableRow, MatchStats } from '@/types';
+import type { LeagueTableRow, MatchStats, GameResult, HeadToHeadMeeting } from '@/types';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { finalsRoundDisplay, buildFinalsPathFacts, computePhase } from '@/lib/competition-structure';
 import { COMP_RULES } from '@/lib/competition-rules';
@@ -122,6 +122,12 @@ export interface ReviewInput {
   leagueTable?:      LeagueTableRow[];
   // Match stats (from /api/match-stats — EPL, NRL, SRU only)
   matchStats?:   MatchStats;
+  // Form + head-to-head coming INTO this match (fetchReviewFormAndH2H —
+  // ESPN summary for NRL/EPL/SRU, Squiggle games for AFL). Never includes
+  // the reviewed match itself.
+  teamRecentForm?:     GameResult[];
+  opponentRecentForm?: GameResult[];
+  headToHead?:         HeadToHeadMeeting[];
 }
 
 function ordinalSuffix(n: number): string {
@@ -157,6 +163,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     isHome, date, competition, leagueTable, matchStats,
     teamPosition, teamPlayed, teamPoints, teamPercentage,
     opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
+    teamRecentForm, opponentRecentForm, headToHead,
   } = input;
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
@@ -200,7 +207,10 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   // ── Match data ────────────────────────────────────────────────────────────
   lines.push('MATCH DATA:');
   lines.push(`League: ${leagueLabel}`);
-  lines.push(`Competition: ${comp}`);
+  // FIXTURE/COMPETITION markers double as the player-name validator's exclusion
+  // anchors (team/competition words must never be flagged as player names).
+  lines.push(`FIXTURE: ${teamName} vs ${opponent}`);
+  lines.push(`COMPETITION: ${comp}`);
   lines.push(`Date: ${dateStr}`);
   lines.push(`${homeAway}: ${teamName} vs ${opponent}`);
   lines.push(`Score: ${teamName} ${teamScore} – ${opponentScore} ${opponent}`);
@@ -361,6 +371,30 @@ export function buildReviewDataBlock(input: ReviewInput): string {
       const pctStr    = (league === 'afl' && pct !== undefined) ? `, ${pct.toFixed(1)}% (AFL tiebreaker)` : '';
       lines.push(`  ${name}: ${ordinalSuffix(pos)}${playedStr}${ptsStr}${pctStr}`);
     }
+    // Authoritative single-line position fact — the ladder-position validator
+    // binds every positional ordinal in the prose to this line.
+    if (!regularSeasonDone && leagueTable && leagueTable.length > 0) {
+      const posBits: string[] = [];
+      if (teamPosition !== undefined)     posBits.push(`${teamName} — ${ordinalSuffix(teamPosition)} of ${leagueTable.length}`);
+      if (opponentPosition !== undefined) posBits.push(`${opponent} — ${ordinalSuffix(opponentPosition)} of ${leagueTable.length}`);
+      if (posBits.length > 0) lines.push(`  LADDER POSITION (authoritative): ${posBits.join('; ')}`);
+    }
+    lines.push('');
+  }
+
+  // ── Form coming in + head-to-head (context, never the reviewed match) ──────
+  const formLine = (rs: GameResult[]): string =>
+    rs.slice(0, 5).map(r => `${r.isDraw ? 'D' : r.isWin ? 'W' : 'L'} ${r.teamScore}–${r.opponentScore} ${r.isHome ? 'v' : '@'} ${r.opponent}`).join(', ');
+  if ((teamRecentForm && teamRecentForm.length > 0) || (opponentRecentForm && opponentRecentForm.length > 0)) {
+    lines.push('FORM COMING INTO THIS MATCH (completed games before this fixture, most recent first — how each side arrived, NOT including this result):');
+    if (teamRecentForm?.length)     lines.push(`  ${teamName}: ${formLine(teamRecentForm)}`);
+    if (opponentRecentForm?.length) lines.push(`  ${opponent}: ${formLine(opponentRecentForm)}`);
+    lines.push('');
+  }
+  if (headToHead && headToHead.length > 0) {
+    const h2hBits = headToHead.slice(0, 3).map(h =>
+      `${h.result} ${h.teamScore}–${h.opponentScore}${h.teamWasHome === undefined ? '' : h.teamWasHome ? ' (home)' : ' (away)'}`);
+    lines.push(`HEAD-TO-HEAD (previous meetings, ${teamName} perspective, most recent first — do not restate as this season's form): ${h2hBits.join(', ')}`);
     lines.push('');
   }
 

@@ -16,6 +16,16 @@ import { unstable_cache } from 'next/cache';
 import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
+import { validateReviewOutput } from '@/lib/review-validators';
+import { fetchReviewFormAndH2H } from '@/lib/preview-fetchers';
+
+/** Thrown (not returned) so unstable_cache never stores a failed-validation review. */
+class ReviewValidationError extends Error {
+  constructor(violations: string[]) {
+    super(`review validation: ${violations.join(' | ')}`);
+    this.name = 'ReviewValidationError';
+  }
+}
 import { getSupabaseServer } from '@/lib/supabase/server';
 import { enforceRateLimit, secretsMatch } from '@/lib/request-guards';
 
@@ -127,9 +137,29 @@ const generateReview = unstable_cache(
       }
 
       if (!parsed.summary || !Array.isArray(parsed.keyMoments) || !parsed.verdict) return null;
+
+      // Validation pass (ported from the preview pipeline): violations → one
+      // retry → still violating → REFUSE via throw, so the cache stores nothing.
+      let violations = validateReviewOutput(parsed, dataBlock);
+      if (violations.length > 0) {
+        aiLog(`validation-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
+        const retry = await generate();
+        if (retry.summary && Array.isArray(retry.keyMoments) && retry.verdict) {
+          const retryViolations = validateReviewOutput(retry, dataBlock);
+          if (retryViolations.length === 0) {
+            aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry)`);
+            return retry;
+          }
+          violations = retryViolations;
+        }
+        aiLog(`refuse cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — both attempts violate, will not serve`);
+        throw new ReviewValidationError(violations);
+      }
+
       aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms`);
       return parsed;
     } catch (err) {
+      if (err instanceof ReviewValidationError) throw err; // must NOT be cached as null
       aiLog(`error cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms err=${err}`);
       console.error('[/api/ai-review] generation error', err);
       return null;
@@ -191,10 +221,12 @@ export async function POST(req: NextRequest) {
     const tScore = Number(teamScore);
     const oScore = Number(opponentScore);
 
-    // Fetch standings + match-stats in parallel to enrich the review data block
-    const [standings, matchStats] = await Promise.all([
+    // Fetch standings + match-stats + pre-match form/H2H in parallel to enrich
+    // the review data block (form/H2H from the same sources the preview mines).
+    const [standings, matchStats, formExtras] = await Promise.all([
       fetchStandings(league),
       teamId ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
+      fetchReviewFormAndH2H(league, gameId ? String(gameId) : undefined, teamName, opponent, String(date)),
     ]);
 
     // Resolve team standings from the table
@@ -230,6 +262,9 @@ export async function POST(req: NextRequest) {
       opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
       leagueTable: standings.length > 0 ? standings : undefined,
       matchStats:  matchStats ?? undefined,
+      teamRecentForm:     formExtras.teamRecentForm,
+      opponentRecentForm: formExtras.opponentRecentForm,
+      headToHead:         formExtras.headToHead,
     };
 
     const dataBlock = buildReviewDataBlock(input);
@@ -243,6 +278,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(review);
   } catch (err) {
+    if (err instanceof ReviewValidationError) {
+      // Both attempts contradicted the derived facts — never serve or cache it.
+      return NextResponse.json({ error: 'Generation failed validation' }, { status: 500 });
+    }
     console.error('[/api/ai-review]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }

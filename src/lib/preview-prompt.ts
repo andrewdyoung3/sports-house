@@ -728,6 +728,17 @@ export function collectPlayerWhitelist(prompt: string): {
     for (const line of injuryText.split('\n')) addNamesFromLine(line);
   }
 
+  // Review data blocks: "<TEAM> SCORERS:" sections list the only grounded player
+  // names for a post-match review. Line shape: "  Name (pos) — T: 2, G: 3".
+  // There is one section per side, so collect ALL of them, not just the first.
+  for (const m of prompt.matchAll(/^[^\n]*SCORERS:\s*\n((?:[^\n]+\n)*?)(?=\n|$)/gm)) {
+    hasPlayerData = true;
+    for (const line of m[1].split('\n')) {
+      const name = line.split(/\s+[—–-]\s+/)[0]?.replace(/\([^)]*\)/g, '').trim();
+      if (name && name.length > 1) whitelist.add(name.toLowerCase());
+    }
+  }
+
   // F1 — drivers and constructors from the championship standings/grid are the
   // grounded name source (the F1 path has no LINEUP block). Seed them so legitimate
   // names pass; a driver/constructor NOT in the standings is still rejected.

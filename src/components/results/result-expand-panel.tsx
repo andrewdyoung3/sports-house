@@ -24,9 +24,9 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
 
-// v3: finals-series structure + parametric cutoffs (2026-09-13) — bump to drop
-// reviews generated with pre-finals-aware prompts from every browser.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v3:${id}`;
+// v4: validated + form/H2H-enriched reviews (2026-09-13) — bump to drop
+// pre-validation reviews from every browser.
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v4:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
 
 function loadJSON<T>(key: string): T | null {

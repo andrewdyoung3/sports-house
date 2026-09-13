@@ -17,6 +17,9 @@ import {
   validateFinalsSeeding,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
+import { buildReviewDataBlock } from '@/lib/review-prompt';
+import { validateReviewOutput } from '@/lib/review-validators';
+import type { AIReview } from '@/types';
 import type { LeagueTableRow, PreviewContext } from '@/types';
 import type { AIPreview } from '@/types';
 
@@ -169,6 +172,79 @@ expect('invented F1 driver in spotlight is rejected',
     v('Sydney Swans finished 2nd and won through to host this final.').length === 0);
   expect('inert without a REGULAR-SEASON SEEDING line',
     validateFinalsSeeding(preview({ context: 'Sydney Swans, the higher-seeded side, host.' }), 'LEAGUE TABLE:\n  1. Fremantle').length === 0);
+}
+
+// ─── Review pipeline: buildReviewDataBlock → validateReviewOutput ───────────────
+
+{
+  console.log('\n── review validators (end-to-end through buildReviewDataBlock) ──');
+  const nrlTable: LeagueTableRow[] = Array.from({ length: 17 }, (_, i) => ({
+    position: i + 1, name: `Team${i + 1}`, played: 18,
+    wins: 0, losses: 0, draws: 0, points: 30 - i,
+  } as unknown as LeagueTableRow));
+
+  // (a) Grand Final review — seeding contradiction caught end-to-end.
+  const gfBlock = buildReviewDataBlock({
+    league: 'nrl', teamName: 'Team1', opponent: 'Team3',
+    teamScore: 24, opponentScore: 12, isHome: false, date: '2026-10-04',
+    teamPosition: 1, teamPlayed: 27, opponentPosition: 3, opponentPlayed: 27,
+    leagueTable: nrlTable.map(r => ({ ...r, played: 27 })),
+  });
+  const gfReview = (summary: string): AIReview => ({ summary, keyMoments: ['grounded factor'], verdict: 'Forward look.' });
+  expect('GF review: "higher-seeded" misattribution refused',
+    validateReviewOutput(gfReview('Team3, the higher-seeded side, fell short in the decider.'), gfBlock).length > 0);
+  expect('GF review: correct seeding passes',
+    validateReviewOutput(gfReview('Team1, the higher seed, controlled the decider throughout.'), gfBlock).length === 0);
+  expect('GF review: dead-rubber framing refused',
+    validateReviewOutput(gfReview('A dead rubber in the end, with nothing at stake.'), gfBlock).length > 0);
+
+  // (b) Regular season — LADDER POSITION binding + early-season calibration.
+  const earlyBlock = buildReviewDataBlock({
+    league: 'nrl', teamName: 'Team7', opponent: 'Team9',
+    teamScore: 12, opponentScore: 24, isHome: true, date: '2026-04-04',
+    teamPosition: 7, teamPlayed: 5, teamPoints: 6,
+    opponentPosition: 9, opponentPlayed: 5, opponentPoints: 4,
+    leagueTable: nrlTable.map(r => ({ ...r, played: 5 })),
+  });
+  expect('early block carries SEASON PHASE early season', /SEASON PHASE: early season/.test(earlyBlock));
+  expect('early block carries LADDER POSITION line', /LADDER POSITION \(authoritative\)/.test(earlyBlock));
+  expect('review: wrong ladder ordinal refused',
+    validateReviewOutput(gfReview('Team7 sit 3rd after this loss.'), earlyBlock).length > 0);
+  expect('review: early-season "must-win" overstatement refused',
+    validateReviewOutput(gfReview('Team7 now face a must-win run of games.'), earlyBlock).length > 0);
+  expect('review: proportionate early-season framing passes',
+    validateReviewOutput(gfReview('An early stumble for Team7, but the structural signs remain sound.'), earlyBlock).length === 0);
+
+  // (c) No match stats → invented in-game statistics refused.
+  expect('review: invented completion-rate stat refused (no stats provided)',
+    validateReviewOutput(gfReview('Team7 managed only a completion rate of 68% under pressure.'), earlyBlock).length > 0);
+
+  // (d) Scorers whitelist: listed scorer passes, invented name refused.
+  const statsBlock = buildReviewDataBlock({
+    league: 'nrl', teamName: 'Team7', opponent: 'Team9',
+    teamScore: 24, opponentScore: 12, isHome: true, date: '2026-04-04',
+    teamPosition: 7, teamPlayed: 5, opponentPosition: 9, opponentPlayed: 5,
+    leagueTable: nrlTable.map(r => ({ ...r, played: 5 })),
+    matchStats: {
+      team: { teamName: 'Team7', aggStats: [{ label: 'Possession', value: '54%' }],
+        players: [{ name: 'Jake Halloway', position: 'FB', stats: [{ label: 'T', value: '2' }] }] },
+      opponent: { teamName: 'Team9', aggStats: [], players: [] },
+    },
+  });
+  expect('review: listed scorer name passes',
+    validateReviewOutput(gfReview('Jake Halloway finished twice out wide.'), statsBlock).length === 0);
+  expect('review: invented player name refused',
+    validateReviewOutput(gfReview('Marcus Delaney controlled the middle third.'), statsBlock).length > 0);
+
+  // (e) Form section renders when provided.
+  const formBlock = buildReviewDataBlock({
+    league: 'nrl', teamName: 'Team7', opponent: 'Team9',
+    teamScore: 24, opponentScore: 12, isHome: true, date: '2026-06-04',
+    teamRecentForm: [{ opponent: 'Team2', opponentAbbr: '', isHome: true, isWin: true, teamScore: 20, opponentScore: 10, date: '2026-05-28' }],
+    headToHead: [{ date: '2025-08-01', teamScore: 18, opponentScore: 12, result: 'W', teamWasHome: true }],
+  });
+  expect('form coming in renders', /FORM COMING INTO THIS MATCH/.test(formBlock) && /W 20–10 v Team2/.test(formBlock));
+  expect('head-to-head renders', /HEAD-TO-HEAD/.test(formBlock) && /W 18–12 \(home\)/.test(formBlock));
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

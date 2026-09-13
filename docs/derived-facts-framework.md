@@ -99,8 +99,10 @@ COMP_RULES (per-season config: cutoffs, points, finals schedule + bracket flags)
 
 The review builder (`review-prompt.ts`) shares COMP_RULES and the finals machinery:
 - **Finals matches:** FINALS CONTEXT block (round, structure, bracket facts), ladder derived-facts suppressed, standings demoted to REGULAR-SEASON SEEDING.
-- **Regular season:** SEASON PHASE calibration line (early/mid/run-home/season-complete) so consequence language is proportionate — the "early-season loss ≠ season on the brink" rule is now data, not vibes.
-- **Known gap:** review outputs are **not validated** the way previews are (previews retry + refuse-store; reviews ship first parse). The preview validator suite reads prompt markers that the review block now also emits (REGULAR-SEASON SEEDING, DERIVED FACTS) — porting `validateFinalsSeeding` + `validateLadderPosition` to the review route is the highest-value next hardening step.
+- **Regular season:** SEASON PHASE calibration line (early/mid/run-home/season-complete) so consequence language is proportionate — the "early-season loss ≠ season on the brink" rule is now data, not vibes. A LADDER POSITION (authoritative) line binds every positional ordinal.
+- **Form + head-to-head coming in** (added 2026-09-13): `fetchReviewFormAndH2H` — ESPN `summary?event=` for NRL/EPL/SRU (event id from the gameId; EPL cup ids carry their competition slug), the Squiggle games array for AFL. Entries dated on match day are dropped so "form coming in" can never include the reviewed game.
+- **Validation (ported 2026-09-13, closing the gap):** `review-validators.ts` → `validateReviewOutput` runs on every generation inside the cached generator: shared validators (finals seeding, ladder position, points claims, player names — whitelist now reads the review block's SCORERS sections) plus review-specific `validateReviewPhase` (finals ≠ dead rubber; early season ≠ must-win) and `validateReviewStatlines` (no invented in-game numbers when the block declares NO IN-GAME MATCH STATS). Contract mirrors previews: violations → one retry → refuse via **throw**, so the Next data cache never stores a bad (or null-from-validation) review.
+- **Residual known issue:** a *transient* generation error (Ollama down, parse failure twice) still returns `null` inside `unstable_cache`, which caches it for that exact (cacheKey, dataBlock) pair — pre-existing behavior, self-healing when standings change the dataBlock, but worth converting to a throw in a hygiene pass.
 
 ## Re-check calendar
 

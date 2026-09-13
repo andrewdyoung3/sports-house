@@ -330,13 +330,25 @@ export function validateLadderPosition(output: AIPreview, prompt: string): strin
  *   winning the Qualifying Final. No validator checked seeding-logic words.
  */
 export function validateFinalsSeeding(output: AIPreview, prompt: string): string[] {
-  const seedLine = prompt.match(/REGULAR-SEASON SEEDING[^\n]*\n\s*([^\n]+)/);
-  if (!seedLine) return [];
-  const seeds: { name: string; seed: number; tokens: string[] }[] = [];
-  for (const m of seedLine[1].matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s+finished\s+(\d+)(?:st|nd|rd|th)/g)) {
-    const tokens = m[1].trim().toLowerCase().split(/\s+/).filter(w => w.length >= 4);
-    if (tokens.length > 0) seeds.push({ name: m[1].trim(), seed: parseInt(m[2], 10), tokens });
+  // Finals mode only — preview blocks carry REGULAR-SEASON SEEDING / FINALS PATH,
+  // review blocks carry FINALS CONTEXT with the same bracket "Seeding:" fact.
+  if (!/REGULAR-SEASON SEEDING|FINALS PATH|FINALS CONTEXT/.test(prompt)) return [];
+  // Seeds from every "X finished 2nd" statement in the data block (the seeding
+  // line and the bracket Seeding fact use identical wording); a name appearing
+  // with two different seeds means corrupt input — validate nothing.
+  const byName = new Map<string, number>();
+  let conflict = false;
+  for (const m of prompt.matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s+finished\s+(\d+)(?:st|nd|rd|th)/g)) {
+    const name = m[1].trim();
+    const seed = parseInt(m[2], 10);
+    const prev = byName.get(name);
+    if (prev !== undefined && prev !== seed) conflict = true;
+    byName.set(name, seed);
   }
+  if (conflict) return [];
+  const seeds = [...byName.entries()]
+    .map(([name, seed]) => ({ name, seed, tokens: name.toLowerCase().split(/\s+/).filter(w => w.length >= 4) }))
+    .filter(s => s.tokens.length > 0);
   if (seeds.length !== 2 || seeds[0].seed === seeds[1].seed) return [];
 
   const prose = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]

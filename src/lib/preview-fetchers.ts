@@ -2058,3 +2058,84 @@ export async function fetchCricketPreview(
     },
   };
 }
+
+// ─── Review-side form + head-to-head ─────────────────────────────────────────
+
+/**
+ * Form and head-to-head context for a POST-MATCH review, from the same sources
+ * the preview path already mines. Entries dated on the reviewed match's day are
+ * dropped so "form coming in" never includes the game being reviewed.
+ *
+ * ESPN leagues read the summary?event= goldmine (eventId = last gameId segment;
+ * EPL cup ids like soccer-eng.league_cup-<id> carry their competition slug).
+ * AFL reads the season Squiggle games array (no ESPN player/summary coverage).
+ */
+export async function fetchReviewFormAndH2H(
+  league: string,
+  gameId: string | undefined,
+  teamName: string,
+  opponentName: string,
+  matchDateISO: string,
+): Promise<Pick<ESPNMatchExtras, 'teamRecentForm' | 'opponentRecentForm' | 'headToHead'>> {
+  const day = matchDateISO.slice(0, 10);
+  const dropSameDay = (rs?: GameResult[]) => rs?.filter(r => r.date.slice(0, 10) !== day);
+
+  try {
+    if (league === 'afl') {
+      const year = day.slice(0, 4);
+      const res  = await fetchTimeout(
+        `https://api.squiggle.com.au/?q=games;year=${year}`,
+        { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, next: { revalidate: 1800 }, timeoutMs: 8000 },
+      );
+      if (!res.ok) return {};
+      const { games = [] } = await res.json() as { games?: any[] };
+      const done = games.filter(g => Number(g.complete) === 100 && String(g.date).slice(0, 10) < day);
+
+      const formFor = (name: string): GameResult[] | undefined => {
+        const mine = done.filter(g => g.hteam === name || g.ateam === name).slice(-5).reverse();
+        if (mine.length === 0) return undefined;
+        return mine.map((g): GameResult => {
+          const home = g.hteam === name;
+          const ts = home ? Number(g.hscore) : Number(g.ascore);
+          const os = home ? Number(g.ascore) : Number(g.hscore);
+          return {
+            opponent: home ? g.ateam : g.hteam, opponentAbbr: '',
+            isHome: home, isWin: ts > os, isDraw: ts === os,
+            teamScore: ts, opponentScore: os, date: String(g.date),
+          };
+        });
+      };
+      const h2h = done
+        .filter(g => (g.hteam === teamName && g.ateam === opponentName) || (g.hteam === opponentName && g.ateam === teamName))
+        .slice(-3).reverse()
+        .map((g): HeadToHeadMeeting => {
+          const home = g.hteam === teamName;
+          const ts = home ? Number(g.hscore) : Number(g.ascore);
+          const os = home ? Number(g.ascore) : Number(g.hscore);
+          return { date: String(g.date), teamScore: ts, opponentScore: os, result: ts > os ? 'W' : ts < os ? 'L' : 'D', teamWasHome: home };
+        });
+      return { teamRecentForm: formFor(teamName), opponentRecentForm: formFor(opponentName), headToHead: h2h.length ? h2h : undefined };
+    }
+
+    // ESPN leagues: resolve sport path + event id from the gameId.
+    if (!gameId) return {};
+    const eventId = gameId.split('-').pop();
+    if (!eventId || !/^\d+$/.test(eventId)) return {};
+    const soccerSlug = gameId.match(/^soccer-([\w.]+)-\d+$/)?.[1];
+    const sportPath =
+      league === 'nrl'         ? 'rugby-league/3' :
+      league === 'super_rugby' ? 'rugby/242041' :
+      league === 'epl'         ? `soccer/${soccerSlug ?? 'eng.1'}` :
+      null;
+    if (!sportPath) return {};
+    const jersey = league === 'nrl' ? 13 : league === 'super_rugby' ? 15 : undefined;
+    const ex = await fetchESPNMatchExtras(sportPath, eventId, teamName, opponentName, jersey);
+    return {
+      teamRecentForm:     dropSameDay(ex.teamRecentForm),
+      opponentRecentForm: dropSameDay(ex.opponentRecentForm),
+      headToHead:         ex.headToHead?.filter(h => h.date.slice(0, 10) !== day),
+    };
+  } catch {
+    return {};
+  }
+}
