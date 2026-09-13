@@ -67,6 +67,59 @@ const STRUCTURE: Record<string, StructureDef> = Object.fromEntries(
     }]),
 );
 
+// ─── Finals round display ─────────────────────────────────────────────────────
+
+export interface FinalsRoundDisplay {
+  name: string;
+  /** Structure note: what this round means inside the series. */
+  detail?: string;
+  decider: boolean;
+}
+
+/**
+ * Resolves the display name + structure note for a finals fixture, or null when
+ * the date is outside every finals window. For final-eight week one (AFL/NRL,
+ * `finalEightWeek1`) the same weekend holds two different rounds, told apart by
+ * the teams' regular-season seeds: seeds 1–4 play Qualifying Finals (the loser
+ * is NOT eliminated — the double chance), seeds 5+ play Elimination Finals
+ * (loser out). Without both seeds the combined name is kept and the note covers
+ * both cases. Shared by FIXTURE CONTEXT, SEASON STATE, and the review path so
+ * every surface tells the same story about the same round.
+ */
+export function finalsRoundDisplay(
+  league: string,
+  isoDate: string | undefined,
+  teamSeed?: number,
+  oppSeed?: number,
+): FinalsRoundDisplay | null {
+  const round = finalsRoundForDate(league, isoDate);
+  if (!round) return null;
+  if (round.finalEightWeek1) {
+    if (teamSeed !== undefined && oppSeed !== undefined) {
+      if (teamSeed <= 4 && oppSeed <= 4) {
+        return {
+          name: 'Qualifying Final',
+          detail: 'seeds 1–4 — the loser is NOT eliminated: they drop to a home semi-final (the double chance); the winner advances straight to a preliminary final with a week off',
+          decider: false,
+        };
+      }
+      if (teamSeed >= 5 && oppSeed >= 5) {
+        return {
+          name: 'Elimination Final',
+          detail: 'knockout — the loser is eliminated; the winner advances to an away semi-final',
+          decider: false,
+        };
+      }
+    }
+    return {
+      name: round.name,
+      detail: 'week one of the final-eight series — seeds 1–4 play Qualifying Finals (loser gets a second chance), seeds 5–8 play Elimination Finals (loser out)',
+      decider: false,
+    };
+  }
+  return { name: round.name, detail: round.detail, decider: !!round.decider };
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 function rowMatchesTeam(rowName: string, teamName: string): boolean {
@@ -197,8 +250,8 @@ function isInTitleRace(
   return teamRow.position <= 4 && gap <= left * def.winsPoints;
 }
 
-/** Near the CL top-4 places, run-home only. */
-function isInTopFourRace(
+/** Near the Champions League places (top clSpots), run-home only. */
+function isInCLRace(
   teamRow: LeagueTableRow,
   sorted: LeagueTableRow[],
   def: StructureDef,
@@ -207,10 +260,10 @@ function isInTopFourRace(
   if (!def.clSpots || !def.totalRounds) return false;
   if (!phase.startsWith('run home')) return false;
   if (isInTitleRace(teamRow, sorted, def, phase)) return false; // title race is more specific
-  const fourthRow = sorted[def.clSpots - 1];
-  if (!fourthRow || fourthRow.points === 0) return false;
+  const clCutoffRow = sorted[def.clSpots - 1];
+  if (!clCutoffRow || clCutoffRow.points === 0) return false;
   const posGap = Math.abs(teamRow.position - def.clSpots);
-  const ptsGap = Math.abs(teamRow.points - fourthRow.points);
+  const ptsGap = Math.abs(teamRow.points - clCutoffRow.points);
   return posGap <= 3 || ptsGap <= def.winsPoints * 3;
 }
 
@@ -244,8 +297,8 @@ function isDeadRubber(
     const oSafe = isRelegationSafe(oppRow, sorted, def);
     if (!tSafe || !oSafe) return false;
     // Both safe — also confirm neither is in a meaningful race
-    const tRace = isInTitleRace(teamRow, sorted, def, phase) || isInTopFourRace(teamRow, sorted, def, phase);
-    const oRace = isInTitleRace(oppRow, sorted, def, phase)  || isInTopFourRace(oppRow, sorted, def, phase);
+    const tRace = isInTitleRace(teamRow, sorted, def, phase) || isInCLRace(teamRow, sorted, def, phase);
+    const oRace = isInTitleRace(oppRow, sorted, def, phase)  || isInCLRace(oppRow, sorted, def, phase);
     return !tRace && !oRace;
   }
 
@@ -298,20 +351,33 @@ export function resolveCompetitionContext(
   // (a Grand Final must never read as a regular-season dead rubber).
   if (def.archetype === 'ladder-finals' && def.totalRounds) {
     const regularSeasonDone = played !== undefined && played >= def.totalRounds;
-    const round = finalsRoundForDate(league, fixtureDate);
-    if (regularSeasonDone && round) {
-      if (round.decider) {
+    if (regularSeasonDone) {
+      // Seeds (final regular-season ladder positions) disambiguate final-eight
+      // week one: Qualifying Final (1–4, double chance) vs Elimination Final.
+      const seedSorted = [...leagueTable].sort((a, b) => a.position - b.position);
+      const teamSeed = seedSorted.find(r => rowMatchesTeam(r.name, teamName))?.position;
+      const oppSeed  = seedSorted.find(r => rowMatchesTeam(r.name, opponentName))?.position;
+      const round = finalsRoundDisplay(league, fixtureDate, teamSeed, oppSeed);
+      if (round) {
+        const structureNote = round.detail ? ` (${round.detail})` : '';
+        if (round.decider) {
+          return {
+            phase: round.name, // e.g. 'Grand Final'
+            stakes: 'GRAND FINAL',
+            explanation: `the ${round.name} — winner-takes-all for the championship; the regular-season ladder no longer applies`,
+          };
+        }
         return {
-          phase: round.name, // e.g. 'Grand Final'
-          stakes: 'GRAND FINAL',
-          explanation: `the ${round.name} — winner-takes-all for the championship; the regular-season ladder no longer applies`,
+          phase: round.name, // e.g. 'Semi-Final'
+          stakes: 'FINALS',
+          explanation: `the ${round.name} in the finals series${structureNote}; the regular-season ladder no longer applies`,
         };
       }
-      return {
-        phase: round.name, // e.g. 'Semi-Final'
-        stakes: 'FINALS',
-        explanation: `a knockout ${round.name} in the finals series — win and advance; the regular-season ladder no longer applies`,
-      };
+      // Regular season complete but the date matched no finals window (schedule
+      // missing or stale). Regular-season stakes (FINALS LOCKED / ELIMINATED /
+      // FINALS RACE / DEAD RUBBER) are meaningless — and actively wrong — once
+      // the ladder is final, so emit nothing rather than something confident.
+      return { phase: 'finals series', stakes: 'STANDARD' };
     }
   }
 
@@ -381,7 +447,7 @@ export function resolveCompetitionContext(
     const safeRow   = def.relegationFrom ? sorted[def.relegationFrom - 2] : undefined;
     const relegRow  = def.relegationFrom ? sorted[def.relegationFrom - 1] : undefined;
     const leader    = sorted[0];
-    const fourthRow = def.clSpots ? sorted[def.clSpots - 1] : undefined;
+    const clCutoffRow = def.clSpots ? sorted[def.clSpots - 1] : undefined;
 
     // DEAD RUBBER first
     if (isDeadRubber(teamRow, oppRow, sorted, def, phase)) {
@@ -398,13 +464,6 @@ export function resolveCompetitionContext(
           phase,
           stakes: 'RELEGATED',
           explanation: `${teamName} are mathematically relegated — cannot reach safety regardless of remaining results`,
-        };
-      }
-      if (isRelegationSafe(teamRow, sorted, def) && phase === 'run home') {
-        return {
-          phase,
-          stakes: 'SAFE',
-          explanation: `${teamName} are mathematically safe from relegation`,
         };
       }
       if (isInRelegationBattle(teamRow, sorted, def, phase) && safeRow) {
@@ -428,15 +487,24 @@ export function resolveCompetitionContext(
           explanation: `${teamName} ${gapDesc} with ${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} left`,
         };
       }
-      if (isInTopFourRace(teamRow, sorted, def, phase) && fourthRow) {
-        const gap = teamRow.points - fourthRow.points;
+      if (isInCLRace(teamRow, sorted, def, phase) && clCutoffRow) {
+        const gap = teamRow.points - clCutoffRow.points;
         const gapDesc =
-          gap >= 0 ? `${gap} pt${gap !== 1 ? 's' : ''} inside the top 4`
-          :          `${Math.abs(gap)} pt${Math.abs(gap) !== 1 ? 's' : ''} outside the top 4`;
+          gap >= 0 ? `${gap} pt${gap !== 1 ? 's' : ''} inside the top ${def.clSpots}`
+          :          `${Math.abs(gap)} pt${Math.abs(gap) !== 1 ? 's' : ''} outside the top ${def.clSpots}`;
         return {
           phase,
-          stakes: 'TOP-FOUR RACE',
+          stakes: `TOP-${def.clSpots} RACE`,
           explanation: `${teamName} are ${gapDesc} (Champions League places) with ${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} left`,
+        };
+      }
+      // SAFE last — races are the newsworthy stake; safety is the fallback for a
+      // team confirmed up with nothing else confirmed in play.
+      if (isRelegationSafe(teamRow, sorted, def) && phase === 'run home') {
+        return {
+          phase,
+          stakes: 'SAFE',
+          explanation: `${teamName} are mathematically safe from relegation`,
         };
       }
     }

@@ -9,7 +9,7 @@
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { resolveCompetitionContext } from '@/lib/competition-structure';
+import { resolveCompetitionContext, finalsRoundDisplay } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
@@ -228,38 +228,40 @@ function computeCompetitionStatus(
   }
 
   // ── EPL: Champions League spots ───────────────────────────────────────────
+  // Wording is parametric on EPL_UCL_SPOTS (5 for 2025-26) — never write the
+  // cutoff ordinal or count literally or it goes stale when COMP_RULES changes.
   if (league === 'epl' && sorted.length >= EPL_UCL_SPOTS + 1) {
-    const fifth = sorted[EPL_UCL_SPOTS]; // 5th place
-    const maxFifthPts = fifth.points + rem(fifth) * maxPpg;
-    const clinched = sorted.slice(0, EPL_UCL_SPOTS).filter(t => t.points > maxFifthPts);
+    const firstOutside = sorted[EPL_UCL_SPOTS]; // first place outside the CL spots
+    const maxOutsidePts = firstOutside.points + rem(firstOutside) * maxPpg;
+    const clinched = sorted.slice(0, EPL_UCL_SPOTS).filter(t => t.points > maxOutsidePts);
     if (clinched.length === EPL_UCL_SPOTS) {
       notes.push(
-        `ALL FOUR CHAMPIONS LEAGUE SPOTS CLINCHED: The top four are mathematically confirmed. ` +
-        `Fifth place (${fifth.name}, ${fifth.points} pts, max achievable: ${maxFifthPts} pts) ` +
-        `cannot break into the top four regardless of remaining results.`
+        `ALL ${EPL_UCL_SPOTS} CHAMPIONS LEAGUE SPOTS CLINCHED: The top ${EPL_UCL_SPOTS} are mathematically confirmed. ` +
+        `${ordinalSuffix(EPL_UCL_SPOTS + 1)} place (${firstOutside.name}, ${firstOutside.points} pts, max achievable: ${maxOutsidePts} pts) ` +
+        `cannot break into the top ${EPL_UCL_SPOTS} regardless of remaining results.`
       );
     } else if (clinched.length > 0) {
       const names = clinched.map(t => t.name).join(', ');
       notes.push(
-        `CHAMPIONS LEAGUE SPOT CLINCHED: ${names} have mathematically secured top-four finishes — ` +
-        `fifth place cannot reach their current points totals.`
+        `CHAMPIONS LEAGUE SPOT CLINCHED: ${names} have mathematically secured top-${EPL_UCL_SPOTS} finishes — ` +
+        `${ordinalSuffix(EPL_UCL_SPOTS + 1)} place cannot reach their current points totals.`
       );
     }
   }
 
   // ── EPL: relegation ───────────────────────────────────────────────────────
   if (league === 'epl' && sorted.length >= EPL_RELEGATION_FROM) {
-    const seventeenth = sorted[EPL_RELEGATION_FROM - 2]; // 17th place (safe)
+    const safetyRow = sorted[EPL_RELEGATION_FROM - 2]; // last safe place
     const relegated: string[] = [];
-    for (const team of sorted.slice(EPL_RELEGATION_FROM - 1)) { // 18th+
-      if (team.points + rem(team) * maxPpg < seventeenth.points) {
+    for (const team of sorted.slice(EPL_RELEGATION_FROM - 1)) { // relegation zone
+      if (team.points + rem(team) * maxPpg < safetyRow.points) {
         relegated.push(team.name);
       }
     }
     if (relegated.length > 0) {
       notes.push(
         `RELEGATED: ${relegated.join(', ')} are mathematically relegated — ` +
-        `they cannot reach the safety line (17th place, ${seventeenth.name}, ${seventeenth.points} pts) ` +
+        `they cannot reach the safety line (${ordinalSuffix(EPL_RELEGATION_FROM - 1)} place, ${safetyRow.name}, ${safetyRow.points} pts) ` +
         `even by winning every remaining game.`
       );
     }
@@ -538,23 +540,25 @@ function buildDerivedFacts(
     }
   }
 
-  // ── EPL: gap to top-4 Champions League places ────────────────────────────
+  // ── EPL: gap to the Champions League places ──────────────────────────────
+  // Parametric on EPL_UCL_SPOTS (5 for 2025-26) — never write the cutoff
+  // ordinal literally or it goes stale when COMP_RULES changes.
   if (league === 'epl' && sorted.length >= EPL_UCL_SPOTS + 1) {
-    const fourthRow = sorted[EPL_UCL_SPOTS - 1];
-    const fifthRow  = sorted[EPL_UCL_SPOTS];
-    const fourthPts = fourthRow?.points ?? 0;
-    if (fourthPts > 0) {
+    const clCutoffRow  = sorted[EPL_UCL_SPOTS - 1]; // last qualifying place
+    const firstOutside = sorted[EPL_UCL_SPOTS];     // first place outside
+    const clCutoffPts  = clCutoffRow?.points ?? 0;
+    if (clCutoffPts > 0) {
       for (const [name, row] of [
         [teamName, teamRow],
         [opponentName, oppRow],
       ] as [string, LeagueTableRow | undefined][]) {
         if (!row || row.points === 0) continue;
         if (row.position <= EPL_UCL_SPOTS) {
-          const margin = row.points - (fifthRow?.points ?? 0);
-          facts.push(`  • ${name} are in the top four, ${margin} point${margin === 1 ? '' : 's'} clear of 5th place.`);
+          const margin = row.points - (firstOutside?.points ?? 0);
+          facts.push(`  • ${name} are in the top ${EPL_UCL_SPOTS} (Champions League places), ${margin} point${margin === 1 ? '' : 's'} clear of ${ordinalSuffix(EPL_UCL_SPOTS + 1)} place.`);
         } else {
-          const gap = fourthPts - row.points;
-          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} behind the top four (4th is ${fourthRow.name} with ${fourthPts} pts).`);
+          const gap = clCutoffPts - row.points;
+          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} behind the top ${EPL_UCL_SPOTS} (${ordinalSuffix(EPL_UCL_SPOTS)} is ${clCutoffRow.name} with ${clCutoffPts} pts).`);
         }
       }
     }
@@ -562,8 +566,9 @@ function buildDerivedFacts(
 
   // ── EPL: gap to relegation zone ──────────────────────────────────────────
   if (league === 'epl' && sorted.length >= EPL_RELEGATION_FROM) {
-    const safetyRow = sorted[EPL_RELEGATION_FROM - 2]; // 17th
+    const safetyRow = sorted[EPL_RELEGATION_FROM - 2]; // last safe place
     const safetyPts = safetyRow?.points ?? 0;
+    const safetyOrd = ordinalSuffix(EPL_RELEGATION_FROM - 1);
     if (safetyPts > 0) {
       for (const [name, row] of [
         [teamName, teamRow],
@@ -572,11 +577,11 @@ function buildDerivedFacts(
         if (!row || row.points === 0) continue;
         const gap = row.points - safetyPts;
         if (gap > 0) {
-          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} above the relegation zone (17th is ${safetyRow.name} with ${safetyPts} pts).`);
+          facts.push(`  • ${name} are ${gap} point${gap === 1 ? '' : 's'} above the relegation zone (${safetyOrd} is ${safetyRow.name} with ${safetyPts} pts).`);
         } else if (gap < 0) {
-          facts.push(`  • ${name} are in the relegation zone, ${Math.abs(gap)} point${Math.abs(gap) === 1 ? '' : 's'} from safety (17th is ${safetyRow.name} with ${safetyPts} pts).`);
+          facts.push(`  • ${name} are in the relegation zone, ${Math.abs(gap)} point${Math.abs(gap) === 1 ? '' : 's'} from safety (${safetyOrd} is ${safetyRow.name} with ${safetyPts} pts).`);
         } else {
-          facts.push(`  • ${name} are level with the relegation cutoff (17th, ${safetyRow.name}, ${safetyPts} pts).`);
+          facts.push(`  • ${name} are level with the relegation cutoff (${safetyOrd}, ${safetyRow.name}, ${safetyPts} pts).`);
         }
       }
     }
@@ -927,7 +932,7 @@ FINAL THIRD of the season:
 — Be precise about the actual scenario rather than vague urgency. "Three wins from their last four would likely get them home" is better than "desperate for points".
 
 ACROSS ALL THIRDS — the underlying principle:
-— Never rely on ladder position alone. Always consider: the points total, the points gap to the relevant threshold (finals cutoff, relegation zone, top four, etc.), and games remaining. A team in 9th with the same points as 5th needs different language to a team in 9th ten points adrift.
+— Never rely on ladder position alone. Always consider: the points total, the points gap to the relevant threshold (finals cutoff, relegation zone, Champions League cutoff, etc.), and games remaining. A team in 9th with the same points as 5th needs different language to a team in 9th ten points adrift.
 — Short competition formats (Six Nations, Rugby Championship — 5–6 rounds total): every game is meaningful from Round 1. The thirds framework does not apply — treat every fixture as consequential from the outset.
 — Super Rugby Pacific (14 rounds): the shorter format compresses the timeline. Apply thirds logic but with tighter thresholds — patterns become meaningful faster.
 
@@ -1555,13 +1560,22 @@ export function buildDataBlock(
 
       // Finals: name the round from the date (the feed carries no stage label) so
       // the model never reads a knockout final as "Round N of N, regular season".
-      const finalsRound = isFinalsPhase ? finalsRoundForDate(league, context.fixtureDate) : null;
+      // Seeds disambiguate final-eight week one (Qualifying vs Elimination Final).
+      let finalsRound = null;
+      if (isFinalsPhase) {
+        const seedSorted = [...(context.leagueTable ?? [])].sort((a, b) => a.position - b.position);
+        const teamSeed = seedSorted.find(r => rowMatchesTeam(r.name, teamName))?.position;
+        const oppSeed  = seedSorted.find(r => rowMatchesTeam(r.name, opponentName))?.position;
+        finalsRound = finalsRoundDisplay(league, context.fixtureDate, teamSeed, oppSeed);
+      }
       if (isFinalsPhase && finalsRound) {
         const decider = finalsRound.decider ? ' — the championship decider' : '';
+        const structureNote = finalsRound.detail ? ` This round: ${finalsRound.detail}.` : '';
         lines.push(
           `SEASON STATE: FINALS SERIES — ${finalsRound.name}${decider}. ` +
-          `The ${totalRounds}-round regular season is COMPLETE; this is a knockout final, NOT a ladder fixture. ` +
-          `The ladder below shows regular-season finishing order (seeding only).`
+          `The ${totalRounds}-round regular season is COMPLETE; this is a finals fixture, NOT a ladder game. ` +
+          `The ladder below shows regular-season finishing order (seeding only).` +
+          structureNote
         );
       } else {
         lines.push(
@@ -1631,7 +1645,7 @@ export function buildDataBlock(
             oRow ? `${opponentName} finished ${ordinalSuffix(oRow.position)}` : '',
           ].filter(Boolean);
           if (seedParts.length > 0) {
-            lines.push('REGULAR-SEASON SEEDING (context only — this is a knockout final; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
+            lines.push('REGULAR-SEASON SEEDING (context only — this is a finals fixture; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
             lines.push(`  ${seedParts.join('; ')} in the regular season.`);
             lines.push('');
           }

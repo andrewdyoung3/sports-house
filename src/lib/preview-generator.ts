@@ -147,7 +147,9 @@ export function validatePointsClaims(output: AIPreview, prompt: string): string[
  *   the model read only the ladder context (commit ac36fed).
  */
 function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
-  const isFinal = /Stakes:\s*(GRAND FINAL|FINALS)\b/.test(prompt)
+  // NB: FINALS must not match the regular-season stakes FINALS RACE / FINALS
+  // LOCKED — those are ladder games, where "dead rubber" prose can be accurate.
+  const isFinal = /Stakes:\s*(?:GRAND FINAL\b|FINALS\b(?!\s+(?:RACE|LOCKED)))/.test(prompt)
     || /SEASON STATE: FINALS SERIES —/.test(prompt);
   if (!isFinal) return [];
   const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');

@@ -3,11 +3,15 @@
  * construction used by POST /api/ai-review. Extracted verbatim from that route so
  * both the route and any eval harness build identical prompts.
  *
- * Pure prompt building: no network calls, not wired into runtime.
+ * Pure prompt building: no network calls. LIVE — `POST /api/ai-review` imports both
+ * REVIEW_SYSTEM_PROMPT and buildReviewDataBlock from here (route.ts:18, :101, :233),
+ * as do scripts/audit-review-position.ts and scripts/snapshot-corpus.ts.
  */
 
 import type { LeagueTableRow, MatchStats } from '@/types';
 import { getCompetitionProfile } from '@/lib/competition-context';
+import { finalsRoundDisplay } from '@/lib/competition-structure';
+import { COMP_RULES } from '@/lib/competition-rules';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
@@ -27,10 +31,27 @@ const LEAGUE_LABELS: Record<string, string> = {
   rugby_int:   'International Rugby Union',
 };
 
-// Finals cutoff: top-N by league
-const FINALS_SPOTS: Record<string, number> = { nrl: 8, afl: 8, super_rugby: 8 };
-const EPL_RELEGATION_FROM = 18;
-const EPL_UCL_SPOTS = 4;
+/**
+ * Finals / relegation / CL cutoffs — derived from the per-season single source of
+ * truth (`COMP_RULES`), exactly as `preview-prompt.ts` does. Never redeclare them here.
+ *
+ * Incident (2026-08-29): these were hardcoded as
+ *   `{ nrl: 8, afl: 8, super_rugby: 8 }`, `EPL_UCL_SPOTS = 4`
+ * and had gone silently stale — AFL moved to a top-10 wildcard format and Super Rugby
+ * to a top 6 for 2026, and England gained a 5th CL place for 2025-26. Three of the five
+ * constants were wrong, so post-match reviews asserted derived facts like "N points
+ * inside the top 8" for AFL when the real finals line is the top 10. This is precisely
+ * the staleness `competition-rules.ts` exists to prevent (see its header) — reproduced
+ * here because consulting the single source of truth was conventional, not enforced.
+ * The preview path read from COMP_RULES and was unaffected.
+ */
+const FINALS_SPOTS: Record<string, number> = Object.fromEntries(
+  Object.entries(COMP_RULES)
+    .filter(([, r]) => r.archetype === 'ladder-finals' && r.finalsTeams)
+    .map(([lg, r]) => [lg, r.finalsTeams!]),
+);
+const EPL_RELEGATION_FROM = COMP_RULES.epl?.relegationFrom ?? 18;
+const EPL_UCL_SPOTS       = COMP_RULES.epl?.clSpots ?? 4;
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -42,6 +63,7 @@ GROUNDING — absolute constraint, no exceptions:
 • The DERIVED FACTS section contains pre-computed margin interpretations and standings gaps. Use those exact phrasings — do not recalculate, rephrase, or contradict them.
 • COMPETITION PROFILE is the authoritative description of how the competition works. All references to finals, relegation, or qualification must match it.
 • LADDER POSITIONS: use the exact ordinal positions from CURRENT STANDINGS verbatim — do NOT approximate or confuse "top 8 qualifying cutoff" with "8th place". If CURRENT STANDINGS shows a team in 13th, say "13th", not "8th" or "outside the finals". If a DERIVED FACTS note says a team is "X points outside the top 8", use that phrasing — never infer a position number from it.
+• FINALS CONTEXT: when present, it is authoritative — the match was a finals fixture and the round name, round structure, and consequences (who advances, who is eliminated, who gets a second chance) come from it exclusively. Never frame a finals result as ladder movement, a qualification race, or a dead rubber, and never invent a different finals format from training knowledge.
 
 INFORMATION ECONOMY:
 • The user can already see the scoreline and result. Do NOT restate the score in the summary or verdict.
@@ -148,6 +170,19 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   const loser       = winner === teamName ? opponent : winner === opponent ? teamName : null;
   const marginCat   = marginCategory(league, margin);
 
+  // ── Finals fixture detection ───────────────────────────────────────────────
+  // Once the regular season is complete, every ladder-derived fact below (finals
+  // cutoffs, CL gaps, "standings after this result") describes a table that no
+  // longer moves — seeding, not stakes — so they are suppressed and replaced
+  // with the finals-series framing. Seeds = final ladder positions.
+  const rules = COMP_RULES[league];
+  const maxPlayed = Math.max(teamPlayed ?? 0, opponentPlayed ?? 0);
+  const regularSeasonDone = rules?.archetype === 'ladder-finals'
+    && !!rules.totalRounds && maxPlayed >= rules.totalRounds;
+  const finalsRound = regularSeasonDone
+    ? finalsRoundDisplay(league, date, teamPosition, opponentPosition)
+    : null;
+
   const lines: string[] = [];
 
   // ── Competition profile ────────────────────────────────────────────────────
@@ -172,6 +207,22 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   lines.push(`Result: ${result}`);
   lines.push('');
 
+  // ── Finals context (authoritative — replaces ladder framing) ───────────────
+  if (finalsRound) {
+    const decider = finalsRound.decider ? ' — the championship decider' : '';
+    lines.push(`FINALS CONTEXT (authoritative): this match was the ${finalsRound.name}${decider}.`);
+    if (finalsRound.detail) lines.push(`  Round structure: ${finalsRound.detail}.`);
+    lines.push(
+      finalsRound.decider
+        ? `  The winner is the premier — there is no next game. Frame the review around the championship, not the ladder.`
+        : `  The regular-season ladder no longer applies. Frame the result as finals-series progression (who advances, who is eliminated, who gets a second chance per the round structure above) — never as ladder movement or a finals-qualification race.`
+    );
+    lines.push('');
+  } else if (regularSeasonDone) {
+    lines.push('FINALS CONTEXT: the regular season is complete and the finals series is underway; the ladder is final (seeding only). Do not frame this result as ladder movement.');
+    lines.push('');
+  }
+
   // ── DERIVED FACTS (pre-computed — model must use these verbatim) ────────────
   const facts: string[] = [];
 
@@ -182,10 +233,11 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     facts.push(`Match margin: DRAW — ${teamScore} each.`);
   }
 
-  // Standings gap (when we have both teams' points)
+  // Standings gap (when we have both teams' points) — a regular-season framing;
+  // meaningless once the ladder is final.
   const tPts  = teamPoints;
   const oPts  = opponentPoints;
-  if (tPts !== undefined && oPts !== undefined) {
+  if (!regularSeasonDone && tPts !== undefined && oPts !== undefined) {
     const ptsDiff = tPts - oPts;
     if (ptsDiff > 0) {
       facts.push(`${teamName} lead ${opponent} by ${ptsDiff} competition point${ptsDiff !== 1 ? 's' : ''} on the table.`);
@@ -198,14 +250,15 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     }
   }
 
-  // Finals / relegation gaps from full table
-  if (leagueTable && leagueTable.length > 0) {
+  // Finals / relegation gaps from full table — cutoff arithmetic only means
+  // anything while the ladder can still move.
+  if (!regularSeasonDone && leagueTable && leagueTable.length > 0) {
     const sorted = [...leagueTable].sort((a, b) => a.position - b.position);
     const finalsSpot = FINALS_SPOTS[league];
 
     if (finalsSpot && sorted.length > finalsSpot) {
-      const eighth    = sorted[finalsSpot - 1];
-      const cutoffPts = eighth.points;
+      const finalsCutoffRow = sorted[finalsSpot - 1];
+      const cutoffPts       = finalsCutoffRow.points;
       for (const [name, pts] of [
         [teamName,   tPts],
         [opponent,   oPts],
@@ -213,34 +266,46 @@ export function buildReviewDataBlock(input: ReviewInput): string {
         if (pts === undefined || cutoffPts === 0) continue;
         const gap = pts - cutoffPts;
         if (gap > 0) {
-          facts.push(`${name} is ${gap} point${gap !== 1 ? 's' : ''} inside the top ${finalsSpot} (${ordinalSuffix(finalsSpot)} is ${eighth.name} on ${cutoffPts} pts).`);
+          facts.push(`${name} is ${gap} point${gap !== 1 ? 's' : ''} inside the top ${finalsSpot} (${ordinalSuffix(finalsSpot)} is ${finalsCutoffRow.name} on ${cutoffPts} pts).`);
         } else if (gap < 0) {
-          facts.push(`${name} is ${Math.abs(gap)} point${Math.abs(gap) !== 1 ? 's' : ''} outside the top ${finalsSpot} (${ordinalSuffix(finalsSpot)} is ${eighth.name} on ${cutoffPts} pts).`);
+          facts.push(`${name} is ${Math.abs(gap)} point${Math.abs(gap) !== 1 ? 's' : ''} outside the top ${finalsSpot} (${ordinalSuffix(finalsSpot)} is ${finalsCutoffRow.name} on ${cutoffPts} pts).`);
         } else {
           facts.push(`${name} holds ${ordinalSuffix(finalsSpot)} place — the last finals position (${cutoffPts} pts).`);
         }
       }
     }
 
+    // EPL Champions League places — wording is parametric on EPL_UCL_SPOTS (5 for
+    // 2025-26); never write the cutoff ordinal literally or it goes stale with COMP_RULES.
     if (league === 'epl' && sorted.length >= EPL_UCL_SPOTS + 1) {
-      const fourth = sorted[EPL_UCL_SPOTS - 1];
-      for (const [name, pts] of [[teamName, tPts], [opponent, oPts]] as [string, number | undefined][]) {
-        if (pts === undefined || !fourth.points) continue;
-        if ((teamPosition ?? 99) <= EPL_UCL_SPOTS || (opponentPosition ?? 99) <= EPL_UCL_SPOTS) {
-          const gap = fourth.points - pts;
-          if (gap > 0) facts.push(`${name} is ${gap} point${gap !== 1 ? 's' : ''} behind the top four.`);
-          else if (gap < 0) facts.push(`${name} is in the top four, ${Math.abs(gap)} point${Math.abs(gap) !== 1 ? 's' : ''} clear of 5th.`);
+      const clCutoffRow  = sorted[EPL_UCL_SPOTS - 1]; // last qualifying place
+      const firstOutside = sorted[EPL_UCL_SPOTS];     // first place outside
+      if (clCutoffRow.points && ((teamPosition ?? 99) <= EPL_UCL_SPOTS || (opponentPosition ?? 99) <= EPL_UCL_SPOTS)) {
+        for (const [name, pts, pos] of [
+          [teamName, tPts, teamPosition],
+          [opponent, oPts, opponentPosition],
+        ] as [string, number | undefined, number | undefined][]) {
+          if (pts === undefined || pos === undefined) continue;
+          if (pos <= EPL_UCL_SPOTS) {
+            const margin = pts - firstOutside.points;
+            if (margin > 0) facts.push(`${name} is in the top ${EPL_UCL_SPOTS} (Champions League places), ${margin} point${margin !== 1 ? 's' : ''} clear of ${ordinalSuffix(EPL_UCL_SPOTS + 1)}.`);
+            else facts.push(`${name} is in the top ${EPL_UCL_SPOTS} (Champions League places), level on points with ${ordinalSuffix(EPL_UCL_SPOTS + 1)} (${firstOutside.name}).`);
+          } else {
+            const gap = clCutoffRow.points - pts;
+            if (gap > 0) facts.push(`${name} is ${gap} point${gap !== 1 ? 's' : ''} behind the top ${EPL_UCL_SPOTS} (${ordinalSuffix(EPL_UCL_SPOTS)} is ${clCutoffRow.name} on ${clCutoffRow.points} pts).`);
+            else facts.push(`${name} is level on points with the top-${EPL_UCL_SPOTS} cutoff (${ordinalSuffix(EPL_UCL_SPOTS)} is ${clCutoffRow.name} on ${clCutoffRow.points} pts).`);
+          }
         }
       }
     }
 
     if (league === 'epl' && sorted.length >= EPL_RELEGATION_FROM) {
-      const seventeenth = sorted[EPL_RELEGATION_FROM - 2];
+      const safetyRow = sorted[EPL_RELEGATION_FROM - 2]; // last safe place
       for (const [name, pos] of [[teamName, teamPosition], [opponent, opponentPosition]] as [string, number | undefined][]) {
-        if (!pos || !seventeenth.points) continue;
+        if (!pos || !safetyRow.points) continue;
         if (pos >= EPL_RELEGATION_FROM - 2) {
           const relPts = (pos === teamPosition ? tPts : oPts) ?? 0;
-          const gap = relPts - seventeenth.points;
+          const gap = relPts - safetyRow.points;
           if (gap >= 0) facts.push(`${name} are ${gap} point${gap !== 1 ? 's' : ''} above the relegation zone.`);
           else facts.push(`${name} are in the relegation zone, ${Math.abs(gap)} point${Math.abs(gap) !== 1 ? 's' : ''} from safety.`);
         }
@@ -256,7 +321,9 @@ export function buildReviewDataBlock(input: ReviewInput): string {
 
   // ── Current standings ──────────────────────────────────────────────────────
   if (teamPosition !== undefined || opponentPosition !== undefined) {
-    lines.push('CURRENT STANDINGS (after this result):');
+    lines.push(regularSeasonDone
+      ? 'REGULAR-SEASON SEEDING (final ladder — context only, no longer at stake):'
+      : 'CURRENT STANDINGS (after this result):');
     for (const [name, pos, played, pts, pct] of [
       [teamName,   teamPosition,     teamPlayed,     teamPoints,     teamPercentage],
       [opponent,   opponentPosition, opponentPlayed, opponentPoints, opponentPercentage],

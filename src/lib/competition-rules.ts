@@ -35,6 +35,19 @@ export interface FinalsRound {
   to: string;
   /** True for the championship decider — drives GRAND FINAL stakes. */
   decider?: boolean;
+  /**
+   * One-line structure note ("winner advances to the Grand Final; loser is
+   * eliminated") appended to the FIXTURE CONTEXT explanation so the model knows
+   * what THIS round means inside the series — not just that it is "a final".
+   */
+  detail?: string;
+  /**
+   * Final-eight week one (AFL/NRL): the same weekend holds Qualifying Finals
+   * (seeds 1–4, loser gets the double chance) AND Elimination Finals (seeds 5+,
+   * loser out). The resolver names the round from both teams' ladder seeds —
+   * see finalsRoundDisplay() in competition-structure.ts.
+   */
+  finalEightWeek1?: boolean;
 }
 
 export interface CompRules {
@@ -74,14 +87,39 @@ export const COMP_RULES: Record<string, CompRules> = {
     // play a Wildcard Round (7v10, 8v9) whose two winners fill the last two of
     // the top 8. Outside the top 10 = out of finals.
     finalsTeams: 10, directFinalsTeams: 6,
+    // Five-week finals series (wildcard = week one). Wildcard Fri 28–Sat 29 Aug
+    // (afl.com.au fixture); Grand Final Sat 26 Sep at the MCG (Wikipedia 2026 AFL
+    // season / mcg.org.au). Intermediate weeks follow the weekly cadence between
+    // those two confirmed anchors; windows padded a day either side.
+    finalsSchedule: [
+      { name: 'Wildcard Round',     from: '2026-08-27', to: '2026-08-31',
+        detail: '7th hosts 10th and 8th hosts 9th — the two winners take the last two places in the final eight; the losers are eliminated' },
+      { name: 'Qualifying/Elimination Final', from: '2026-09-02', to: '2026-09-07', finalEightWeek1: true },
+      { name: 'Semi-Final',         from: '2026-09-09',  to: '2026-09-14',
+        detail: 'knockout — the qualifying-final losers host the elimination-final winners; the loser is eliminated, the winner advances to a preliminary final' },
+      { name: 'Preliminary Final',  from: '2026-09-16', to: '2026-09-20',
+        detail: 'knockout — the qualifying-final winners host the semi-final winners; the winner advances to the Grand Final' },
+      { name: 'Grand Final',        from: '2026-09-25', to: '2026-09-27', decider: true },
+    ],
     season: '2026',
-    source: 'afl.com.au "Wildcard Round introduced from 2026"; Wikipedia 2026 AFL season',
+    source: 'afl.com.au "Wildcard Round introduced from 2026" + wildcard fixture (28–29 Aug); Wikipedia 2026 AFL season (GF Sat 26 Sep, five-week finals)',
   },
   nrl: {
     archetype: 'ladder-finals',
     totalRounds: 27, winsPoints: 2, maxPpg: 2, finalsTeams: 8,
+    // Four-week final-eight series. Week one Fri 11–Sun 13 Sep (nrl.com finals
+    // week-one announcement); Grand Final Sun 4 Oct at Accor Stadium. Windows
+    // padded a day either side.
+    finalsSchedule: [
+      { name: 'Qualifying/Elimination Final', from: '2026-09-10', to: '2026-09-14', finalEightWeek1: true },
+      { name: 'Semi-Final',        from: '2026-09-17', to: '2026-09-21',
+        detail: 'knockout — the qualifying-final losers host the elimination-final winners; the loser is eliminated, the winner advances to a preliminary final' },
+      { name: 'Preliminary Final', from: '2026-09-24', to: '2026-09-28',
+        detail: 'knockout — the qualifying-final winners host the semi-final winners; the winner advances to the Grand Final' },
+      { name: 'Grand Final',       from: '2026-10-03', to: '2026-10-05', decider: true },
+    ],
     season: '2026',
-    source: 'NRL top-8 finals — unchanged (Wikipedia 2025 NRL finals series)',
+    source: 'NRL top-8 finals — unchanged; nrl.com 2026 finals week one (11–13 Sep); GF Sun 4 Oct 2026, Accor Stadium',
   },
   super_rugby: {
     archetype: 'ladder-finals',
@@ -90,8 +128,10 @@ export const COMP_RULES: Record<string, CompRules> = {
     // semis → Grand Final. Feed has no stage field, so name the round by date.
     finalsTeams: 6,
     finalsSchedule: [
-      { name: 'Qualifying Final', from: '2026-06-03', to: '2026-06-08' },
-      { name: 'Semi-Final',       from: '2026-06-10', to: '2026-06-15' },
+      { name: 'Qualifying Final', from: '2026-06-03', to: '2026-06-08',
+        detail: '1st v 6th, 2nd v 5th, 3rd v 4th (higher seed hosts) — the three winners advance plus the highest-seeded loser as the fourth semi-finalist' },
+      { name: 'Semi-Final',       from: '2026-06-10', to: '2026-06-15',
+        detail: 'knockout — the loser is eliminated, the winner advances to the Grand Final' },
       { name: 'Grand Final',      from: '2026-06-17', to: '2026-06-23', decider: true },
     ],
     season: '2026',
@@ -119,10 +159,21 @@ export const COMP_RULES: Record<string, CompRules> = {
     source: 'formula1points.com / Motor Sport / Sky Sports — 24 races, 6 sprints, no fastest-lap point',
   },
 
+  // ── CRICKET (config confirmed; ladder computation still deferred) ─────────
+  bbl: {
+    archetype: 'cricket',
+    // BBL|15 (2025-26): 40-match home-and-away season, 10 games per club, 2 pts
+    // a win, NRR tiebreaker. TOP 4 reach finals (the top-5 era ended with
+    // BBL|13): The Qualifier (1st v 2nd — winner hosts the Final), The Knockout
+    // (3rd v 4th — loser eliminated), The Challenger (Qualifier loser v Knockout
+    // winner), The Final. RE-CONFIRM at BBL|16 launch (~Dec 2026).
+    totalRounds: 10, winsPoints: 2, maxPpg: 2, finalsTeams: 4,
+    season: '2025-26 (BBL|15)',
+    source: 'Wikipedia 2025-26 Big Bash League season; theroar.com.au BBL fixtures (four finals, top four, 40 games)',
+  },
+
   // ── DEFERRED — config stubs, NO computation yet ──────────────────────────
-  // TODO(cricket — when BBL returns ~Dec): cricket type. BBL 2pts/win, NRR
-  //   tiebreaker, top-N finals (re-confirm N at season start); internationals =
-  //   series-state (mirror SOO). Source: ESPNcricinfo / Wikipedia BBL playoffs.
+  // TODO(cricket_int): series-state (mirror SOO); no season table for bilaterals.
   // TODO(nba — next season): ladder-finals. Top 6 direct + play-in 7–10.
   // TODO(nhl — next season): ladder-finals. Division top-3 + 2 wildcards/conference.
 };
