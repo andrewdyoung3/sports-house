@@ -166,9 +166,10 @@ const generateReview = unstable_cache(
       return null;
     }
   },
-  // v5: finals-series structure + parametric cutoffs (2026-09-13) — invalidates
-  // every review generated with pre-finals-aware prompts.
-  ['ai-review-v5'],
+  // v6: date-window-first finals classification (2026-09-13) — invalidates
+  // reviews built while NRL finals were misclassified as regular season
+  // (played counts games, totalRounds counts rounds; byes broke the >=).
+  ['ai-review-v6'],
   { revalidate: false },
 );
 

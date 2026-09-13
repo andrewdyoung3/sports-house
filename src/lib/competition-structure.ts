@@ -508,7 +508,12 @@ export function resolveCompetitionContext(
   // knockout final, NOT a ladder fixture. It overrides the ladder-based stakes
   // (a Grand Final must never read as a regular-season dead rubber).
   if (def.archetype === 'ladder-finals' && def.totalRounds) {
-    const regularSeasonDone = played !== undefined && played >= def.totalRounds;
+    // Date-window match is authoritative: the finals windows are per-season
+    // ABSOLUTE dates, and no regular-season game is scheduled inside them.
+    // played >= totalRounds is only the fallback — it undercounts for comps
+    // with byes (NRL: 24 games across 27 rounds, so it never fires there).
+    const inFinalsWindow = finalsRoundForDate(league, fixtureDate) !== null;
+    const regularSeasonDone = inFinalsWindow || (played !== undefined && played >= def.totalRounds);
     if (regularSeasonDone) {
       // Seeds (final regular-season ladder positions) disambiguate final-eight
       // week one: Qualifying Final (1–4, double chance) vs Elimination Final.

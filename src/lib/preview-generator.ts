@@ -153,7 +153,7 @@ function validatePhaseStakes(output: AIPreview, prompt: string): string[] {
     || /SEASON STATE: FINALS SERIES —/.test(prompt);
   if (!isFinal) return [];
   const factual = [output.context, output.tacticalBattle, output.verdict, ...(output.keyInsights ?? [])].join('  ');
-  const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round|dead rubber)|final regular[- ]season|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|minor premiership|end-of-season (?:fixture|clash))\b/gi;
+  const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round|dead rubber)|final regular[- ]season|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|minor premiership|end-of-season (?:fixture|clash)|finals (?:berth|qualification|race)|top[- ]?(?:\d+|four|five|six|eight|ten)[- ](?:berth|spot|place|race))\b/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of factual.matchAll(badRe)) {
@@ -466,6 +466,7 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
   'trophy', 'stage', 'world', 'national', 'international', 'premiership',
   'championship', 'division', 'competition', 'association', 'pacific',
   'magic', 'regular', 'origin', 'state', 'group',
+  'qualifying', 'elimination', 'wildcard', // finals round names ("Elimination Final")
   'north', 'south', 'east', 'west', 'central', 'united', 'city', 'town',
   'park', 'ground', 'stadium', 'arena', 'oval', 'field', 'harbour',
   'harbor', 'bay', 'lake', 'river',

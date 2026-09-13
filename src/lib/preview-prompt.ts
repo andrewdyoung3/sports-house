@@ -1555,7 +1555,11 @@ export function buildDataBlock(
       const quarter   = Math.ceil(totalRounds / 4);
       const third     = Math.ceil(totalRounds / 3);
       const runHomeCutoff = Math.floor(totalRounds * 0.65);
-      const isFinalsPhase = played >= totalRounds; // regular season complete
+      // Regular season complete: a finals date-window match is authoritative
+      // (windows are per-season absolute dates); played >= totalRounds is only
+      // the fallback — it undercounts for comps with byes (NRL: 24 games over
+      // 27 rounds, so the count alone never fires there).
+      const isFinalsPhase = finalsRoundForDate(league, context.fixtureDate) !== null || played >= totalRounds;
       const phase =
         isFinalsPhase      ? 'finals series'
         : played <= quarter    ? 'early season'
@@ -1648,8 +1652,9 @@ export function buildDataBlock(
         // only and actively misleads the model ("1st → minor premiership"). Replace
         // the full table + derived-finals arithmetic with a one-line seeding note;
         // FIXTURE CONTEXT + SEASON STATE carry the knockout-final framing.
-        const isFinalsKnockout = played !== undefined && played >= totalRounds
-          && !!finalsRoundForDate(league, context.fixtureDate);
+        // Date-window match alone is authoritative (see SEASON STATE note —
+        // the played-count test misses bye leagues like NRL).
+        const isFinalsKnockout = !!finalsRoundForDate(league, context.fixtureDate);
         if (isFinalsKnockout) {
           const sorted   = [...context.leagueTable].sort((a, b) => a.position - b.position);
           const tRow = sorted.find(r => rowMatchesTeam(r.name, teamName));

@@ -184,11 +184,14 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   // with the finals-series framing. Seeds = final ladder positions.
   const rules = COMP_RULES[league];
   const maxPlayed = Math.max(teamPlayed ?? 0, opponentPlayed ?? 0);
-  const regularSeasonDone = rules?.archetype === 'ladder-finals'
-    && !!rules.totalRounds && maxPlayed >= rules.totalRounds;
-  const finalsRound = regularSeasonDone
+  // A finals date-window match is authoritative (per-season absolute dates);
+  // the played-count test is only the fallback — it undercounts for comps
+  // with byes (NRL: 24 games across 27 rounds, so it never fires there).
+  const finalsRound = rules?.archetype === 'ladder-finals'
     ? finalsRoundDisplay(league, date, teamPosition, opponentPosition)
     : null;
+  const regularSeasonDone = rules?.archetype === 'ladder-finals'
+    && (!!finalsRound || (!!rules.totalRounds && maxPlayed >= rules.totalRounds));
 
   const lines: string[] = [];
 

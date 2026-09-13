@@ -45,7 +45,7 @@ export function validateReviewPhase(review: AIReview, dataBlock: string): string
   const violations: string[] = [];
 
   if (/FINALS CONTEXT/.test(dataBlock)) {
-    const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round)|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|finals[- ]qualification race)\b/gi;
+    const badRe = /\b(regular[- ]season (?:fixture|game|match|clash|round)|dead rubber|no bearing on (?:qualification|finals|the finals|seeding)|nothing (?:to play for|at stake)|finals[- ](?:qualification|race)|finals (?:berth|spot|place)|top[- ]?(?:\d+|four|five|six|eight|ten)[- ](?:berth|spot|place|race)|(?:grip|hold) on (?:a|the|their) top[- ]?\d+)\b/gi;
     for (const m of text.matchAll(badRe)) {
       violations.push(`phase contradiction "${m[0]}" — FINALS CONTEXT says this was a finals fixture`);
     }
