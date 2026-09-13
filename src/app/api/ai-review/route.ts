@@ -135,7 +135,9 @@ const generateReview = unstable_cache(
       return null;
     }
   },
-  ['ai-review-v4'],
+  // v5: finals-series structure + parametric cutoffs (2026-09-13) — invalidates
+  // every review generated with pre-finals-aware prompts.
+  ['ai-review-v5'],
   { revalidate: false },
 );
 
