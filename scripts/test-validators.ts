@@ -15,6 +15,7 @@ import {
   validateLadderPosition,
   validatePointsClaims,
   validateFinalsSeeding,
+  validateNarrativeOpener,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -245,6 +246,30 @@ expect('invented F1 driver in spotlight is rejected',
   });
   expect('form coming in renders', /FORM COMING INTO THIS MATCH/.test(formBlock) && /W 20–10 v Team2/.test(formBlock));
   expect('head-to-head renders', /HEAD-TO-HEAD/.test(formBlock) && /W 18–12 \(home\)/.test(formBlock));
+}
+
+// ─── Narrative-opener guards (finals mode) ─────────────────────────────────────
+
+{
+  console.log('\n── narrative openers ──');
+  const FINALS_PROMPT = 'FINALS PATH (authoritative...):\n  • Seeding: A finished 2nd; B finished 1st.\n';
+  expect('preview: "This is a Preliminary Final…" opener rejected',
+    validateNarrativeOpener(preview({ context: 'This is a Preliminary Final in the AFL finals series — a knockout match.' }), FINALS_PROMPT).length > 0);
+  expect('preview: angle-led opener passes',
+    validateNarrativeOpener(preview({ context: "Fremantle's double chance is spent, and the reward is a trip to a rested Swans side." }), FINALS_PROMPT).length === 0);
+  expect('preview: opener guard inert outside finals mode',
+    validateNarrativeOpener(preview({ context: 'This is a big one.' }), 'LEAGUE TABLE:\n 1. X').length === 0);
+
+  const gfBlockForOpener = buildReviewDataBlock({
+    league: 'nrl', teamName: 'Team1', opponent: 'Team3',
+    teamScore: 24, opponentScore: 12, isHome: false, date: '2026-10-04',
+    teamPosition: 1, teamPlayed: 27, opponentPosition: 3, opponentPlayed: 27,
+  });
+  const rv = (summary: string): AIReview => ({ summary, keyMoments: ['x'], verdict: 'y' });
+  expect('review: "In the Grand Final…" opener rejected',
+    validateReviewOutput(rv('In the Grand Final, Team1 controlled the tempo throughout.'), gfBlockForOpener).length > 0);
+  expect('review: why-led opener passes',
+    validateReviewOutput(rv('Relentless middle control decided the premiership — Team1 never let Team3 into the game.'), gfBlockForOpener).length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

@@ -104,14 +104,25 @@ const generateReview = unstable_cache(
     aiLog(`start cacheKey=${cacheKey} model=${REVIEW_MODEL}`);
 
     // Inner: one model call → cleaned + parsed AIReview. Throws SyntaxError on total failure.
-    const generate = async (): Promise<AIReview> => {
+    // Feedback retry: blind retries reproduce failures, so the retry names them.
+    const generate = async (feedback?: string[]): Promise<AIReview> => {
+      const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+        { role: 'system', content: REVIEW_SYSTEM_PROMPT },
+        { role: 'user',   content: dataBlock },
+      ];
+      if (feedback?.length) {
+        messages.push({
+          role: 'user',
+          content:
+            'Your previous attempt was REJECTED by automated fact/style checks:\n' +
+            feedback.map(f => `- ${f}`).join('\n') +
+            '\nRegenerate the complete JSON response. Fix each rejection precisely while keeping every claim consistent with the data block. Do not repeat the rejected phrasing.',
+        });
+      }
       const msg = await ollama.chat.completions.create({
         model:      REVIEW_MODEL,
         max_tokens: 3000,
-        messages:   [
-          { role: 'system', content: REVIEW_SYSTEM_PROMPT },
-          { role: 'user',   content: dataBlock },
-        ],
+        messages,
       });
       const text = msg.choices[0]?.message?.content ?? '';
       const withoutThink = text.includes('</think>') ? text.replace(/<think>[\s\S]*?<\/think>\s*/i, '') : text;
@@ -143,8 +154,8 @@ const generateReview = unstable_cache(
       // retry → still violating → REFUSE via throw, so the cache stores nothing.
       let violations = validateReviewOutput(parsed, dataBlock);
       if (violations.length > 0) {
-        aiLog(`validation-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
-        const retry = await generate();
+        aiLog(`validation-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
+        const retry = await generate(violations);
         if (retry.summary && Array.isArray(retry.keyMoments) && retry.verdict) {
           const retryViolations = validateReviewOutput(retry, dataBlock);
           if (retryViolations.length === 0) {

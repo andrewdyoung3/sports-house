@@ -914,6 +914,15 @@ SEASON STRUCTURE — authoritative source, non-negotiable:
 
 • FIXTURE CONTEXT — when the data block contains a FIXTURE CONTEXT section, the Stakes label is authoritative (computed from live standings, not estimated). Do NOT describe the game's significance in a way that contradicts the Stakes label: if Stakes is FINALS RACE, do not say finals are assured; if ELIMINATED, do not imply survival is possible; if DEAD RUBBER, do not invent stakes.
 
+NARRATIVE COMPRESSION — the facts are constraints, NOT copy:
+• DERIVED FACTS / FINALS PATH / FIXTURE CONTEXT bind the CONTENT of what you write — every number, direction, hosting reason, and consequence must agree with them — but never the WORDING. Do not reproduce their sentences. Rephrase in your own voice and select ruthlessly: surface the one or two facts that create the tension; the rest inform your reasoning silently.
+• NEVER open the context field with the round name or a definition of the fixture ("This is a Preliminary Final…", "a knockout match between the winners of…"). The reader is already looking at the fixture and round on screen. Open with the ANGLE — the sharpest tension the facts support. The round name may appear mid-sentence, at most once.
+• Structural mechanics (why the host is hosting, what the bracket means) appear as subordinate clauses attached to consequence — never as standalone explainer sentences. One mechanic spelled out, maximum: the one that drives the story.
+  - Not: "This is a Preliminary Final — a knockout match between the winners of the Qualifying and Semi-Final rounds. [Host], who earned home advantage by winning their Qualifying Final, host [Visitor], who lost their Qualifying Final but then won a home Semi-Final. The winner advances to the Grand Final; the loser is eliminated."
+  - But: "[Visitor]'s double chance is spent — beaten in week one, forced to grind through a semi — and the reward is a trip to a rested [Host] side that earned this home final the moment they won in week one. Win and they are in a Grand Final; lose and the season ends a week short."
+  (These are STRUCTURE templates only — [Host]/[Visitor] and every path detail must come from THIS fixture's FINALS PATH facts, never from the template.)
+• The same compression applies everywhere: a review or preview that recites the bracket, the ladder, or the derived-facts list reads like a rulebook. You are the smartest fan in the room, not the rulebook.
+
 COMPETITION STATUS — non-negotiable mathematical facts:
 When the data block contains a "COMPETITION STATUS" section, those facts are mathematically certain — computed from the live points table and games remaining. They OVERRIDE any framing you might otherwise apply based on the seasonal-dynamics rules below. Do NOT soften, hedge, or contradict them.
 
@@ -1080,7 +1089,7 @@ FROM THE MEDIA — the "mediaWatch" field (attributed editorial, strict rules):
 
 OUTPUT — respond ONLY with a valid JSON object. No markdown code fences. No extra text before or after the JSON:
 {
-  "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). Any points total, gap, or inside/outside-the-finals claim here MUST come verbatim from DERIVED FACTS, direction included — never from the round number, the raw table, or your own arithmetic (see DERIVED FACTS BINDS THE context FIELD). If the fixture has no distinctive stakes, state the form and position plainly and move on.",
+  "context": "1–3 sentences. Specific situational setup: where each side sits in this competition and what concretely is at stake in this fixture. No generic importance statements — only state stakes that are factually grounded in the data (e.g. finals position, relegation gap, cup progression). Any points total, gap, or inside/outside-the-finals claim here MUST come verbatim from DERIVED FACTS, direction included — never from the round number, the raw table, or your own arithmetic (see DERIVED FACTS BINDS THE context FIELD). If the fixture has no distinctive stakes, state the form and position plainly and move on. For FINALS fixtures: open with the angle, never with the round name or a definition of the round — see NARRATIVE COMPRESSION.",
   "tacticalBattle": "2–3 sentences. When HEAD COACHES are provided in the data block, open by naming both coaches by surname and framing the contest as a clash of their systems (e.g. 'Postecoglou's high press faces Dyche's compact mid-block'). When HEAD COACHES is absent, describe the contest using team-level attribution only — no coaching names. Then name the specific structural contest where this fixture will be decided. Use sport-specific terminology. Do not describe tactics generically.",
   "playerSpotlight": "REQUIRED — never return an empty string. FOR F1: lead with the FOLLOWED ENTITY's full name (the driver or constructor marked '◄ FOLLOWED' in the data block). At least 80% of this section must be directly about that followed driver/constructor — their form, this circuit's characteristics relative to their strengths, championship situation. Only mention other drivers when it directly contextualises the followed entity's own position. FOR ALL OTHER SPORTS: if player data appears in the data block (lineup/squad/injury report/team news), name the single most analytically compelling player from that data and connect them to the specific gamestate. If the data block contains a NO PLAYER DATA notice, describe the decisive tactical unit or positional role instead — never invent or assume a player name from training knowledge, even if you are confident about the squad.",
   "verdict": "2–3 sentences. The most probable outcome based on the available data, with the specific reasoning. If there is a genuine swing factor grounded in the data (an injury, a set-piece disparity, a form gap), name it. Do not add a generic hedge — if the outcome is uncertain, state why it is uncertain specifically.",
@@ -1679,7 +1688,7 @@ export function buildDataBlock(
             context.opponentRecentForm ?? oppResults,
           );
           if (pathFacts.length > 0) {
-            lines.push('FINALS PATH (derived from the bracket — authoritative; hosting, seeding, and elimination consequences come from HERE, never from inference):');
+            lines.push('FINALS PATH (authoritative on hosting, seeding, and consequences — these bind your LOGIC, not your wording: weave the one or two that carry the story into the narrative; never recite this list or open with a structure lesson):');
             pathFacts.forEach(f => lines.push(`  • ${f}`));
             lines.push('');
           }
@@ -1958,6 +1967,14 @@ export function buildDataBlock(
     ? 'Generate the match preview using the data provided above. Do not invent statistics, historical records, or player names not in the sections above.'
     : 'Generate the match preview using the data provided above. Do not invent statistics or historical records not given. IMPORTANT: no player data was provided — the playerSpotlight field must describe a tactical role or positional unit, never a named individual player.'
   );
+
+  // Finals fixtures: end-of-prompt opener reminder — the recap habit ("This is
+  // a Preliminary Final…") survives mid-prompt guidance, and automated checks
+  // reject it, so the last thing the model reads is the rule.
+  if (lines.some(l => l.startsWith('FINALS PATH'))) {
+    lines.push('');
+    lines.push('OPENER RULE (enforced by automated checks): the FIRST sentence of the context field must begin with a team name, a consequence, or a tension — NEVER with "This is", "It\'s", or the round name. Weave the round name in mid-sentence at most once.');
+  }
 
   return lines.join('\n');
 }

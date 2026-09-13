@@ -67,6 +67,7 @@ GROUNDING — absolute constraint, no exceptions:
 
 INFORMATION ECONOMY:
 • The user can already see the scoreline and result. Do NOT restate the score in the summary or verdict.
+• NEVER open the summary with the round name or a definition of the fixture ("In the Elimination Final…", "This was a knockout match…") — the reader sees the fixture on screen. Open with WHY the result happened; fold the round's consequence (who advances, who is done) into that sentence as a clause, not a preamble.
 • Do NOT recite win/loss records. The user sees the table.
 • No position recitation ("they sit 6th with 31 points") — state what it means structurally.
 • Every sentence must add interpretation the data display cannot show: WHY the result happened, what structural pattern it reflects, what it means going forward.
@@ -235,7 +236,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
       teamRecentForm, opponentRecentForm,
     );
     if (pathFacts.length > 0) {
-      lines.push('  Bracket facts (hosting, seeding, and consequences come from HERE — never infer them; the host is NOT "the higher seed" unless the Seeding fact says so):');
+      lines.push('  Bracket facts (these bind your LOGIC — hosting, seeding, consequences — never infer them; the host is NOT "the higher seed" unless the Seeding fact says so. Do NOT recite this list or open with a round definition: weave the one or two facts that matter into the analysis):');
       pathFacts.forEach(f => lines.push(`    • ${f}`));
     }
     lines.push('');

@@ -405,6 +405,25 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Narrative-opener guard (finals mode). The model's strongest habit is opening
+ * the context with a rules recap ("This is a Preliminary Final in the AFL
+ * finals series — a knockout match between…") — accurate, bland, and redundant
+ * (the UI already names the fixture and round). Style guidance alone does not
+ * move the small local model, so the opener is a validated constraint: the
+ * first sentence must lead with substance, not a fixture definition. Paired
+ * with feedback-carrying retries, the second attempt lands the angle.
+ */
+export function validateNarrativeOpener(output: AIPreview, prompt: string): string[] {
+  if (!/FINALS PATH|REGULAR-SEASON SEEDING/.test(prompt)) return [];
+  const opener = (output.context ?? '').trimStart();
+  const recapRe = /^(?:this (?:is|was)\b|it(?:'|’)?s (?:a|the)\b|in (?:a|the) (?:wildcard|qualifying|elimination|semi|preliminary|grand)\b|(?:a|the) (?:wildcard round|qualifying final|elimination final|semi[- ]final|preliminary final|grand final)\b)/i;
+  if (recapRe.test(opener)) {
+    return [`context opens with a rules recap ("${opener.slice(0, 60)}…") — open with the ANGLE: a team and a consequence. The reader already sees the fixture and round on screen; the round name may appear mid-sentence at most once`];
+  }
+  return [];
+}
+
+/**
  * Catches invented per-player statlines. When the data block contains NO KEY
  * PERFORMERS section, the model has no grounded per-player numbers, so any stat
  * like "two tries", "18 tackles", "3 turnovers" attached in the factual fields is
@@ -625,6 +644,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validatePhaseStakes(v, prompt),
     ...validateLadderPosition(v, prompt),
     ...validateFinalsSeeding(v, prompt),
+    ...validateNarrativeOpener(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
@@ -645,7 +665,22 @@ export async function callOllamaValidated(
   maxTokensOverride?: number,
   modelOverride?: string,
 ): Promise<{ preview: AIPreview; violations: string[] }> {
-  const doGenerate = async (): Promise<AIPreview> => {
+  const doGenerate = async (feedback?: string[]): Promise<AIPreview> => {
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user',   content: prompt },
+    ];
+    // Feedback retry: blind retries reproduce style failures (same prompt →
+    // same opener), so the retry names exactly what was rejected and why.
+    if (feedback?.length) {
+      messages.push({
+        role: 'user',
+        content:
+          'Your previous attempt was REJECTED by automated fact/style checks:\n' +
+          feedback.map(f => `- ${f}`).join('\n') +
+          '\nRegenerate the complete JSON response. Fix each rejection precisely while keeping every claim consistent with the data block. Do not repeat the rejected phrasing.',
+      });
+    }
     const response = await ollamaClient.chat.completions.create({
       model:      modelOverride ?? AI_MODEL,
       // Non-compact ceiling is 6000 (headroom for richer future prompts; current
@@ -653,10 +688,7 @@ export async function callOllamaValidated(
       // compact (2500) is unreachable on the main preview path — generateAndStorePreview
       // always passes compact=false — and is left untouched.
       max_tokens: maxTokensOverride ?? (compact ? 2500 : 6000),
-      messages:   [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user',   content: prompt },
-      ],
+      messages,
     });
     const raw          = response.choices[0]?.message?.content ?? '{}';
     const withoutThink = raw.includes('</think>') ? raw.replace(/<think>[\s\S]*?<\/think>\s*/i, '') : raw;
@@ -693,13 +725,25 @@ export async function callOllamaValidated(
     return { preview: stripUnsourcedMediaWatch(result, prompt), violations: [] };
   }
 
-  aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying`);
+  aiLog(`validation-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
   try {
-    const retry      = await doGenerate();
+    const retry      = await doGenerate(violations);
     const retryViols = collectViolations(retry, prompt);
     if (retryViols.length === 0) {
       aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
       return { preview: stripUnsourcedMediaWatch(retry, prompt), violations: [] };
+    }
+    // Style-only residue (the recap-opener habit is sticky): previews are
+    // generated offline by the heartbeat, so a third attempt is cheap. Only for
+    // opener violations — factual violations get no extra bites at the apple.
+    if (retryViols.every(v => v.startsWith('context opens with a rules recap'))) {
+      aiLog(`retry-2 (opener only) elapsed=${Date.now() - t0}ms — third attempt`);
+      const third      = await doGenerate(retryViols);
+      const thirdViols = collectViolations(third, prompt);
+      if (thirdViols.length === 0) {
+        aiLog(`retry-2-ok elapsed=${Date.now() - t0}ms`);
+        return { preview: stripUnsourcedMediaWatch(third, prompt), violations: [] };
+      }
     }
     // Both attempts violate — surface the better attempt AND its remaining
     // violations so the caller can refuse to store (REL-1). We no longer return a

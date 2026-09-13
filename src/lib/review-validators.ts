@@ -79,6 +79,22 @@ export function validateReviewStatlines(review: AIReview, dataBlock: string): st
   return violations;
 }
 
+/**
+ * Narrative-opener guard for finals reviews: the summary must open with WHY
+ * the result happened, not a fixture definition ("In the Elimination Final…",
+ * "This was a knockout match…"). Style guidance alone does not move the small
+ * local model; paired with feedback retries this lands the angle.
+ */
+export function validateReviewOpener(review: AIReview, dataBlock: string): string[] {
+  if (!/FINALS CONTEXT/.test(dataBlock)) return [];
+  const opener = (review.summary ?? '').trimStart();
+  const recapRe = /^(?:this (?:is|was)\b|in (?:a|the) (?:wildcard|qualifying|elimination|semi|preliminary|grand)\b|(?:a|the) (?:wildcard round|qualifying final|elimination final|semi[- ]final|preliminary final|grand final)\b)/i;
+  if (recapRe.test(opener)) {
+    return [`summary opens with a fixture definition ("${opener.slice(0, 60)}…") — open with WHY the result happened; fold the round's consequence into that sentence as a clause`];
+  }
+  return [];
+}
+
 /** Full review validation pass. Empty array = clean, safe to cache and serve. */
 export function validateReviewOutput(review: AIReview, dataBlock: string): string[] {
   const shaped = asPreviewShape(review);
@@ -89,5 +105,6 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validatePlayerNames(shaped, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
+    ...validateReviewOpener(review, dataBlock),
   ];
 }
