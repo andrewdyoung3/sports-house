@@ -1026,7 +1026,7 @@ export async function fetchEPLPreview(
   // from that competition's summary endpoint.
   const extrasSlug = (competition && COMP_ESPN_SLUG[competition]) || 'eng.1';
 
-  const [standingsRes, teamNewsRes, oppNewsRes, extrasRes, teamInjuryRes, oppInjuryRes] = await Promise.allSettled([
+  const [standingsRes, teamNewsRes, oppNewsRes, extrasRes, teamInjuryRes, oppInjuryRes, oddsRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/soccer/eng.1/standings',
       { next: { revalidate: 3600 } },
@@ -1046,7 +1046,9 @@ export async function fetchEPLPreview(
     fetchESPNMatchExtras(`soccer/${extrasSlug}`, eventId, teamName, opponentName),
     espnTeamId ? fetchESPNInjuries('soccer/eng.1', espnTeamId)   : Promise.resolve([]),
     oppEspnId  ? fetchESPNInjuries('soccer/eng.1', oppEspnId)    : Promise.resolve([]),
+    fetchESPNSoccerOdds(extrasSlug, eventId),
   ]);
+  const marketOdds = oddsRes.status === 'fulfilled' ? oddsRes.value : undefined;
 
   // ── Standings ──
   let teamStanding: TeamStanding | undefined;
@@ -1160,6 +1162,7 @@ export async function fetchEPLPreview(
     headToHead:            extras.headToHead,
     teamInjuryReport:      teamInjuries.length   > 0 ? teamInjuries   : undefined,
     opponentInjuryReport:  oppInjuries.length    > 0 ? oppInjuries    : undefined,
+    marketOdds,
   };
 }
 
@@ -2137,5 +2140,40 @@ export async function fetchReviewFormAndH2H(
     };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Bookmaker market for a soccer event (ESPN core odds API — works by event id
+ * alone, no date needed; confirmed live 2026-09-13, provider DraftKings).
+ * NRL/SRU carry NO odds in ESPN's feed — soccer only. Raw fields returned;
+ * buildDataBlock renders them with home/away resolved and market attribution.
+ */
+async function fetchESPNSoccerOdds(
+  slug: string,
+  eventId: string | undefined,
+): Promise<PreviewContext['marketOdds'] | undefined> {
+  if (!eventId) return undefined;
+  try {
+    const res = await fetchTimeout(
+      `https://sports.core.api.espn.com/v2/sports/soccer/leagues/${slug}/events/${eventId}/competitions/${eventId}/odds`,
+      { next: { revalidate: 1800 }, timeoutMs: 6000 },
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json() as { items?: any[] };
+    const o = data.items?.[0];
+    if (!o) return undefined;
+    const homeFav = o.homeTeamOdds?.favorite;
+    const awayFav = o.awayTeamOdds?.favorite;
+    return {
+      provider:     o.provider?.name ?? 'ESPN odds',
+      overUnder:    typeof o.overUnder === 'number' ? o.overUnder : undefined,
+      homeFavorite: homeFav === true ? true : awayFav === true ? false : undefined,
+      homeML:       typeof o.homeTeamOdds?.moneyLine === 'number' ? o.homeTeamOdds.moneyLine : undefined,
+      awayML:       typeof o.awayTeamOdds?.moneyLine === 'number' ? o.awayTeamOdds.moneyLine : undefined,
+      drawML:       typeof o.drawOdds?.moneyLine === 'number' ? o.drawOdds.moneyLine : undefined,
+    };
+  } catch {
+    return undefined;
   }
 }

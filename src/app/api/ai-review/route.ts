@@ -18,6 +18,7 @@ import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
 import { validateReviewOutput } from '@/lib/review-validators';
 import { fetchReviewFormAndH2H } from '@/lib/preview-fetchers';
+import { fetchAflMatchStats } from '@/lib/afl-roster';
 
 /** Thrown (not returned) so unstable_cache never stores a failed-validation review. */
 class ReviewValidationError extends Error {
@@ -225,7 +226,10 @@ export async function POST(req: NextRequest) {
     // the review data block (form/H2H from the same sources the preview mines).
     const [standings, matchStats, formExtras] = await Promise.all([
       fetchStandings(league),
-      teamId ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
+      // AFL: CFS playerStats (ESPN has no AFL player stats); others: ESPN match-stats.
+      league === 'afl'
+        ? fetchAflMatchStats(teamName, opponent, String(date))
+        : teamId ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
       fetchReviewFormAndH2H(league, gameId ? String(gameId) : undefined, teamName, opponent, String(date)),
     ]);
 

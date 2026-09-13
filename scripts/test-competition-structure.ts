@@ -367,6 +367,17 @@ console.log('\n── EPL: table, no finals ────────────
   // Non-final-eight comps (SRU) emit nothing from this deriver.
   const sru = buildFinalsPathFacts('super_rugby', '2026-06-12', 'A', 'B', 1, 4, true);
   test('SRU: no final-eight path facts', String(sru.length), '0');
+
+  // Named path-so-far from form: Fremantle (1st) at a prelim — QF loss then semi win.
+  const freoForm = [
+    { date: '2026-09-04', opponent: 'Sydney Swans', isWin: false, teamScore: 88, opponentScore: 141 },
+    { date: '2026-09-11', opponent: 'Geelong Cats', isWin: true,  teamScore: 101, opponentScore: 76 },
+    { date: '2026-08-20', opponent: 'Carlton',      isWin: true,  teamScore: 99,  opponentScore: 70 }, // regular season — excluded
+  ];
+  const namedPrelim = buildFinalsPathFacts('afl', '2026-09-18', 'Sydney Swans', 'Fremantle', 2, 1, true, undefined, freoForm);
+  has('named path: QF loss named with score', namedPrelim, 'lost the Qualifying Final to Sydney Swans 88–141');
+  has('named path: semi win named after QF loss', namedPrelim, 'then beat Geelong Cats 101–76 in the Semi-Final');
+  lacks('named path: regular-season game excluded', namedPrelim, 'Carlton');
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

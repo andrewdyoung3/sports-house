@@ -47,18 +47,23 @@ COMP_RULES (per-season config: cutoffs, points, finals schedule + bracket flags)
 - **Sources:** Squiggle (`games`, `standings`, `tips` — includes finals games with round names), AFL.com/Telstra CFS (named squads, runtime token), Open-Meteo (weather).
 - **Derived facts:** ladder tiers (top-6 direct / 7–10 wildcard / out), percentage tiebreaker fact, level-on-points shared figure, finals cutoff gaps, FIXTURE CONTEXT stakes, finals round by date (full 2026 schedule), FINALS PATH (hosting reason, double chance, wildcard road), model-tip margin.
 - **Validators:** ladder position, phase stakes, finals seeding, finals imminence, points claims, player names (squad whitelist), statlines, years, margin-vs-tip.
-- **Gaps / roadmap:** (1) ingest completed finals *results* from the already-fetched Squiggle games array to name who beat whom on the path (current path facts are rule-derived, which is sufficient for correctness but results would add colour); (2) wildcard-era `played` can exceed 23 for wildcard participants — watched, handled by `>=` comparisons.
+- **Review player stats — WIRED (2026-09-13):** `fetchAflMatchStats` in `afl-roster.ts` reads the CFS `playerStats/match/<matchId>` endpoint (same runtime WMCTok token as rosters; round resolved from Squiggle by teams+date; concluded stats cached 12h). Full Champion Data lines → team aggregates (disposals, inside 50s, contested, clearances, tackles, scoring shots) + curated KEY PERFORMERS (leading goal-kickers AND best-rated ball-winners) → review data block + player-name whitelist.
+- **Named finals paths — WIRED (2026-09-13):** `finalsPathSoFar` names each side's completed finals results with scores ("lost the Qualifying Final to Sydney 88–141, then beat Geelong 101–76 in the Semi-Final") from the form data both paths already carry; week-one round labelled from the team's own seed.
+- **Gaps / roadmap:** wildcard-era `played` can exceed 23 for wildcard participants — watched, handled by `>=` comparisons.
 
 ### NRL
 - **Sources:** ESPN scoreboard/standings/news + `summary?event=` (form, H2H, lineups by jersey ≤13). Injuries walled (nrl.com is editorial-only) — team-news headlines carry injury colour.
 - **Derived facts:** top-8 cutoff gaps, FIXTURE CONTEXT stakes, finals round by date (full 2026 schedule), FINALS PATH (QF/EF split by seeds, double chance, hosting reasons), SEASON PHASE calibration in reviews.
 - **Validators:** same suite as AFL (whitelist from ESPN rosters).
-- **Gaps / roadmap:** finals results ingestion (ESPN scoreboard ranged query) for named paths; Origin-window form distortion is profile prose only — could become a derived flag on affected rounds.
+- **Named finals paths — WIRED (2026-09-13):** derived from the ESPN form data already in context via `finalsPathSoFar` (no new fetch needed).
+- **Odds:** NRL carries NO odds anywhere in ESPN's feed (scoreboard + summary probed live 2026-09-13) — a keyed bookmaker API would be a new dependency; not wired.
+- **Gaps / roadmap:** Origin-window form distortion is profile prose only — could become a derived flag on affected rounds.
 
 ### EPL
 - **Sources:** ESPN scoreboard (5-competition fan-out), standings, news, `summary?event=` extras.
 - **Derived facts:** CL cutoff gaps (parametric on `clSpots` = 5 for 2025-26), relegation gaps (parametric on `relegationFrom`), title/CL/relegation clinch notes, TITLE RACE / TOP-5 RACE / RELEGATION BATTLE / SAFE stakes (races now outrank SAFE).
 - **Validators:** full suite; no finals machinery by design (profile states NO playoffs — validator-enforced language).
+- **Market odds — WIRED (2026-09-13):** ESPN core odds API (`.../events/<id>/competitions/<id>/odds`, event id alone; DraftKings) → `PreviewContext.marketOdds` → attributed MARKET line in the FROM THE MEDIA block (cited as "the market", never the model's own prediction).
 - **Gaps / roadmap:** cup competitions (League Cup/FA Cup/Europe) get competition-stage context but no cup-specific derived stakes (e.g. "a semi-final first leg — aggregate decides"); two-leg aggregate facts are the next deriver. xG/shot data exists in ESPN summaries — unused; would enrich reviews with grounded performance stats.
 
 ### Super Rugby Pacific

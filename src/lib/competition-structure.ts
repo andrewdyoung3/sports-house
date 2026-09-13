@@ -140,6 +140,44 @@ function ord(n: number): string {
  * seeding explanation for hosting because nothing told it hosting comes from
  * winning a Qualifying Final. These facts exist so that inference never happens.
  */
+/** The slice of a GameResult the finals-path narrator needs. */
+export interface FinalsFormEntry {
+  date: string;
+  opponent: string;
+  isWin: boolean;
+  teamScore: number;
+  opponentScore: number;
+}
+
+/**
+ * Names a team's completed finals results so far ("lost their Qualifying Final
+ * to Sydney 88–141, then beat Adelaide 144–91 in the Semi-Final") from recent
+ * form + the finals date windows. The week-one round is labelled from the
+ * team's own seed (1–4 → Qualifying Final, 5+ → Elimination Final).
+ */
+export function finalsPathSoFar(
+  league: string,
+  form: FinalsFormEntry[] | undefined,
+  teamSeed: number | undefined,
+  beforeISO: string | undefined,
+): string | undefined {
+  if (!form?.length) return undefined;
+  const day = beforeISO?.slice(0, 10);
+  const played = form
+    .map(r => ({ r, round: finalsRoundForDate(league, r.date) }))
+    .filter(x => x.round && !x.round.decider && (!day || x.r.date.slice(0, 10) < day))
+    .sort((a, b) => (a.r.date < b.r.date ? -1 : 1));
+  if (played.length === 0) return undefined;
+  return played.map(({ r, round }) => {
+    const roundName = round!.finalEightWeek1
+      ? (teamSeed !== undefined ? (teamSeed <= 4 ? 'Qualifying Final' : 'Elimination Final') : 'week-one final')
+      : round!.name;
+    return r.isWin
+      ? `beat ${r.opponent} ${r.teamScore}–${r.opponentScore} in the ${roundName}`
+      : `lost the ${roundName} to ${r.opponent} ${r.teamScore}–${r.opponentScore}`;
+  }).join(', then ');
+}
+
 export function buildFinalsPathFacts(
   league: string,
   isoDate: string | undefined,
@@ -148,6 +186,8 @@ export function buildFinalsPathFacts(
   teamSeed: number | undefined,
   oppSeed: number | undefined,
   teamIsHome: boolean | undefined,
+  teamForm?: FinalsFormEntry[],
+  oppForm?: FinalsFormEntry[],
 ): string[] {
   const rules = COMP_RULES[league];
   // Final-eight bracket comps only — the system these derivations describe.
@@ -175,6 +215,13 @@ export function buildFinalsPathFacts(
       `${hi} (${ord(hiSeed)}) is the higher seed.`
     );
   }
+
+  // Named finals results so far (derived from completed-game form + the finals
+  // date windows) — real scores for the bracket path the rules imply.
+  const teamPath = finalsPathSoFar(league, teamForm, teamSeed, isoDate);
+  const oppPath  = finalsPathSoFar(league, oppForm, oppSeed, isoDate);
+  if (teamPath) facts.push(`${teamName}'s finals so far: ${teamPath}.`);
+  if (oppPath)  facts.push(`${opponentName}'s finals so far: ${oppPath}.`);
 
   if (round.decider) {
     facts.push('Both sides won Preliminary Finals to reach the Grand Final. The Grand Final venue is fixed — a home-ground label here does not mean higher seeding.');

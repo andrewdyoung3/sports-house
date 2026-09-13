@@ -229,6 +229,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     );
     const pathFacts = buildFinalsPathFacts(
       league, date, teamName, opponent, teamPosition, opponentPosition, isHome,
+      teamRecentForm, opponentRecentForm,
     );
     if (pathFacts.length > 0) {
       lines.push('  Bracket facts (hosting, seeding, and consequences come from HERE — never infer them; the host is NOT "the higher seed" unless the Seeding fact says so):');
@@ -412,15 +413,19 @@ export function buildReviewDataBlock(input: ReviewInput): string {
         side.aggStats.slice(0, 8).forEach(s => lines.push(`  ${s.label}: ${s.value}`));
       }
 
-      // Key scorers / standout players — only include players with notable stats
-      const scorers = side.players?.filter(p =>
-        p.stats.some(s =>
-          ['T', 'G', 'Tries', 'Goals', 'Points', 'G(1)', 'G(2)', 'G(3)'].includes(s.label) &&
-          parseInt(s.value, 10) > 0,
-        ),
-      );
+      // Key scorers / standout players — only include players with notable stats.
+      // AFL: the CFS fetcher pre-curates key performers (goal-kickers AND
+      // ball-winners with 0 goals), so its list passes through unfiltered.
+      const scorers = league === 'afl'
+        ? side.players
+        : side.players?.filter(p =>
+            p.stats.some(s =>
+              ['T', 'G', 'Tries', 'Goals', 'Points', 'G(1)', 'G(2)', 'G(3)'].includes(s.label) &&
+              parseInt(s.value, 10) > 0,
+            ),
+          );
       if (scorers && scorers.length > 0) {
-        lines.push(`${label.toUpperCase()} SCORERS:`);
+        lines.push(`${label.toUpperCase()} ${league === 'afl' ? 'KEY PERFORMERS' : 'SCORERS'}:`);
         scorers.slice(0, 6).forEach(p => {
           const statStr = p.stats.map(s => `${s.label}: ${s.value}`).join(', ');
           lines.push(`  ${p.name}${p.position ? ` (${p.position})` : ''} — ${statStr}`);

@@ -17,6 +17,7 @@
 
 import { readFileSync, writeFileSync, statSync } from 'fs';
 import { fetchTimeout } from '@/lib/espn';
+import type { MatchStats, PlayerStatLine } from '@/types';
 
 const BASE = 'https://api.afl.com.au/cfs/afl';
 
@@ -117,6 +118,32 @@ function playerNames(team: AflRosterTeam | undefined): string[] {
   }).filter(Boolean);
 }
 
+/**
+ * Find the CFS matchId for a round + two team names (either order, Squiggle or
+ * full AFL names). Shared by lineups (pre-match) and player stats (post-match).
+ */
+async function findMatch(
+  roundNumber: number,
+  teamName: string,
+  opponentName: string,
+): Promise<{ matchId: string; homeName: string } | null> {
+  if (!roundNumber || !teamName) return null;
+  const seasonId = await currentSeasonId();
+  if (!seasonId) return null;
+  const roundId = seasonId.replace('CD_S', 'CD_R') + String(roundNumber).padStart(2, '0');
+  const round = await roundItems(roundId);
+  if (!round?.items?.length) return null;
+  const item = round.items.find(it => {
+    const h = it.match?.homeTeam?.name ?? '';
+    const a = it.match?.awayTeam?.name ?? '';
+    return (nameMatch(h, teamName) && nameMatch(a, opponentName)) ||
+           (nameMatch(a, teamName) && nameMatch(h, opponentName));
+  });
+  const matchId = item?.match?.matchId;
+  if (!matchId) return null;
+  return { matchId, homeName: item?.match?.homeTeam?.name ?? '' };
+}
+
 export interface AflLineups { teamSquad?: string[]; opponentSquad?: string[] }
 
 /**
@@ -129,24 +156,10 @@ export async function fetchAflLineups(
   teamName: string,
   opponentName: string,
 ): Promise<AflLineups> {
-  if (!roundNumber || !teamName) return {};
-  const seasonId = await currentSeasonId();
-  if (!seasonId) return {};
-  const roundId = seasonId.replace('CD_S', 'CD_R') + String(roundNumber).padStart(2, '0');
+  const found = await findMatch(roundNumber, teamName, opponentName);
+  if (!found) return {};
 
-  const round = await roundItems(roundId);
-  if (!round?.items?.length) return {};
-
-  const item = round.items.find(it => {
-    const h = it.match?.homeTeam?.name ?? '';
-    const a = it.match?.awayTeam?.name ?? '';
-    return (nameMatch(h, teamName) && nameMatch(a, opponentName)) ||
-           (nameMatch(a, teamName) && nameMatch(h, opponentName));
-  });
-  const matchId = item?.match?.matchId;
-  if (!matchId) return {};
-
-  const roster = await matchRoster(matchId);
+  const roster = await matchRoster(found.matchId);
   if (!roster) return {};
 
   const homeNames = playerNames(roster.homeTeam);
@@ -158,4 +171,124 @@ export async function fetchAflLineups(
     teamSquad:     mine.length   > 0 ? mine   : undefined,
     opponentSquad: theirs.length > 0 ? theirs : undefined,
   };
+}
+
+// ─── Post-match player stats (cfs/afl/playerStats/match/<matchId>) ────────────
+// Full Champion Data lines per player: goals/behinds, disposals, marks, tackles,
+// clearances, inside 50s, contested possessions, rating points. Discovered
+// 2026-09-13 (same token as rosters). Concluded-match stats are immutable, so
+// the cross-run cache TTL is long.
+
+interface AflStatEntry {
+  player?: { player?: { player?: { playerName?: { givenName?: string; surname?: string } }; position?: string } };
+  playerStats?: {
+    stats?: {
+      goals?: number; behinds?: number; disposals?: number; marks?: number;
+      tackles?: number; inside50s?: number; contestedPossessions?: number;
+      hitouts?: number; goalAssists?: number; dreamTeamPoints?: number;
+      clearances?: { totalClearances?: number };
+    };
+  };
+}
+interface AflPlayerStatsResp { homeTeamPlayerStats?: AflStatEntry[]; awayTeamPlayerStats?: AflStatEntry[] }
+
+const TTL_STATS = 12 * 3600_000;
+async function matchPlayerStats(matchId: string): Promise<AflPlayerStatsResp | null> {
+  const cached = cacheGet<AflPlayerStatsResp>(`stats-${matchId}`, TTL_STATS);
+  if (cached) return cached;
+  const j = await authedJson<AflPlayerStatsResp>(`playerStats/match/${matchId}`);
+  if (j) cacheSet(`stats-${matchId}`, j);
+  return j;
+}
+
+function toSide(entries: AflStatEntry[], teamName: string): { teamName: string; aggStats: Array<{ label: string; value: string }>; players: PlayerStatLine[] } {
+  const rows = entries.map(e => {
+    const pn = e.player?.player?.player?.playerName;
+    const s  = e.playerStats?.stats ?? {};
+    return {
+      name: pn ? `${pn.givenName ?? ''} ${pn.surname ?? ''}`.trim() : '',
+      position: e.player?.player?.position || undefined,
+      goals: s.goals ?? 0, behinds: s.behinds ?? 0, disposals: s.disposals ?? 0,
+      marks: s.marks ?? 0, tackles: s.tackles ?? 0, inside50s: s.inside50s ?? 0,
+      contested: s.contestedPossessions ?? 0, clearances: s.clearances?.totalClearances ?? 0,
+      hitouts: s.hitouts ?? 0, dtp: s.dreamTeamPoints ?? 0,
+    };
+  }).filter(r => r.name);
+
+  const sum = (k: 'disposals' | 'inside50s' | 'tackles' | 'contested' | 'clearances' | 'goals' | 'behinds') =>
+    Math.round(rows.reduce((a, r) => a + r[k], 0));
+  const aggStats = [
+    { label: 'Disposals',             value: String(sum('disposals')) },
+    { label: 'Inside 50s',            value: String(sum('inside50s')) },
+    { label: 'Contested possessions', value: String(sum('contested')) },
+    { label: 'Clearances',            value: String(sum('clearances')) },
+    { label: 'Tackles',               value: String(sum('tackles')) },
+    { label: 'Scoring shots',         value: `${sum('goals') + sum('behinds')} (${sum('goals')}.${sum('behinds')})` },
+  ];
+
+  // Key performers: leading goal-kickers + best-rated ball-winners (max 6).
+  const byImpact = [...rows].sort((a, b) => (b.dtp || b.disposals + b.goals * 6) - (a.dtp || a.disposals + a.goals * 6));
+  const picked: typeof rows = [];
+  for (const r of [...rows].sort((a, b) => b.goals - a.goals).slice(0, 2)) {
+    if (r.goals > 0 && !picked.includes(r)) picked.push(r);
+  }
+  for (const r of byImpact) {
+    if (picked.length >= 6) break;
+    if (!picked.includes(r)) picked.push(r);
+  }
+  const players: PlayerStatLine[] = picked.map(r => ({
+    name: r.name,
+    position: r.position,
+    stats: [
+      ...(r.goals > 0 || r.behinds > 0 ? [{ label: 'Goals', value: `${r.goals}.${r.behinds}` }] : []),
+      { label: 'Disposals', value: String(Math.round(r.disposals)) },
+      ...(r.marks >= 5 ? [{ label: 'Marks', value: String(Math.round(r.marks)) }] : []),
+      ...(r.tackles >= 5 ? [{ label: 'Tackles', value: String(Math.round(r.tackles)) }] : []),
+      ...(r.clearances >= 4 ? [{ label: 'Clearances', value: String(Math.round(r.clearances)) }] : []),
+      ...(r.hitouts >= 20 ? [{ label: 'Hitouts', value: String(Math.round(r.hitouts)) }] : []),
+    ],
+  }));
+  return { teamName, aggStats, players };
+}
+
+/**
+ * Post-match player stats for an AFL game, shaped as MatchStats for the review
+ * data block. Round is resolved from the Squiggle games feed by teams + date
+ * (the caller has no round number post-match). Returns null when anything is
+ * unavailable — the review then renders its NO IN-GAME MATCH STATS guard.
+ */
+export async function fetchAflMatchStats(
+  teamName: string,
+  opponentName: string,
+  matchDateISO: string,
+): Promise<MatchStats | null> {
+  try {
+    const day = matchDateISO.slice(0, 10);
+    const year = day.slice(0, 4);
+    const res = await fetchTimeout(
+      `https://api.squiggle.com.au/?q=games;year=${year}`,
+      { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, next: { revalidate: 1800 }, timeoutMs: 8000 },
+    );
+    if (!res.ok) return null;
+    const { games = [] } = await res.json() as { games?: any[] };
+    const game = games.find(g =>
+      Number(g.complete) === 100 &&
+      String(g.date).slice(0, 10) === day &&
+      ((nameMatch(g.hteam, teamName) && nameMatch(g.ateam, opponentName)) ||
+       (nameMatch(g.ateam, teamName) && nameMatch(g.hteam, opponentName))));
+    if (!game?.round) return null;
+
+    const found = await findMatch(Number(game.round), teamName, opponentName);
+    if (!found) return null;
+    const stats = await matchPlayerStats(found.matchId);
+    if (!stats?.homeTeamPlayerStats?.length || !stats?.awayTeamPlayerStats?.length) return null;
+
+    const teamIsHome = nameMatch(found.homeName, teamName);
+    const [mine, theirs] = teamIsHome
+      ? [stats.homeTeamPlayerStats, stats.awayTeamPlayerStats]
+      : [stats.awayTeamPlayerStats, stats.homeTeamPlayerStats];
+    return { team: toSide(mine, teamName), opponent: toSide(theirs, opponentName) };
+  } catch {
+    return null;
+  }
 }

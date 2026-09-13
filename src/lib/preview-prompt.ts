@@ -728,12 +728,15 @@ export function collectPlayerWhitelist(prompt: string): {
     for (const line of injuryText.split('\n')) addNamesFromLine(line);
   }
 
-  // Review data blocks: "<TEAM> SCORERS:" sections list the only grounded player
-  // names for a post-match review. Line shape: "  Name (pos) — T: 2, G: 3".
-  // There is one section per side, so collect ALL of them, not just the first.
-  for (const m of prompt.matchAll(/^[^\n]*SCORERS:\s*\n((?:[^\n]+\n)*?)(?=\n|$)/gm)) {
-    hasPlayerData = true;
+  // Review data blocks: "<TEAM> SCORERS:" / "<TEAM> KEY PERFORMERS:" sections
+  // list the only grounded player names for a post-match review. Line shape:
+  // "  Name (pos) — Goals: 2, Disposals: 25". One section per side, so collect
+  // ALL of them; only dash-separated lines are harvested, so the preview path's
+  // differently-shaped KEY PERFORMERS block is never mis-parsed here.
+  for (const m of prompt.matchAll(/^[^\n]*(?:SCORERS|KEY PERFORMERS):\s*\n((?:[^\n]+\n)*?)(?=\n|$)/gm)) {
     for (const line of m[1].split('\n')) {
+      if (!/\s[—–-]\s/.test(line)) continue;
+      hasPlayerData = true;
       const name = line.split(/\s+[—–-]\s+/)[0]?.replace(/\([^)]*\)/g, '').trim();
       if (name && name.length > 1) whitelist.add(name.toLowerCase());
     }
@@ -1667,6 +1670,8 @@ export function buildDataBlock(
           const pathFacts = buildFinalsPathFacts(
             league, context.fixtureDate, teamName, opponentName,
             tRow?.position, oRow?.position, isHome,
+            context.teamRecentForm ?? teamResults,
+            context.opponentRecentForm ?? oppResults,
           );
           if (pathFacts.length > 0) {
             lines.push('FINALS PATH (derived from the bracket — authoritative; hosting, seeding, and elimination consequences come from HERE, never from inference):');
@@ -1871,7 +1876,8 @@ export function buildDataBlock(
     const oppNews  = context.opponentNews ?? [];
     const hasNews  = teamNews.length > 0 || oppNews.length > 0;
     const hasTips  = !!context.tips;
-    if (hasNews || hasTips) {
+    const hasOdds  = !!context.marketOdds;
+    if (hasNews || hasTips || hasOdds) {
       lines.push('FROM THE MEDIA (attributed editorial source material — present these as reporting or opinion with attribution, NEVER as your own factual claim; paraphrase, do not fabricate quotes):');
       if (hasNews) {
         lines.push('  RECENT HEADLINES (may be speculative or outdated):');
@@ -1889,6 +1895,20 @@ export function buildDataBlock(
         // Keep the exact "average predicted winning margin: N points" phrasing —
         // validatePointsClaims keys off it to bound any margin claim in the output.
         lines.push(`  MODEL TIP (a prediction, not a result): ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
+      }
+      if (hasOdds) {
+        const o = context.marketOdds!;
+        const homeName = isHome === false ? opponentName : teamName;
+        const awayName = isHome === false ? teamName : opponentName;
+        const fav      = o.homeFavorite === undefined ? undefined : o.homeFavorite ? homeName : awayName;
+        const dog      = fav === homeName ? awayName : homeName;
+        const ml = (n?: number) => n === undefined ? undefined : n > 0 ? `+${n}` : String(n);
+        const bits: string[] = [];
+        if (fav) bits.push(`${fav} are the bookmakers' favourites${ml(o.homeFavorite ? o.homeML : o.awayML) ? ` (moneyline ${ml(o.homeFavorite ? o.homeML : o.awayML)}; ${dog} ${ml(o.homeFavorite ? o.awayML : o.homeML) ?? 'n/a'}${o.drawML !== undefined ? `; draw ${ml(o.drawML)}` : ''})` : ''}`);
+        if (o.overUnder !== undefined) bits.push(`total-goals line ${o.overUnder}`);
+        if (bits.length > 0) {
+          lines.push(`  MARKET (odds via ${o.provider} — an attributed market view, cite as "the market"/"the bookmakers", never as your own prediction or a result): ${bits.join('; ')}.`);
+        }
       }
       lines.push('');
     }

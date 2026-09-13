@@ -228,6 +228,19 @@ export interface PreviewContext {
   /** Recent meetings between the two fixture teams (most recent first), team perspective. */
   headToHead?: HeadToHeadMeeting[];
   /**
+   * Bookmaker market for the fixture (ESPN core odds; EPL only for now — NRL
+   * carries no odds in ESPN's feed). Raw fields; buildDataBlock renders them
+   * with home/away resolved, as an ATTRIBUTED market view like the model tips.
+   */
+  marketOdds?: {
+    provider: string;
+    overUnder?: number;
+    homeFavorite?: boolean;
+    homeML?: number;
+    awayML?: number;
+    drawML?: number;
+  };
+  /**
    * Forecast at kickoff for outdoor fixtures (Open-Meteo). When present, the WEATHER
    * block reads from here; otherwise it falls back to the positional weather arg.
    */

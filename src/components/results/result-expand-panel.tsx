@@ -24,9 +24,9 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
 
-// v4: validated + form/H2H-enriched reviews (2026-09-13) — bump to drop
-// pre-validation reviews from every browser.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v4:${id}`;
+// v5: AFL player stats (CFS) + named finals paths (2026-09-13) — bump to drop
+// reviews generated before those data sources existed.
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v5:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
 
 function loadJSON<T>(key: string): T | null {
