@@ -14,6 +14,7 @@ import {
   validatePlayerNames,
   validateLadderPosition,
   validatePointsClaims,
+  validateFinalsSeeding,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import type { LeagueTableRow, PreviewContext } from '@/types';
@@ -141,6 +142,33 @@ expect('invented F1 driver in spotlight is rejected',
     sourced('Geelong and Brisbane are level on 36 competition points.').length === 0);
   expect('wrong "level on 30 competition points" is still rejected',
     sourced('Geelong and Brisbane are level on 30 competition points.').length > 0);
+}
+
+// ─── validateFinalsSeeding — seeding/bracket logic binding ──────────────────────
+
+{
+  console.log('\n── validateFinalsSeeding ──');
+  const SEEDING_PROMPT = [
+    'REGULAR-SEASON SEEDING (context only — this is a finals fixture; the ladder no longer applies):',
+    '  Sydney Swans finished 2nd; Fremantle finished 1st in the regular season.',
+    '',
+  ].join('\n');
+  const v = (context: string) => validateFinalsSeeding(preview({ context }), SEEDING_PROMPT);
+
+  expect('incident string caught: host called "higher-seeded" while 2nd vs 1st',
+    v('Sydney Swans, as the higher-seeded side, host Fremantle at the SCG.').length > 0);
+  expect('correct higher-seed attribution passes',
+    v('Fremantle, the higher seed, travel to face Sydney Swans.').length === 0);
+  expect('minor premiership misattribution caught',
+    v('Sydney Swans claimed the minor premiership before this final.').length > 0);
+  expect('minor premiership correctly attributed passes',
+    v('Fremantle, the minor premiers, must win away from home.').length === 0);
+  expect('wrong "finished 3rd" caught',
+    v('Sydney Swans finished 3rd and now host a final.').length > 0);
+  expect('correct "finished 2nd" passes',
+    v('Sydney Swans finished 2nd and won through to host this final.').length === 0);
+  expect('inert without a REGULAR-SEASON SEEDING line',
+    validateFinalsSeeding(preview({ context: 'Sydney Swans, the higher-seeded side, host.' }), 'LEAGUE TABLE:\n  1. Fremantle').length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

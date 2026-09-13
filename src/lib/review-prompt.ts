@@ -10,7 +10,7 @@
 
 import type { LeagueTableRow, MatchStats } from '@/types';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { finalsRoundDisplay } from '@/lib/competition-structure';
+import { finalsRoundDisplay, buildFinalsPathFacts, computePhase } from '@/lib/competition-structure';
 import { COMP_RULES } from '@/lib/competition-rules';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
@@ -55,7 +55,7 @@ const EPL_UCL_SPOTS       = COMP_RULES.epl?.clSpots ?? 4;
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-export const REVIEW_SYSTEM_PROMPT = `You are a sports analyst writing a brief post-match review. Direct, analytical tone — not narrative or journalistic. Past tense throughout.
+export const REVIEW_SYSTEM_PROMPT = `You are a sharp sports analyst writing a brief post-match review — the smartest sports fan in the room explaining what actually happened and why it matters, in plain, engaging English. Direct and analytically precise, never breathless or journalistic; the insight comes ONLY from the data provided, the flair goes in the phrasing. Past tense throughout.
 
 GROUNDING — absolute constraint, no exceptions:
 • Only cite statistics, percentages, or records that are explicitly present in the MATCH DATA or MATCH STATS sections. Never invent numbers.
@@ -217,9 +217,36 @@ export function buildReviewDataBlock(input: ReviewInput): string {
         ? `  The winner is the premier — there is no next game. Frame the review around the championship, not the ladder.`
         : `  The regular-season ladder no longer applies. Frame the result as finals-series progression (who advances, who is eliminated, who gets a second chance per the round structure above) — never as ladder movement or a finals-qualification race.`
     );
+    const pathFacts = buildFinalsPathFacts(
+      league, date, teamName, opponent, teamPosition, opponentPosition, isHome,
+    );
+    if (pathFacts.length > 0) {
+      lines.push('  Bracket facts (hosting, seeding, and consequences come from HERE — never infer them; the host is NOT "the higher seed" unless the Seeding fact says so):');
+      pathFacts.forEach(f => lines.push(`    • ${f}`));
+    }
     lines.push('');
   } else if (regularSeasonDone) {
     lines.push('FINALS CONTEXT: the regular season is complete and the finals series is underway; the ladder is final (seeding only). Do not frame this result as ladder movement.');
+    lines.push('');
+  } else if (rules?.totalRounds && maxPlayed > 0) {
+    // ── Season-phase calibration (regular season) ─────────────────────────────
+    // Reviews were overstating single results ("season on the brink" in April)
+    // and understating late ones. State the phase and the permitted weight so
+    // consequence language is calibrated deterministically, not by model vibes.
+    // computePhase says 'finals series' past the last round — for a no-finals
+    // table (EPL) that label is wrong; the season is simply complete.
+    const rawPhase = computePhase(maxPlayed, rules.totalRounds);
+    const phase = rawPhase === 'finals series' ? 'season complete' : rawPhase;
+    const left  = Math.max(0, rules.totalRounds - maxPlayed);
+    const calibration =
+      phase === 'season complete'
+        ? 'SEASON COMPLETE: the table is final. Frame the result within the finished season — no future stakes remain.'
+      : phase === 'early season'
+        ? 'EARLY SEASON: one result moves very little. Do NOT use season-defining language ("must-win", "season on the brink", "statement of premiership credentials"); frame it as form, structure, and early signals.'
+      : phase === 'mid-season'
+        ? 'MID-SEASON: results shape position but nothing is decided. Momentum and trend language is right; finals/relegation certainty language is wrong.'
+        : `RUN HOME: ${left} round${left !== 1 ? 's' : ''} left — cutoff arithmetic genuinely matters now. Weight the result against the gaps in DERIVED FACTS, and no further.`;
+    lines.push(`SEASON PHASE: ${phase} (after ${maxPlayed} of ${rules.totalRounds} rounds). ${calibration}`);
     lines.push('');
   }
 

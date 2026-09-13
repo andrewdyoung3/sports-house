@@ -4,7 +4,7 @@
  * Run: npx tsx scripts/test-competition-structure.ts
  */
 
-import { resolveCompetitionContext } from '@/lib/competition-structure';
+import { resolveCompetitionContext, buildFinalsPathFacts } from '@/lib/competition-structure';
 import type { LeagueTableRow } from '@/types';
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -322,6 +322,51 @@ console.log('\n── EPL: table, no finals ────────────
   ];
   const r = resolveCompetitionContext('epl', customTable, 'Team A', 'Team B', 36);
   test('EPL both lower-mid confirmed safe, run home → DEAD RUBBER', r.stakes, 'DEAD RUBBER');
+}
+
+// ─── buildFinalsPathFacts: bracket-derived hosting/path facts ─────────────────
+
+{
+  console.log('\n── Finals path facts (final-eight bracket) ─────────────────────');
+  const has = (name: string, facts: string[], substr: string) =>
+    test(name, String(facts.some(f => f.includes(substr))), 'true');
+  const lacks = (name: string, facts: string[], substr: string) =>
+    test(name, String(facts.some(f => f.includes(substr))), 'false');
+
+  // Preliminary Final: 2nd seed hosts 1st seed (the 2026-09-13 incident shape).
+  // Hosting must be explained by the bracket; the higher seed must be named.
+  const prelim = buildFinalsPathFacts('afl', '2026-09-18', 'Sydney Swans', 'Fremantle', 2, 1, true);
+  has('prelim: higher seed correctly named (Fremantle, 1st)', prelim, 'Fremantle (1st) is the higher seed');
+  has('prelim: hosting explained by QF win, not ladder', prelim, 'WINNING their Qualifying Final');
+  has('prelim: away 1st seed path = QF loss + semi survival', prelim, 'LOST their Qualifying Final, then survived');
+  has('prelim: consequence = GF or out', prelim, 'winner advances to the Grand Final');
+
+  // Semi: 3rd hosts 7th (wildcard-range seed) — double chance + long-road path.
+  const semi = buildFinalsPathFacts('afl', '2026-09-12', 'Team3', 'Team7', 3, 7, true);
+  has('semi: hosting explained by QF loss (double chance)', semi, 'LOST a Qualifying Final');
+  has('semi: away side came through elimination final', semi, 'won an Elimination Final');
+  has('semi: AFL 7th seed came via wildcard', semi, 'Wildcard Round');
+
+  // Week 1 Qualifying Final: no elimination possible.
+  const qf = buildFinalsPathFacts('nrl', '2026-09-12', 'Team1', 'Team4', 1, 4, true);
+  has('QF: neither side can be eliminated', qf, 'NEITHER side can be eliminated');
+  has('QF: minor premiers tagged', qf, 'minor premiers');
+
+  // Week 1 Elimination Final: knockout.
+  const ef = buildFinalsPathFacts('nrl', '2026-09-12', 'Team5', 'Team8', 5, 8, true);
+  has('EF: loser eliminated', ef, 'loser is eliminated');
+
+  // Grand Final: venue fixed, no seeding-hosting inference.
+  const gf = buildFinalsPathFacts('nrl', '2026-10-04', 'Team1', 'Team3', 1, 3, true);
+  has('GF: both won prelims, venue fixed', gf, 'venue is fixed');
+
+  // Guard: inconsistent host seed (7th hosting a prelim) emits no bracket claim.
+  const badPrelim = buildFinalsPathFacts('afl', '2026-09-18', 'Team7', 'Team1', 7, 1, true);
+  lacks('guard: inconsistent prelim host seed → no QF-win hosting claim', badPrelim, 'WINNING their Qualifying Final');
+
+  // Non-final-eight comps (SRU) emit nothing from this deriver.
+  const sru = buildFinalsPathFacts('super_rugby', '2026-06-12', 'A', 'B', 1, 4, true);
+  test('SRU: no final-eight path facts', String(sru.length), '0');
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

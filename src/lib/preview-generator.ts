@@ -314,6 +314,85 @@ export function validateLadderPosition(output: AIPreview, prompt: string): strin
 }
 
 /**
+ * Finals seeding/bracket binding. In finals mode the ladder is replaced by a
+ * REGULAR-SEASON SEEDING line ("X finished 2nd; Y finished 1st"), and the model
+ * has a record of inventing seeding logic around it — calling the HOST "the
+ * higher-seeded side" when hosting was earned in the bracket, or misattributing
+ * the minor premiership. Binds three claim shapes to the seeding facts:
+ *   1. "higher(-)seed(ed)" / "top seed" near a team that is NOT the better seed
+ *      (and the inverse for "lower seed");
+ *   2. "minor premier(s)" near a team that did not finish 1st;
+ *   3. "finished <ordinal>" near a team whose seed is a different number.
+ *
+ * Incident (2026-09-13): afl-38728 Preliminary Final preview stored "Sydney
+ *   Swans, as the higher-seeded side (2nd on the ladder), host Fremantle, who
+ *   finished [1st]" — 2nd is not a higher seed than 1st; hosting came from
+ *   winning the Qualifying Final. No validator checked seeding-logic words.
+ */
+export function validateFinalsSeeding(output: AIPreview, prompt: string): string[] {
+  const seedLine = prompt.match(/REGULAR-SEASON SEEDING[^\n]*\n\s*([^\n]+)/);
+  if (!seedLine) return [];
+  const seeds: { name: string; seed: number; tokens: string[] }[] = [];
+  for (const m of seedLine[1].matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s+finished\s+(\d+)(?:st|nd|rd|th)/g)) {
+    const tokens = m[1].trim().toLowerCase().split(/\s+/).filter(w => w.length >= 4);
+    if (tokens.length > 0) seeds.push({ name: m[1].trim(), seed: parseInt(m[2], 10), tokens });
+  }
+  if (seeds.length !== 2 || seeds[0].seed === seeds[1].seed) return [];
+
+  const prose = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ').toLowerCase();
+
+  // Nearest-team attribution, same window shape as validateLadderPosition.
+  const nearestTeam = (idx: number) => {
+    let best: { team: typeof seeds[number]; dist: number } | null = null;
+    for (const t of seeds) {
+      for (const tok of t.tokens) {
+        for (let at = prose.indexOf(tok); at >= 0; at = prose.indexOf(tok, at + tok.length)) {
+          const dist = idx - (at + tok.length);
+          if (dist < -40 || dist > 70) continue;
+          const ad = Math.abs(dist);
+          if (!best || ad < best.dist) best = { team: t, dist: ad };
+        }
+      }
+    }
+    return best?.team ?? null;
+  };
+
+  const better = seeds[0].seed < seeds[1].seed ? seeds[0] : seeds[1];
+  const worse  = seeds[0].seed < seeds[1].seed ? seeds[1] : seeds[0];
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const flag = (v: string) => { if (!seen.has(v)) { seen.add(v); violations.push(v); } };
+
+  for (const m of prose.matchAll(/\b(higher|top|better)[-\s]seed(?:ed)?\b/g)) {
+    const t = nearestTeam(m.index ?? 0);
+    if (t && t.name === worse.name) {
+      flag(`seeding contradiction: prose calls ${t.name} the higher/top seed, but seeding says ${t.name} finished ${t.seed} and ${better.name} finished ${better.seed} (FINALS PATH fact)`);
+    }
+  }
+  for (const m of prose.matchAll(/\b(lower|worse)[-\s]seed(?:ed)?\b/g)) {
+    const t = nearestTeam(m.index ?? 0);
+    if (t && t.name === better.name) {
+      flag(`seeding contradiction: prose calls ${t.name} the lower seed, but seeding says they finished ${t.seed} vs ${worse.name}'s ${worse.seed} (FINALS PATH fact)`);
+    }
+  }
+  for (const m of prose.matchAll(/\bminor[-\s]premier(?:s|ship)?\b/g)) {
+    const t = nearestTeam(m.index ?? 0);
+    if (t && t.seed !== 1) {
+      flag(`seeding contradiction: prose attributes the minor premiership to ${t.name}, who finished ${t.seed} (FINALS PATH fact)`);
+    }
+  }
+  for (const m of prose.matchAll(/\bfinished\s+(\d+)(?:st|nd|rd|th)\b/g)) {
+    const claimed = parseInt(m[1], 10);
+    const t = nearestTeam(m.index ?? 0);
+    if (t && claimed !== t.seed) {
+      flag(`seeding contradiction: prose says ${t.name} finished ${claimed}, but seeding says ${t.seed} (REGULAR-SEASON SEEDING fact)`);
+    }
+  }
+  return violations;
+}
+
+/**
  * Catches invented per-player statlines. When the data block contains NO KEY
  * PERFORMERS section, the model has no grounded per-player numbers, so any stat
  * like "two tries", "18 tackles", "3 turnovers" attached in the factual fields is
@@ -532,6 +611,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateFinalsImminence(v, prompt),
     ...validatePhaseStakes(v, prompt),
     ...validateLadderPosition(v, prompt),
+    ...validateFinalsSeeding(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),

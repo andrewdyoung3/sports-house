@@ -9,7 +9,7 @@
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { resolveCompetitionContext, finalsRoundDisplay } from '@/lib/competition-structure';
+import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
@@ -1647,6 +1647,19 @@ export function buildDataBlock(
           if (seedParts.length > 0) {
             lines.push('REGULAR-SEASON SEEDING (context only — this is a finals fixture; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
             lines.push(`  ${seedParts.join('; ')} in the regular season.`);
+            lines.push('');
+          }
+          // Bracket-derived path facts: who the higher seed IS, why the host is
+          // hosting, how each side got here, and what winning/losing means. The
+          // model must take hosting/seeding/consequence logic from HERE — never
+          // infer it (a host is NOT "the higher seed" from week two onward).
+          const pathFacts = buildFinalsPathFacts(
+            league, context.fixtureDate, teamName, opponentName,
+            tRow?.position, oRow?.position, isHome,
+          );
+          if (pathFacts.length > 0) {
+            lines.push('FINALS PATH (derived from the bracket — authoritative; hosting, seeding, and elimination consequences come from HERE, never from inference):');
+            pathFacts.forEach(f => lines.push(`  • ${f}`));
             lines.push('');
           }
         } else {

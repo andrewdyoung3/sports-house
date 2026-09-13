@@ -120,6 +120,117 @@ export function finalsRoundDisplay(
   return { name: round.name, detail: round.detail, decider: !!round.decider };
 }
 
+// ─── Finals path facts ────────────────────────────────────────────────────────
+
+function ord(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+/**
+ * Deterministic bracket facts for a final-eight finals fixture (AFL/NRL):
+ * who the higher seed actually is, WHY the host is hosting (from week two on,
+ * hosting is earned in the bracket, NOT by ladder position), how each side got
+ * here, and exactly what winning/losing means. Pure rules arithmetic — no data
+ * source needed, and the LLM must never be left to infer any of it.
+ *
+ * Incident (2026-09-13): a Preliminary Final preview called the 2nd-seeded host
+ * "the higher-seeded side" over the 1st-seeded visitor — the model invented a
+ * seeding explanation for hosting because nothing told it hosting comes from
+ * winning a Qualifying Final. These facts exist so that inference never happens.
+ */
+export function buildFinalsPathFacts(
+  league: string,
+  isoDate: string | undefined,
+  teamName: string,
+  opponentName: string,
+  teamSeed: number | undefined,
+  oppSeed: number | undefined,
+  teamIsHome: boolean | undefined,
+): string[] {
+  const rules = COMP_RULES[league];
+  // Final-eight bracket comps only — the system these derivations describe.
+  if (!rules?.finalsSchedule?.some(r => r.finalEightWeek1)) return [];
+  const round = finalsRoundForDate(league, isoDate);
+  if (!round) return [];
+
+  const facts: string[] = [];
+  const haveSeeds = teamSeed !== undefined && oppSeed !== undefined;
+  const knownHost = teamIsHome !== undefined;
+  const home     = teamIsHome === false ? opponentName : teamName;
+  const away     = teamIsHome === false ? teamName : opponentName;
+  const homeSeed = teamIsHome === false ? oppSeed : teamSeed;
+  const awaySeed = teamIsHome === false ? teamSeed : oppSeed;
+  // AFL: seeds below the direct-qualification line came through the wildcard round.
+  const viaWildcard = (seed?: number) =>
+    rules.directFinalsTeams !== undefined && seed !== undefined && seed > rules.directFinalsTeams;
+
+  if (haveSeeds && teamSeed !== oppSeed) {
+    const hi = teamSeed! < oppSeed! ? teamName : opponentName;
+    const hiSeed = Math.min(teamSeed!, oppSeed!);
+    facts.push(
+      `Seeding: ${teamName} finished ${ord(teamSeed!)}${teamSeed === 1 ? ' (minor premiers)' : ''}; ` +
+      `${opponentName} finished ${ord(oppSeed!)}${oppSeed === 1 ? ' (minor premiers)' : ''}. ` +
+      `${hi} (${ord(hiSeed)}) is the higher seed.`
+    );
+  }
+
+  if (round.decider) {
+    facts.push('Both sides won Preliminary Finals to reach the Grand Final. The Grand Final venue is fixed — a home-ground label here does not mean higher seeding.');
+    facts.push('The winner is the premier. There is no next week for either side.');
+    return facts;
+  }
+
+  if (round.name === 'Wildcard Round') {
+    if (knownHost) facts.push(`Hosting: ${home} host as the higher seed — wildcard hosting follows ladder position.`);
+    facts.push("One game for a final-eight place: the winner takes one of the last two spots in the final eight; the loser's season is over.");
+    return facts;
+  }
+
+  if (round.finalEightWeek1 && haveSeeds) {
+    const isQualifying = teamSeed! <= 4 && oppSeed! <= 4;
+    if (knownHost) facts.push(`Hosting: ${home} host as the higher seed — week-one hosting follows ladder position.`);
+    if (isQualifying) {
+      facts.push('NEITHER side can be eliminated in this game: the Qualifying Final loser drops to a home Semi-Final next week (the double chance); the winner advances straight to a home Preliminary Final with a week off.');
+    } else {
+      facts.push('Knockout: the Elimination Final loser is eliminated; the winner advances to an away Semi-Final.');
+    }
+    return facts;
+  }
+
+  // Conservative guard for the bracket-derived hosting claims below: semi and
+  // preliminary-final hosts are structurally seeds 1–4 (QF losers / QF winners).
+  // If the data says otherwise, something upstream is wrong — emit nothing
+  // confident rather than a wrong reconstruction.
+  const hostSeedConsistent = homeSeed === undefined || homeSeed <= 4;
+
+  if (round.name === 'Semi-Final') {
+    if (knownHost && hostSeedConsistent) {
+      facts.push(`Hosting: ${home} host because they LOST a Qualifying Final and hold the double chance — semi-final hosting comes from the bracket, not from being the higher seed.`);
+      if (homeSeed !== undefined) facts.push(`${home} (${ord(homeSeed)}) lost their Qualifying Final — this is their double chance; lose here and their season is over.`);
+      if (awaySeed !== undefined && awaySeed >= 5) facts.push(`${away} (${ord(awaySeed)}) won an Elimination Final to reach this Semi-Final${viaWildcard(awaySeed) ? ', having already survived the Wildcard Round' : ''}.`);
+    }
+    facts.push('Knockout: the loser is eliminated; the winner advances to an away Preliminary Final.');
+    return facts;
+  }
+
+  if (round.name === 'Preliminary Final') {
+    if (knownHost && hostSeedConsistent) {
+      facts.push(`Hosting: ${home} earned this home Preliminary Final by WINNING their Qualifying Final (and had last week off) — hosting here is earned in the bracket and does NOT follow ladder position.`);
+      if (awaySeed !== undefined) {
+        facts.push(awaySeed <= 4
+          ? `${away} (${ord(awaySeed)}) LOST their Qualifying Final, then survived a home Semi-Final — their double chance is spent; lose here and they are out.`
+          : `${away} (${ord(awaySeed)}) have taken the long road: an Elimination Final win, then a Semi-Final win${viaWildcard(awaySeed) ? ', after coming through the Wildcard Round' : ''}.`);
+      }
+    }
+    facts.push('Knockout: the winner advances to the Grand Final; the loser is eliminated.');
+    return facts;
+  }
+
+  return facts;
+}
+
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 function rowMatchesTeam(rowName: string, teamName: string): boolean {
@@ -311,7 +422,7 @@ function isDeadRubber(
  * Mirrors the phase logic in preview-prompt.ts (SEASON STATE) so the two blocks
  * are always consistent. Same thresholds: quarter = ⌈total/4⌉, run-home = ⌊total×0.65⌋.
  */
-function computePhase(played: number, totalRounds: number): string {
+export function computePhase(played: number, totalRounds: number): string {
   const quarter       = Math.ceil(totalRounds / 4);
   const runHomeCutoff = Math.floor(totalRounds * 0.65);
   if (played >= totalRounds)     return 'finals series';
