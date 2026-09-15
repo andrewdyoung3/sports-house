@@ -157,6 +157,8 @@ export async function buildPreviewContext(
 ): Promise<Partial<PreviewContext>> {
   freshenCachesIfStale();  // PERF-4: bound in-process cache age on long-running servers
   const ctx: Partial<PreviewContext> = { ...(await cachedRichContext(league, fixture, teamName)) };
+  // Venue neutrality travels from the fixture source (see UpcomingGame.neutralSite).
+  if (fixture.neutralSite !== undefined) ctx.venueNeutral = fixture.neutralSite;
 
   // Fixture kickoff — lets the structure layer infer the finals round (the feed
   // carries no stage label for finals games).

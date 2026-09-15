@@ -405,6 +405,78 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Positional-side binding — the generalised rule behind the "Saka plays off
+ * the left" incident (2026-09-16). The player-name whitelist verifies WHO
+ * exists; nothing verified what was SAID about them, so side-of-pitch claims
+ * came from (sometimes wrong or outdated) training memory. Rule: a left/right
+ * claim about a named player must match that player's position code from the
+ * data block (lineups now carry codes: soccer CD-L/RW/LM…, AFL HFFL/WR/FPR…);
+ * a side claim about a player with NO coded side is unsourced and rejected —
+ * the same standard as invented statlines. Team-level side talk ("overlaps
+ * down the left") has no nearby player name and is untouched.
+ */
+const SIDE_CODE_EXCLUDE = new Set(['RR']); // AFL ruck-rover — the R is not a side
+function sideFromCode(code: string): 'left' | 'right' | null {
+  const c = code.toUpperCase();
+  if (SIDE_CODE_EXCLUDE.has(c)) return null;
+  if (/-L$/.test(c) || /^L[WMB]$/.test(c)) return 'left';
+  if (/-R$/.test(c) || /^R[WMB]$/.test(c)) return 'right';
+  if (/^[A-Z]{2,4}L$/.test(c)) return 'left';   // AFL: HFFL, WL, FPL, BPL, HBFL
+  if (/^[A-Z]{2,4}R$/.test(c)) return 'right';  // AFL: HFFR, WR, FPR, BPR, HBFR
+  return null;
+}
+
+export function validatePlayerSideClaims(output: AIPreview, prompt: string): string[] {
+  const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
+  if (!hasPlayerData || whitelist.size === 0) return [];
+
+  // name → coded side (players whose data carries a position code with a side).
+  const sides = new Map<string, 'left' | 'right'>();
+  for (const m of prompt.matchAll(/([A-Za-zÀ-ÿ][\w .'’-]{2,}?)\s*\(([A-Z]{1,4}(?:-[LR])?)\)/g)) {
+    const name = m[1].trim().toLowerCase();
+    const side = sideFromCode(m[2]);
+    if (side && whitelist.has(name)) sides.set(name, side);
+  }
+
+  const prose = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ').toLowerCase();
+
+  // Player tokens for nearest-name attribution (≥4 chars, from the whitelist).
+  const tokens: { name: string; tok: string }[] = [];
+  for (const name of whitelist) {
+    for (const t of name.split(/\s+/)) if (t.length >= 4) tokens.push({ name, tok: t });
+  }
+
+  const claimRe = /\b(?:off|down|from|along) the (left|right)\b|\b(left|right)[\s-](?:wing(?:er)?|flank|edge|channel)\b/g;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of prose.matchAll(claimRe)) {
+    const claimed = (m[1] ?? m[2]) as 'left' | 'right';
+    const idx = m.index ?? 0;
+    let best: { name: string; dist: number } | null = null;
+    for (const { name, tok } of tokens) {
+      for (let at = prose.indexOf(tok); at >= 0; at = prose.indexOf(tok, at + tok.length)) {
+        const dist = idx - (at + tok.length);
+        if (dist < -40 || dist > 70) continue;
+        const ad = Math.abs(dist);
+        if (!best || ad < best.dist) best = { name, dist: ad };
+      }
+    }
+    if (!best) continue; // team-level side talk — fine
+    const dataSide = sides.get(best.name);
+    const key = `${best.name}:${claimed}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (dataSide && dataSide !== claimed) {
+      violations.push(`side contradiction: prose puts ${best.name} on the ${claimed}, but the lineup position code says ${dataSide} (LINEUP fact)`);
+    } else if (!dataSide) {
+      violations.push(`unsourced side claim: prose puts ${best.name} on the ${claimed}, but no position code in the data states a side — describe the player's role without a side`);
+    }
+  }
+  return violations;
+}
+
+/**
  * Narrative-opener guard (finals mode). The model's strongest habit is opening
  * the context with a rules recap ("This is a Preliminary Final in the AFL
  * finals series — a knockout match between…") — accurate, bland, and redundant
@@ -645,6 +717,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateLadderPosition(v, prompt),
     ...validateFinalsSeeding(v, prompt),
     ...validateNarrativeOpener(v, prompt),
+    ...validatePlayerSideClaims(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),

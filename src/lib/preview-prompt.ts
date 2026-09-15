@@ -80,12 +80,20 @@ function classifyVenue(
   teamId: string,
   opponentId: string | undefined,
   isHome: boolean | undefined,
+  venueNeutral?: boolean,
 ): string {
   if (!venue) return '';
 
   const teamHome = TEAM_HOME_VENUE[teamId]     ?? '';
   const oppHome  = TEAM_HOME_VENUE[opponentId ?? ''] ?? '';
 
+  // NEUTRALITY REQUIRES POSITIVE EVIDENCE — the source's own flag. A failed
+  // string match against registered venues is NOT evidence of neutrality
+  // (incident 2026-09-16: Arsenal at Portman Road called "neutral ground"
+  // because Ipswich, not being a followable team, had no registered venue).
+  if (venueNeutral === true) {
+    return `VENUE: ${venue} — NEUTRAL GROUND (flagged neutral by the fixture source; no inherent crowd advantage for either side)`;
+  }
   // isHome=true is the authoritative flag when set by the data source
   if (isHome === true || (teamHome && venue === teamHome)) {
     return `VENUE: ${venue} — ${teamName.toUpperCase()} HOME GROUND (${teamName} have home advantage)`;
@@ -93,8 +101,14 @@ function classifyVenue(
   if (oppHome && venue === oppHome) {
     return `VENUE: ${venue} — ${opponentName.toUpperCase()} HOME GROUND (${opponentName} have home advantage; ${teamName} are the away side)`;
   }
-  // Venue matches neither team's registered home — treat as neutral
-  return `VENUE: ${venue} — NEUTRAL GROUND (not ${teamName}'s home, not ${opponentName}'s home; no inherent crowd advantage for either side)`;
+  // The feed explicitly says NOT neutral and designates us away → the opponent
+  // is the home side, whether or not their ground is registered with us.
+  // (isHome=false ALONE is not enough — SOO and cricket use false for "unknown".)
+  if (isHome === false && venueNeutral === false) {
+    return `VENUE: ${venue} — ${opponentName.toUpperCase()} HOME GROUND (${opponentName} have home advantage; ${teamName} are the away side)`;
+  }
+  // Unknown — say where the game is, assert nothing about advantage.
+  return `VENUE: ${venue}`;
 }
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
@@ -1018,6 +1032,7 @@ COACHING ANALYSIS — when HEAD COACHES are provided:
 
 LINEUP AND AVAILABILITY ANALYSIS:
 • PLAYER NAMING RULE: Only name a specific player if they appear in one of: MOST RECENT STARTING LINEUP, TEAM NEWS, SQUAD SUBMISSION FOR THIS GAME, INJURY REPORT, or KEY PERFORMERS. Do not name players from your own training knowledge who are not referenced in the data — this produces confident-sounding claims that may be outdated (transferred, retired, dropped).
+• PLAYER ATTRIBUTES — side/position/role: never assert WHERE a player plays (left or right wing, flank, edge, channel) unless the lineup's position code states it (e.g. "(RW)", "(CD-L)"). No code, no side — describe the player's influence without naming a side. Your training memory of a player's position may be outdated or wrong; this is checked automatically.
 • PLAYER-TEAM ATTRIBUTION: A named player belongs ONLY to the team whose lineup/squad/injury/key-performer list contains them. Never attribute a player to the opponent, and never to a third team that appears only as a PAST OPPONENT in the RECENT FORM or HEAD-TO-HEAD data. Check which side's list a name came from before describing them.
 • MOST RECENT STARTING LINEUP (when provided): Use as the baseline for predicting selection, adjusted for availability data. Focus on players in structurally important roles — the first-choice goalkeeper, the main ball-carrier, the primary playmaker, the key defensive pairing. Do not list every player; name only those whose presence or absence materially changes how the team sets up.
 • SQUAD SUBMISSION (AFL — when SQUAD SUBMISSION FOR THIS GAME is provided): The "Absent vs last lineup" list shows players who were in the last game but are NOT in the 26-man submission — they are definitively unavailable. Assess each absent player's structural role and what the team loses. The "possible returns/inclusions" list shows players in the squad who weren't in the last lineup. Cross-reference with team news — if news confirms a player is returning from injury, state the positional and structural impact of their return. Player returns are analytically significant, especially when they restore a role that has been structurally weaker without them.
@@ -1424,7 +1439,7 @@ export function buildDataBlock(
   const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
-  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome);
+  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome, context.venueNeutral);
   if (venueLine) lines.push(venueLine);
   lines.push(`COMPETITION: ${competition ?? leagueLabel}`);
   if (isOffLeague) {

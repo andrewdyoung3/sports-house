@@ -58,6 +58,14 @@ export interface UpcomingGame {
   competition?: string;    // e.g. "FA Cup", "Champions League" (omitted for regular season)
   opponentLogoUrl?: string; // Official logo URL (from ESPN CDN when available)
   opponentId?: string;      // Our internal team slug for the opponent (when resolvable)
+  /**
+   * Venue neutrality from the SOURCE (ESPN competitions[].neutralSite; SOO sets
+   * it from Origin's venue rotation). true = flagged neutral; false = the feed
+   * explicitly designates a home side; undefined = unknown — and unknown must
+   * NEVER be classified as neutral (the Portman Road incident: an opponent
+   * outside TEAMS has no registered venue, and absence was read as neutrality).
+   */
+  neutralSite?: boolean;
   odds?: {
     spread: string;
     overUnder: string;
@@ -232,6 +240,8 @@ export interface PreviewContext {
    * carries no odds in ESPN's feed). Raw fields; buildDataBlock renders them
    * with home/away resolved, as an ATTRIBUTED market view like the model tips.
    */
+  /** Venue neutrality carried from the fixture (see UpcomingGame.neutralSite). */
+  venueNeutral?: boolean;
   marketOdds?: {
     provider: string;
     overUnder?: number;

@@ -28,6 +28,8 @@ The local LLM (qwen3:30b via Ollama) supplies the *phrasing*. It must never supp
 | Stale competition rules | AFL top-8 → top-10 wildcard, SRU top-8 → 6, EPL 4 → 5 CL spots all went silently stale as literals | COMP_RULES config + per-season re-check; all prose parametric on config |
 | Invented players/stats/years | Training-data names not in provided squads; fabricated statlines | whitelists + `validatePlayerNames`, `validateInventedStatlines`, `validateInventedYears` |
 | Group/record conflation (historical, WC) | All-competitions form restated as group record | group-facts block + suppressed form; feature since removed |
+| Classification from absence | Arsenal at Portman Road called "neutral ground" — Ipswich (not a followable team) had no registered venue, and the string-match miss was read as neutrality (2026-09-16) | Neutrality requires POSITIVE evidence: ESPN `neutralSite` flag plumbed fixture→context; unknown → plain venue line, never "neutral" |
+| Unsourced player attributes | "Saka plays off the left" (he plays right) — the name whitelist checks WHO exists, nothing checked what was SAID about them (2026-09-16) | Lineups carry position codes (soccer `RW`/`CD-L`, AFL `HFFL`/`WR`); `validatePlayerSideClaims` rejects side claims contradicting the code AND side claims with no coded side (unsourced = banned, same as statlines) |
 
 ## The stack, per fixture
 

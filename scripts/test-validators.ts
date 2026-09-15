@@ -16,6 +16,7 @@ import {
   validatePointsClaims,
   validateFinalsSeeding,
   validateNarrativeOpener,
+  validatePlayerSideClaims,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -270,6 +271,61 @@ expect('invented F1 driver in spotlight is rejected',
     validateReviewOutput(rv('In the Grand Final, Team1 controlled the tempo throughout.'), gfBlockForOpener).length > 0);
   expect('review: why-led opener passes',
     validateReviewOutput(rv('Relentless middle control decided the premiership — Team1 never let Team3 into the game.'), gfBlockForOpener).length === 0);
+}
+
+// ─── validatePlayerSideClaims — side-of-pitch binding ───────────────────────────
+
+{
+  console.log('\n── validatePlayerSideClaims ──');
+  const LINEUP_PROMPT = [
+    'FIXTURE: Arsenal vs Ipswich Town',
+    '',
+    'MOST RECENT STARTING LINEUP:',
+    '  Arsenal: Bukayo Saka (RW), Gabriel Martinelli, Ben White (RB), Riccardo Calafiori (CD-L)',
+    '',
+    '', // section parser requires a terminating blank line
+  ].join('\n');
+  const v = (context: string) => validatePlayerSideClaims(preview({ context }), LINEUP_PROMPT);
+
+  expect('incident: "Saka … off the left" contradicts (RW)',
+    v('Bukayo Saka is at his most dangerous cutting in off the left.').length > 0);
+  expect('correct: "Saka … off the right" passes',
+    v('Bukayo Saka will attack off the right against a makeshift full-back.').length === 0);
+  expect('hyphen code: Calafiori left channel passes (CD-L)',
+    v('Riccardo Calafiori stepping into the left channel is the buildup key.').length === 0);
+  expect('unsourced: Martinelli (no code) side claim rejected',
+    v('Gabriel Martinelli stretches teams down the left wing.').length > 0);
+  expect('team-level side talk with no nearby name passes',
+    v('Arsenal will look to overload down the left in wide rotations.').length === 0);
+  expect('inert without player data',
+    validatePlayerSideClaims(preview({ context: 'Dangerous off the left.' }), 'LEAGUE TABLE:\n 1. X').length === 0);
+
+  // AFL codes: trailing L/R is a side; RR (ruck-rover) is not.
+  const AFL_PROMPT = 'FIXTURE: A vs B\n\nHAWTHORN KEY PERFORMERS:\n  Jai Newcombe (RR) — Disposals: 30\n  Connor Macdonald (HFFL) — Goals: 2.1, Disposals: 18\n\n';
+  const va = (context: string) => validatePlayerSideClaims(preview({ context }), AFL_PROMPT);
+  expect('AFL: HFFL right-side claim rejected',
+    va('Connor Macdonald keeps drifting to the right flank.').length > 0);
+  expect('AFL: HFFL left-side claim passes',
+    va('Connor Macdonald works the left flank hard.').length === 0);
+  expect('AFL: RR is not a side — unsourced right-edge claim rejected as unsourced',
+    va('Jai Newcombe bursts down the right edge from stoppages.').length > 0);
+}
+
+// ─── Venue classification — neutrality needs positive evidence ──────────────────
+
+{
+  console.log('\n── venue classification ──');
+  const venueLine = (venueNeutral: boolean | undefined) => buildDataBlock(
+    'epl', 'Arsenal', 'Ipswich Town', { venueNeutral } as PreviewContext,
+    [], [], 'League Cup', false, undefined, 'Portman Road', false, 'epl-arsenal', undefined, undefined,
+  ).split('\n').find(l => l.startsWith('VENUE:')) ?? '';
+
+  expect('feed says not-neutral + away → opponent home ground (the Portman Road fix)',
+    /IPSWICH TOWN HOME GROUND/.test(venueLine(false)));
+  expect('unknown neutrality → no advantage claim, never "neutral"',
+    venueLine(undefined) === 'VENUE: Portman Road');
+  expect('flagged neutral → neutral ground',
+    /NEUTRAL GROUND \(flagged neutral/.test(venueLine(true)));
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

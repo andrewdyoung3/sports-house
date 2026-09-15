@@ -785,7 +785,15 @@ function extractStarters(summary: any, teamName: string, jerseyThreshold?: numbe
       .sort((a: any, b: any) => parseInt(a.jersey, 10) - parseInt(b.jersey, 10));
   }
   return starters
-    .map((p: any) => (p.athlete?.displayName ?? p.athlete?.fullName ?? '') as string)
+    .map((p: any) => {
+      const name = (p.athlete?.displayName ?? p.athlete?.fullName ?? '') as string;
+      if (!name) return '';
+      // Position code when the feed provides one (soccer: CD-L / RW / LM …;
+      // basketball similar). Grounds side-of-pitch claims — a player attribute
+      // the model otherwise sources from (possibly wrong) training memory.
+      const pos = (p.position?.abbreviation ?? '') as string;
+      return pos ? `${name} (${pos})` : name;
+    })
     .filter(Boolean);
 }
 
