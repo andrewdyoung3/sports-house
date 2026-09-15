@@ -59,7 +59,7 @@ COMP_RULES (per-season config: cutoffs, points, finals schedule + bracket flags)
 - **Validators:** same suite as AFL (whitelist from ESPN rosters).
 - **Named finals paths — WIRED (2026-09-13):** derived from the ESPN form data already in context via `finalsPathSoFar` (no new fetch needed).
 - **Odds:** NRL carries NO odds anywhere in ESPN's feed (scoreboard + summary probed live 2026-09-13) — a keyed bookmaker API would be a new dependency; not wired.
-- **Gaps / roadmap:** Origin-window form distortion is profile prose only — could become a derived flag on affected rounds.
+- **Gaps / roadmap:** Origin-window form distortion is profile prose only — could become a derived flag on affected rounds. Side-claim enforcement runs in BAN mode (ESPN rugby rosters carry no side codes); the NRL jersey-number convention (2/3/12 right, 4/5/11 left) could upgrade it to BIND mode.
 
 ### EPL
 - **Sources:** ESPN scoreboard (5-competition fan-out), standings, news, `summary?event=` extras.
@@ -110,6 +110,16 @@ The review builder (`review-prompt.ts`) shares COMP_RULES and the finals machine
 - **Form + head-to-head coming in** (added 2026-09-13): `fetchReviewFormAndH2H` — ESPN `summary?event=` for NRL/EPL/SRU (event id from the gameId; EPL cup ids carry their competition slug), the Squiggle games array for AFL. Entries dated on match day are dropped so "form coming in" can never include the reviewed game.
 - **Validation (ported 2026-09-13, closing the gap):** `review-validators.ts` → `validateReviewOutput` runs on every generation inside the cached generator: shared validators (finals seeding, ladder position, points claims, player names — whitelist now reads the review block's SCORERS sections) plus review-specific `validateReviewPhase` (finals ≠ dead rubber; early season ≠ must-win) and `validateReviewStatlines` (no invented in-game numbers when the block declares NO IN-GAME MATCH STATS). Contract mirrors previews: violations → one retry → refuse via **throw**, so the Next data cache never stores a bad (or null-from-validation) review.
 - **Residual known issue:** a *transient* generation error (Ollama down, parse failure twice) still returns `null` inside `unstable_cache`, which caches it for that exact (cacheKey, dataBlock) pair — pre-existing behavior, self-healing when standings change the dataBlock, but worth converting to a throw in a hygiene pass.
+
+## Claim-type source coverage (the meta-rule: every claim type has a designated source, or is forbidden)
+
+| Claim type | Source | Coverage |
+|---|---|---|
+| Player existence | Lineup/squad/stats whitelists | All leagues with player data (F1 via standings) |
+| Numbers/gaps/positions | DERIVED FACTS blocks | All computed leagues |
+| Finals structure/hosting | FINALS PATH bracket facts | AFL, NRL (SRU via round details) |
+| Venue neutrality | Feed `neutralSite` flag (ESPN) / domain rule (SOO) / conservative silence (AFL, unknown) | No league can emit a false "neutral" — positive evidence or nothing |
+| Player side (left/right) | Position codes: ESPN soccer (RW/CD-L), CFS AFL (HBFL/WR) → BIND; rugby/NBA/cricket have no codes → unsourced side claims BANNED | All previews + reviews |
 
 ## Re-check calendar
 
