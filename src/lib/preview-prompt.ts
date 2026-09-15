@@ -1242,13 +1242,26 @@ function buildCricketDataBlock(
   opponentName: string,
   context: PreviewContext,
   venue?: string,
+  isHome?: boolean,
 ): string {
   const c = context.cricketContext ?? {};
   const lines: string[] = [];
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
   const venueStr = c.venue || venue;
-  if (venueStr) lines.push(`VENUE: ${venueStr} (cricket — treat as a neutral tournament/host venue unless the side is the designated host)`);
+  if (venueStr) {
+    // International rule: home = any ground in the nation's country (derived
+    // from the venue's country when confidently known; hedged otherwise).
+    if (context.venueNeutral === true) {
+      lines.push(`VENUE: ${venueStr} — NEUTRAL TERRITORY (third-country venue; neither side hosts)`);
+    } else if (isHome === true) {
+      lines.push(`VENUE: ${venueStr} — ${teamName.toUpperCase()} HOST (home soil: home conditions, crowd, and pitch familiarity favour ${teamName})`);
+    } else if (context.venueNeutral === false) {
+      lines.push(`VENUE: ${venueStr} — ${opponentName.toUpperCase()} HOST (${teamName} are touring; conditions favour ${opponentName})`);
+    } else {
+      lines.push(`VENUE: ${venueStr} (cricket — treat as a neutral tournament/host venue unless the side is the designated host)`);
+    }
+  }
   lines.push(`COMPETITION: ${c.seriesName || LEAGUE_LABELS[league] || league}`);
   lines.push('');
 
@@ -1412,7 +1425,7 @@ export function buildDataBlock(
 
   // ─── Cricket — its own data model (innings/squads, no league ladder) ──────
   if ((league === 'bbl' || league === 'cricket_int') && context.cricketContext) {
-    return buildCricketDataBlock(league, teamName, opponentName, context, venue);
+    return buildCricketDataBlock(league, teamName, opponentName, context, venue, isHome);
   }
 
   const enabled = (id: BlockId): boolean => !enabledBlocks || enabledBlocks.has(id);

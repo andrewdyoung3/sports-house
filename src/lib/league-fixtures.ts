@@ -19,6 +19,7 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
+import { INTL_TEAM_COUNTRY, resolveIntlVenueStatus, countryFromVenueString, type IntlVenueStatus } from '@/lib/international';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -596,6 +597,17 @@ export async function fetchRINTFixtures(lookbackDays = 0): Promise<UpcomingGame[
             : ['Stan Sport'];
           const isComplete = e.status?.type?.completed === true;
 
+          // International rule: "home" means any ground in the nation's country.
+          // Geography (venue address country, or a ", Country" venue suffix)
+          // overrides ESPN's nominal home designation when confidently known.
+          const venueCountry =
+            (comp.venue?.address?.country as string | undefined) ??
+            countryFromVenueString(comp.venue?.fullName);
+          const intl = resolveIntlVenueStatus(
+            INTL_TEAM_COUNTRY[home.id],
+            away?.id ? INTL_TEAM_COUNTRY[away.id] : undefined,
+            venueCountry,
+          );
           acc.push({
             id:              `rint-${e.id}`,
             teamId:          home.id,
@@ -603,11 +615,12 @@ export async function fetchRINTFixtures(lookbackDays = 0): Promise<UpcomingGame[
             opponentAbbr:    awayComp?.team?.abbreviation ?? away?.abbr ?? initials(awayName),
             opponentColor:   away?.color ?? '#6B7280',
             opponentLogoUrl: espnLogo ?? (away?.id ? (TEAM_LOGOS[away.id] ?? away.logo) : away?.logo),
-            isHome:          true,
+            isHome:          intl.isHome ?? true,
             date:            utcDate.toISOString(),
             time:            aestDisplay(aestDate),
             venue:           comp.venue?.fullName ?? '',
-            neutralSite:     comp.neutralSite === true ? true : comp.neutralSite === false ? false : undefined,
+            neutralSite:     intl.neutralSite
+                             ?? (comp.neutralSite === true ? true : comp.neutralSite === false ? false : undefined),
             broadcast,
             streaming:       ['Stan Sport'],
             competition:     label,
@@ -918,6 +931,16 @@ async function buildCricketFixtures(
     const fmt: 'test' | 'odi' | 't20' = fmtRaw === 'test' ? 'test' : fmtRaw === 'odi' ? 'odi' : 't20';
     const utc = new Date(m.dateTimeGMT ?? m.date ?? now);
 
+    // International rule: home = any ground in the nation's country. cricketdata
+    // has no host flag, but its venue strings often end ", Country" — when that
+    // resolves confidently, it beats the old treat-as-neutral default.
+    const cricIntl = prefix === 'cint'
+      ? resolveIntlVenueStatus(
+          INTL_TEAM_COUNTRY[me.id],
+          opp?.id ? INTL_TEAM_COUNTRY[opp.id] : undefined,
+          countryFromVenueString(m.venue),
+        )
+      : {} as IntlVenueStatus;
     out.push({
       id:              `${prefix}-${m.id}`,
       teamId:          me.id,
@@ -925,7 +948,8 @@ async function buildCricketFixtures(
       opponentAbbr:    opp?.abbr ?? initials(oppName),
       opponentColor:   opp?.color ?? '#6B7280',
       opponentLogoUrl: TEAM_LOGOS[opp?.id ?? ''],
-      isHome:          false, // cricketdata gives no reliable host flag — treat as neutral
+      isHome:          cricIntl.isHome ?? false, // no host signal → unknown (never rendered as home)
+      neutralSite:     cricIntl.neutralSite,
       date:            utc.toISOString(),
       time:            aestDisplay(new Date(utc.getTime() + 10 * 3600 * 1000)),
       venue:           m.venue ?? '',

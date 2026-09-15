@@ -21,6 +21,7 @@ import {
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
 import { validateReviewOutput } from '@/lib/review-validators';
+import { resolveIntlVenueStatus, countryFromVenueString } from '@/lib/international';
 import type { AIReview } from '@/types';
 import type { LeagueTableRow, PreviewContext } from '@/types';
 import type { AIPreview } from '@/types';
@@ -326,6 +327,33 @@ expect('invented F1 driver in spotlight is rejected',
     venueLine(undefined) === 'VENUE: Portman Road');
   expect('flagged neutral → neutral ground',
     /NEUTRAL GROUND \(flagged neutral/.test(venueLine(true)));
+}
+
+// ─── International home/away/neutral (home = any ground in the country) ────────
+
+{
+  console.log('\n── international venue resolution ──');
+  const r = resolveIntlVenueStatus;
+  expect('Test in own country → home (any ground, not just the registered one)',
+    JSON.stringify(r('Australia', 'India', 'Australia')) === '{"isHome":true,"neutralSite":false}');
+  expect('touring side → opponent hosts',
+    JSON.stringify(r('India', 'Australia', 'Australia')) === '{"isHome":false,"neutralSite":false}');
+  expect('third country + both sides known → genuinely neutral',
+    JSON.stringify(r('Australia', 'Argentina', 'England')) === '{"neutralSite":true}');
+  expect('third country but opponent unknown → undecided (could be theirs)',
+    JSON.stringify(r('Australia', undefined, 'England')) === '{}');
+  expect('UK venue, one UK nation → that nation hosts',
+    JSON.stringify(r('England', 'Australia', 'United Kingdom')) === '{"isHome":true,"neutralSite":false}');
+  expect('UK venue, England v Scotland → undecidable from country alone',
+    JSON.stringify(r('England', 'Scotland', 'United Kingdom')) === '{}');
+  expect('West Indies at Bridgetown (Barbados) → home soil',
+    JSON.stringify(r('West Indies', 'England', 'Barbados')) === '{"isHome":true,"neutralSite":false}');
+  expect('UAE venue for India v Pakistan → neutral',
+    JSON.stringify(r('India', 'Pakistan', 'UAE')) === '{"neutralSite":true}');
+  expect('venue string country extraction ("Kensington Oval, Bridgetown, Barbados")',
+    countryFromVenueString('Kensington Oval, Bridgetown, Barbados') === 'Barbados');
+  expect('venue string with city-only tail extracts nothing',
+    countryFromVenueString('Perth Stadium, Perth') === undefined);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

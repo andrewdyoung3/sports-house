@@ -119,6 +119,7 @@ The review builder (`review-prompt.ts`) shares COMP_RULES and the finals machine
 | Numbers/gaps/positions | DERIVED FACTS blocks | All computed leagues |
 | Finals structure/hosting | FINALS PATH bracket facts | AFL, NRL (SRU via round details) |
 | Venue neutrality | Feed `neutralSite` flag (ESPN) / domain rule (SOO) / conservative silence (AFL, unknown) | No league can emit a false "neutral" — positive evidence or nothing |
+| International home soil | `international.ts`: home = ANY ground in the nation's country (venue country from feed address or ", Country" venue suffix vs TEAMS country); UK venues undecidable for UK-vs-UK; West Indies = Caribbean member soil; third country + both sides known = neutral | rugby_int + cricket_int fixtures |
 | Player side (left/right) | Position codes: ESPN soccer (RW/CD-L), CFS AFL (HBFL/WR) → BIND; rugby/NBA/cricket have no codes → unsourced side claims BANNED | All previews + reviews |
 
 ## Re-check calendar
