@@ -267,6 +267,10 @@ export interface PreviewContext {
    *  Cross-reference with teamLastLineup to identify ins (possible returns) and outs (likely absent). */
   teamSquad?: string[];
   opponentSquad?: string[];
+  /** AFL: name(lowercase) → CFS position code (FB, HBFL, WR, FPR…). Applied at
+   *  render time only — squad-diff comparisons run on the plain name lists. */
+  teamSquadPositions?: Record<string, string>;
+  opponentSquadPositions?: Record<string, string>;
   /** Players confirmed or likely unavailable for the upcoming fixture.
    *  Populated from ESPN injury reports (NRL, EPL, Super Rugby). */
   teamInjuryReport?: Array<{ name: string; status: string }>;

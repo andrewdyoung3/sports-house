@@ -1857,7 +1857,14 @@ export function buildDataBlock(
           ? squad.filter((n: string) => !lineupSet.has(n.toLowerCase()))
           : [];
 
-        lines.push(`  ${name} (${squad.length} players): ${squad.join(', ')}`);
+        // Positions appended at render time only — the absent/returns diffs
+        // above compare plain names (codes would break the set comparisons).
+        const posMap = name === teamName ? (context.teamSquadPositions ?? {}) : (context.opponentSquadPositions ?? {});
+        const rendered = squad.map((n: string) => {
+          const code = posMap[n.toLowerCase()];
+          return code ? `${n} (${code})` : n;
+        });
+        lines.push(`  ${name} (${squad.length} players): ${rendered.join(', ')}`);
         if (absent.length > 0)  lines.push(`  → Absent vs last lineup (likely out): ${absent.join(', ')}`);
         if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
       }

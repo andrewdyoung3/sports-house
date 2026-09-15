@@ -91,6 +91,8 @@ export async function fetchAFLPreview(
   let tips: TipSummary | undefined;
   let teamSquad: string[] | undefined;
   let opponentSquad: string[] | undefined;
+  let teamSquadPositions: Record<string, string> | undefined;
+  let opponentSquadPositions: Record<string, string> | undefined;
   let teamRecentForm: GameResult[] | undefined;
   let opponentRecentForm: GameResult[] | undefined;
   let headToHead: HeadToHeadMeeting[] | undefined;
@@ -219,6 +221,8 @@ export async function fetchAFLPreview(
         const afl = await fetchAflLineups(Number(matchGame.round), sqTeam, oppSqName);
         if (afl.teamSquad)     teamSquad = afl.teamSquad;
         if (afl.opponentSquad) opponentSquad = afl.opponentSquad;
+        if (afl.teamSquadPositions)     teamSquadPositions = afl.teamSquadPositions;
+        if (afl.opponentSquadPositions) opponentSquadPositions = afl.opponentSquadPositions;
       }
     }
   }
@@ -230,6 +234,8 @@ export async function fetchAFLPreview(
     tips,
     teamSquad,
     opponentSquad,
+    teamSquadPositions,
+    opponentSquadPositions,
     teamRecentForm,
     opponentRecentForm,
     headToHead,

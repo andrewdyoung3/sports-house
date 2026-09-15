@@ -119,6 +119,23 @@ function playerNames(team: AflRosterTeam | undefined): string[] {
 }
 
 /**
+ * name(lowercase) → CFS position code (FB, CHB, HBFL, HFFR, WL, FPR, RK, INT…).
+ * Kept SEPARATE from the name list: the squad-vs-last-lineup diff compares raw
+ * name strings, so codes are applied at render time only. Side-encoded codes
+ * (trailing L/R) ground left/right claims for validatePlayerSideClaims.
+ */
+function playerPositions(team: AflRosterTeam | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const p of team?.positions ?? []) {
+    const pn = (p as any)?.player?.playerName;
+    const name = pn ? `${pn.givenName ?? ''} ${pn.surname ?? ''}`.trim() : '';
+    const pos  = ((p as any)?.position ?? '') as string;
+    if (name && pos) out[name.toLowerCase()] = pos;
+  }
+  return out;
+}
+
+/**
  * Find the CFS matchId for a round + two team names (either order, Squiggle or
  * full AFL names). Shared by lineups (pre-match) and player stats (post-match).
  */
@@ -144,7 +161,13 @@ async function findMatch(
   return { matchId, homeName: item?.match?.homeTeam?.name ?? '' };
 }
 
-export interface AflLineups { teamSquad?: string[]; opponentSquad?: string[] }
+export interface AflLineups {
+  teamSquad?: string[];
+  opponentSquad?: string[];
+  /** name(lowercase) → CFS position code, per side (render-time only). */
+  teamSquadPositions?: Record<string, string>;
+  opponentSquadPositions?: Record<string, string>;
+}
 
 /**
  * Named team lists for an AFL fixture, by round number + the two team names.
@@ -164,12 +187,17 @@ export async function fetchAflLineups(
 
   const homeNames = playerNames(roster.homeTeam);
   const awayNames = playerNames(roster.awayTeam);
+  const homePos   = playerPositions(roster.homeTeam);
+  const awayPos   = playerPositions(roster.awayTeam);
   const homeIsTeam = nameMatch(roster.homeTeam?.teamName?.teamName ?? '', teamName);
 
-  const [mine, theirs] = homeIsTeam ? [homeNames, awayNames] : [awayNames, homeNames];
+  const [mine, theirs]     = homeIsTeam ? [homeNames, awayNames] : [awayNames, homeNames];
+  const [minePos, theirPos] = homeIsTeam ? [homePos, awayPos]   : [awayPos, homePos];
   return {
-    teamSquad:     mine.length   > 0 ? mine   : undefined,
-    opponentSquad: theirs.length > 0 ? theirs : undefined,
+    teamSquad:              mine.length   > 0 ? mine   : undefined,
+    opponentSquad:          theirs.length > 0 ? theirs : undefined,
+    teamSquadPositions:     Object.keys(minePos).length  > 0 ? minePos  : undefined,
+    opponentSquadPositions: Object.keys(theirPos).length > 0 ? theirPos : undefined,
   };
 }
 
