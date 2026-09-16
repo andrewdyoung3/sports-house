@@ -826,6 +826,45 @@ function validateInventedYears(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+/**
+ * Day-count claims (rest, breaks, turnarounds) must match a day figure stated
+ * in the data block. Caught live: THE ANGLE said a 16-day break and the model
+ * wrote "six-day break" in keyInsights — an internal contradiction, and word-
+ * form numbers evade the digit-based checks, so both forms are normalised here.
+ * Allowed figures = every number on a prompt line that mentions "day"/"days"
+ * (the ANGLE rest line carries both figures but attaches "days" only to one).
+ * Exemptions: "one-day" (the cricket format term) and numberless day phrases.
+ */
+const DAY_WORD_NUMS: Record<string, number> = {
+  two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20,
+};
+export function validateDayCounts(output: AIPreview, prompt: string): string[] {
+  const allowed = new Set<number>();
+  for (const line of prompt.split('\n')) {
+    if (!/\bdays?\b/i.test(line)) continue;
+    for (const m of line.matchAll(/\b(\d{1,2})\b/g)) allowed.add(Number(m[1]));
+  }
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  const seen = new Set<number>();
+  const wordAlt = Object.keys(DAY_WORD_NUMS).join('|');
+  const claimRe = new RegExp(`\\b(\\d{1,2}|${wordAlt})[-\\s]days?\\b`, 'gi');
+  for (const m of factual.matchAll(claimRe)) {
+    const raw = m[1].toLowerCase();
+    const n = /^\d+$/.test(raw) ? Number(raw) : DAY_WORD_NUMS[raw];
+    if (n === undefined || n === 1 || seen.has(n)) continue; // 1 = "one-day" format term
+    if (allowed.has(n)) continue;
+    seen.add(n);
+    violations.push(`day-count claim "${m[0]}" — no ${n}-day figure appears in the data block${allowed.size > 0 ? ` (stated day figures: ${[...allowed].join(', ')})` : ''}`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -1006,6 +1045,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validatePlayerNames(v, prompt),
     ...validateInventedStatlines(v, prompt),
     ...validateInventedYears(v, prompt),
+    ...validateDayCounts(v, prompt),
   ];
 }
 

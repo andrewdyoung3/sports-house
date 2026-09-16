@@ -25,6 +25,7 @@ import {
   validateFieldOverlap,
   validateAbsenceCounts,
   validateSeasonPlacement,
+  validateDayCounts,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -563,6 +564,32 @@ expect('invented F1 driver in spotlight is rejected',
   expect('non-circular: 7th within reach of top five passes (final third)',
     validateSeasonPlacement(preview({ context: 'Fulham, in seventh, are within reach of the top five.' }),
       LAST.replace('Brighton & Hove Albion — 5th', 'Fulham — 7th')).length === 0);
+}
+
+// ─── validateDayCounts — rest/break/turnaround figures must come from the data ──
+
+{
+  const ANGLE_PROMPT = [
+    'THE ANGLE (derived, ranked — the story of this fixture; every line below is factual):',
+    '  1. Hawthorn Hawks have had 16 days between games; Brisbane Lions back up after 7 — freshness against momentum.',
+    '',
+  ].join('\n');
+
+  console.log('validateDayCounts:');
+  expect('digit day-count matching the data passes',
+    validateDayCounts(preview({ context: 'Hawthorn enjoyed a 16-day break.' }), ANGLE_PROMPT).length === 0);
+  expect('word-form day-count matching the data passes ("seven days")',
+    validateDayCounts(preview({ context: 'Brisbane back up after just seven days.' }), ANGLE_PROMPT).length === 0);
+  expect('the live bug: "six-day break" rejected when the data says 16',
+    validateDayCounts(preview({ keyInsights: ['Hawthorn\'s six-day break is a substantial advantage'] }), ANGLE_PROMPT).length > 0);
+  expect('digit mismatch rejected ("10-day turnaround")',
+    validateDayCounts(preview({ verdict: 'The 10-day turnaround favours the hosts.' }), ANGLE_PROMPT).length > 0);
+  expect('day-count with NO day figures in the data rejected',
+    validateDayCounts(preview({ context: 'A five-day break helps.' }), 'LEAGUE TABLE:\n  Arsenal: rank 1\n').length > 0);
+  expect('"one-day" cricket format term exempt',
+    validateDayCounts(preview({ context: 'A one-day fixture between these sides.' }), 'FIXTURE: Australia vs India\n').length === 0);
+  expect('numberless day phrasing exempt ("match day", "day out")',
+    validateDayCounts(preview({ context: 'A grand final day out at the MCG on match day.' }), ANGLE_PROMPT).length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────
