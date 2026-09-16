@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
+import { outOfSeasonMessage } from '@/lib/season-info';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -1122,8 +1123,12 @@ export default function SchedulePage() {
   const filteredGames = useMemo<ScheduleEntry[]>(() => {
     // Read directly from the ref — synchronous, no render lag, so switching
     // league pills shows the correct league's games in the very first render.
+    // League mode NEVER falls back to allGames: an unfetched league shows the
+    // skeleton (leagueLoading) and a fetched-but-empty league shows the
+    // out-of-season message — the followed-teams schedule flashing in was the
+    // "wrong games before the right ones" bug.
     const cachedLeagueGames = activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [];
-    const source = isLeagueMode ? (cachedLeagueGames.length > 0 ? cachedLeagueGames : allGames) : allGames;
+    const source = isLeagueMode ? cachedLeagueGames : allGames;
     return source.filter(g => {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
@@ -1265,7 +1270,20 @@ export default function SchedulePage() {
     />
   );
 
-  const activeLoading = loading;
+  // League browse has its own fetch lifecycle: while an uncached league loads,
+  // show the skeleton rather than letting stale content linger.
+  const activeLoading = loading || (isLeagueMode && leagueLoading);
+
+  // Remount key for the fixture list/hero/empty state — switching the content
+  // SOURCE (league pill / team pill) swaps in one atomic keyed fade instead of
+  // visibly re-sorting in place. Deliberately excludes the home/away and range
+  // toggles: those filter the same source cheaply, and remounting on them
+  // would reset any expanded match panels.
+  const listTransitionKey = `${activeLeagueId ?? 'teams'}:${activeTeamId}`;
+  const emptyStateKey = `empty-${listTransitionKey}`;
+
+  // Out-of-season copy for a league pill whose fixture list came back empty.
+  const outOfSeason = isLeagueMode && activeLeagueId ? outOfSeasonMessage(activeLeagueId) : null;
 
   // Phase B · Step 2 — page-level focal accent, driven by the SAME focal team the hero
   // uses (heroGame.team). `.sh-theme` only defines CSS custom properties, so adding it to
@@ -1317,9 +1335,11 @@ export default function SchedulePage() {
           {/* F1 (non-versus) keeps the existing hero; two-team fixtures get the new
               focal-team-themed .sh-* hero (Phase B · Step 1). */}
           {!activeLoading && heroGame && (
-            heroGame.team.league === 'f1'
-              ? <NextGameHero   game={heroGame} userTz={userTz} />
-              : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />
+            <div key={`hero-${listTransitionKey}`} className="sh-fade-in">
+              {heroGame.team.league === 'f1'
+                ? <NextGameHero   game={heroGame} userTz={userTz} />
+                : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />}
+            </div>
           )}
 
           {/* Filters — Phase B · Step 2: reskinned to the design vocabulary
@@ -1414,12 +1434,16 @@ export default function SchedulePage() {
           {activeLoading ? (
             <ScheduleSkeleton />
           ) : displayedGames.length === 0 ? (
-            <div className="text-center py-20 text-white/40">
+            <div key={emptyStateKey} className="sh-fade-in text-center py-20 text-white/40">
               <Calendar className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No fixtures match this filter.</p>
+              {isLeagueMode && outOfSeason ? (
+                <p className="text-sm max-w-md mx-auto leading-relaxed">{outOfSeason}</p>
+              ) : (
+                <p className="text-sm">No fixtures match this filter.</p>
+              )}
             </div>
           ) : (
-            <div className="space-y-8">
+            <div key={listTransitionKey} className="sh-fade-in space-y-8">
               {groupedByDate.map(({ dateKey, representativeDate, games }) => (
                 <section key={dateKey} id={`date-section-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">

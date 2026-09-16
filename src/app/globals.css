@@ -21,6 +21,17 @@
   50%       { opacity: 0.7; transform: scale(1.12); }
 }
 
+@keyframes shFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+/* Keyed content transition — remounting a filtered list with this class swaps
+   content in one soft fade instead of a visible in-place re-sort. */
+.sh-fade-in { animation: shFadeIn 0.22s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .sh-fade-in { animation: none; }
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
