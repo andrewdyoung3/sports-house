@@ -405,6 +405,50 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Cross-sport jargon fence (2026-09-16, journalism-register direction): the
+ * written standard is top-tier sports journalism, and a term of art from one
+ * sport's analysis is an error in another's. The map lists only UNAMBIGUOUS
+ * markers (terms never used metaphorically across codes); the block's SPORT
+ * line identifies the piece's sport. Conservative by design — a missing term
+ * is fine, a false positive is not.
+ */
+const SPORT_OF_PROMPT: Array<[RegExp, string]> = [
+  [/^SPORT: Australian Rules Football/m, 'afl'],
+  [/^SPORT: NRL Rugby League/m, 'nrl'],
+  [/^SPORT: English Premier League/m, 'epl'],
+  [/^SPORT: Super Rugby/m, 'super_rugby'],
+  [/^SPORT: International Rugby Union/m, 'rugby_int'],
+  [/^SPORT: International Cricket/m, 'cricket_int'],
+  [/^SPORT: Big Bash League/m, 'bbl'],
+];
+const SPORT_MARKER_TERMS: Array<{ re: RegExp; sports: string[]; family: string }> = [
+  { re: /\binside[- ]50s?\b|\bcentre bounces?\b|\bpremiership quarter\b|\bbehinds\b/gi, sports: ['afl'], family: 'AFL' },
+  { re: /\blineouts?\b|\bmauls?\b|\bgarryowens?\b/gi, sports: ['super_rugby', 'rugby_int'], family: 'rugby union' },
+  { re: /\bdummy[- ]half\b|\bset restarts?\b/gi, sports: ['nrl'], family: 'rugby league' },
+  { re: /\bpowerplays?\b|\bdeath overs?\b|\bnew[- ]ball\b|\byorkers?\b|\bcover drives?\b|\brun rate\b/gi, sports: ['cricket_int', 'bbl'], family: 'cricket' },
+  { re: /\bfalse nine\b|\boffside trap\b|\binverted wingers?\b|\bpressing triggers?\b/gi, sports: ['epl'], family: 'football' },
+];
+export function validateSportRegister(output: AIPreview, prompt: string): string[] {
+  let sport: string | null = null;
+  for (const [re, sp] of SPORT_OF_PROMPT) { if (re.test(prompt)) { sport = sp; break; } }
+  if (!sport) return [];
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const { re, sports, family } of SPORT_MARKER_TERMS) {
+    if (sports.includes(sport)) continue;
+    for (const m of text.matchAll(re)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`"${m[0]}" is ${family} vocabulary — outside this sport's jargon palette (see the SPORT line); rewrite in this sport's own terms`);
+    }
+  }
+  return violations;
+}
+
+/**
  * Cricket register guard (2026-09-16): the shared system prompt teaches a
  * footy-code analytical register ("what it means structurally", "phases") and
  * the model imported it into cricket ("Australia holds a structural edge …
@@ -805,6 +849,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateFinalsRedundancy(v, prompt),
     ...validateAbsenceNarration(v, prompt),
     ...validateCricketRegister(v, prompt),
+    ...validateSportRegister(v, prompt),
     ...validatePlayerSideClaims(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),

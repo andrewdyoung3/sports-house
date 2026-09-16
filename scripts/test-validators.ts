@@ -20,6 +20,7 @@ import {
   validateFinalsRedundancy,
   validateAbsenceNarration,
   validateCricketRegister,
+  validateSportRegister,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -417,6 +418,28 @@ expect('invented F1 driver in spotlight is rejected',
     v('On a flat wicket where first innings average 248, the toss winner bats.', CV).length === 0);
   expect('inert outside cricket',
     validateCricketRegister(preview({ context: 'A structural edge in midfield.' }), 'LEAGUE TABLE:').length === 0);
+}
+
+// ─── validateSportRegister — jargon stays inside its sport ──────────────────────
+
+{
+  console.log('\n── validateSportRegister ──');
+  const AFL_P = 'SPORT: Australian Rules Football (AFL). ...\n';
+  const NRL_P = 'SPORT: NRL Rugby League (13-man code). ...\n';
+  const CRK_P = 'SPORT: International Cricket. ...\n';
+  const v = (context: string, p: string) => validateSportRegister(preview({ context }), p);
+  expect('cricket "powerplay" rejected in an AFL preview',
+    v('They must win the powerplay at the centre bounce.', AFL_P).length > 0);
+  expect('union "lineout" rejected in NRL',
+    v('The lineout will decide field position.', NRL_P).length > 0);
+  expect('AFL "inside 50s" rejected in cricket',
+    v('Australia dominated the inside 50s.', CRK_P).length > 0);
+  expect('AFL terms pass in AFL',
+    v('Their inside-50 count and centre bounce spread were decisive.', AFL_P).length === 0);
+  expect('cricket terms pass in cricket',
+    v('The death overs and required run rate decide it.', CRK_P).length === 0);
+  expect('inert without a recognised SPORT line',
+    validateSportRegister(preview({ context: 'A lineout in the powerplay.' }), 'LEAGUE TABLE:').length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────
