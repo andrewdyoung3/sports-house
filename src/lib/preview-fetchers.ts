@@ -2432,3 +2432,79 @@ export async function fetchSoccerGoalTimeline(
     return undefined;
   }
 }
+
+
+/**
+ * NRL scoring timeline + top performers from the OFFICIAL match centre
+ * (nrl.com …/data `timeline`): tries/goals with gameSeconds, running score,
+ * and player names via content.name — the event-anchoring data ESPN's NRL
+ * summary lacks (probed 2026-09-16). Round located by trying the current
+ * round then stepping back (reviews are for recent games).
+ */
+export async function fetchNRLMatchTimeline(
+  teamName: string,
+  opponentName: string,
+): Promise<{ scoringTimeline?: string[]; topPerformerLines?: string[] } | undefined> {
+  try {
+    const season = new Date().getFullYear();
+    const nm = (x: string) => (x ?? '').toLowerCase();
+    const ua = { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' } };
+    const findFixture = async (round?: number) => {
+      const url = `https://www.nrl.com/draw/data?competition=111&season=${season}${round ? `&round=${round}` : ''}`;
+      const res = await fetchTimeout(url, { ...ua, next: { revalidate: 3600 }, timeoutMs: 8000 });
+      if (!res.ok) return null;
+      const d = await res.json() as any;
+      const fx = (d.fixtures ?? []).find((f: any) => {
+        const h = nm(f.homeTeam?.nickName), a = nm(f.awayTeam?.nickName);
+        const t = nm(teamName), o = nm(opponentName);
+        return (t.includes(h) || h.includes(t)) && (o.includes(a) || a.includes(o))
+            || (t.includes(a) || a.includes(t)) && (o.includes(h) || h.includes(o));
+      });
+      return fx ? { fx, currentRound: d.selectedRoundId as number | undefined } : { fx: null, currentRound: d.selectedRoundId as number | undefined };
+    };
+    let hit = await findFixture();
+    let cur = hit?.currentRound;
+    for (let back = 1; back <= 2 && !hit?.fx && cur; back++) {
+      hit = await findFixture(cur - back);
+    }
+    const mcUrl = hit?.fx?.matchCentreUrl as string | undefined;
+    if (!mcUrl) return undefined;
+    const mcRes = await fetchTimeout(`https://www.nrl.com${mcUrl.replace(/\/$/, '')}/data`, { ...ua, next: { revalidate: 6 * 3600 }, timeoutMs: 8000 });
+    if (!mcRes.ok) return undefined;
+    const mc = await mcRes.json() as any;
+
+    const lines: string[] = [];
+    for (const t of (mc.timeline ?? []) as any[]) {
+      const kind = t.title ?? t.type ?? '';
+      if (!/^(Try|Penalty Goal|Field Goal|Conversion-Made)$/.test(kind)) continue;
+      if (kind === 'Conversion-Made') continue; // tries + kicks that change momentum only
+      const min = Math.round((t.gameSeconds ?? 0) / 60);
+      const who = String(t.content?.name ?? '').replace(/ (Try|Penalty Goal|Field Goal)$/i, '').trim();
+      const score = (t.homeScore !== undefined || t.awayScore !== undefined)
+        ? ` — ${mc.homeTeam?.nickName ?? 'home'} ${t.homeScore ?? 0}, ${mc.awayTeam?.nickName ?? 'away'} ${t.awayScore ?? 0}` : '';
+      lines.push(`${min}' ${kind}${who ? ` — ${who}` : ''}${score}`);
+    }
+
+    const tp: string[] = [];
+    const playersById = new Map<number, string>();
+    const rawPlayers = mc.stats?.players;
+    const playerArr: any[] = Array.isArray(rawPlayers)
+      ? rawPlayers
+      : [...(rawPlayers?.home ?? []), ...(rawPlayers?.away ?? [])];
+    for (const p of playerArr) {
+      if (p?.playerId && (p.firstName || p.lastName)) playersById.set(p.playerId, `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim());
+    }
+    for (const perf of (mc.stats?.topPerformers ?? []) as any[]) {
+      const h = playersById.get(perf.homePlayerId), a = playersById.get(perf.awayPlayerId);
+      if (perf.title && (h || a)) {
+        tp.push(`${perf.title}: ${[h ? `${h} ${perf.homeTotal}` : '', a ? `${a} ${perf.awayTotal}` : ''].filter(Boolean).join(' | ')}`);
+      }
+    }
+    return {
+      scoringTimeline:   lines.length > 0 ? lines : undefined,
+      topPerformerLines: tp.length > 0 ? tp : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}

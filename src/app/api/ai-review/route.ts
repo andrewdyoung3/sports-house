@@ -17,7 +17,7 @@ import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
 import { validateReviewOutput } from '@/lib/review-validators';
-import { fetchReviewFormAndH2H, fetchSoccerGoalTimeline } from '@/lib/preview-fetchers';
+import { fetchReviewFormAndH2H, fetchSoccerGoalTimeline, fetchNRLMatchTimeline } from '@/lib/preview-fetchers';
 import { buildContributions, buildCricketChart } from '@/lib/review-contributions';
 import { cricMatchScorecard } from '@/lib/cricketdata';
 import { fetchAflMatchStats } from '@/lib/afl-roster';
@@ -246,7 +246,7 @@ export async function POST(req: NextRequest) {
     const soccerEventId = league === 'epl' && typeof gameId === 'string' ? gameId.split('-').pop() : undefined;
     const cricketUuid = isCricket && typeof gameId === 'string' && !/^\d+$/.test(gameId.replace(/^(cint|bbl)-/, ''))
       ? gameId.replace(/^(cint|bbl)-/, '') : undefined;
-    const [standings, matchStats, formExtras, goalTimeline, cricScorecard] = await Promise.all([
+    const [standings, matchStats, formExtras, goalTimeline, cricScorecard, nrlTimeline] = await Promise.all([
       isCricket ? Promise.resolve([]) : fetchStandings(league),
       // AFL: CFS playerStats (ESPN has no AFL player stats); others: ESPN match-stats.
       league === 'afl'
@@ -255,6 +255,7 @@ export async function POST(req: NextRequest) {
       fetchReviewFormAndH2H(league, gameId ? String(gameId) : undefined, teamName, opponent, String(date)),
       soccerEventId ? fetchSoccerGoalTimeline(soccerSlug ?? 'eng.1', soccerEventId) : Promise.resolve(undefined),
       cricketUuid ? cricMatchScorecard(cricketUuid) : Promise.resolve(null),
+      league === 'nrl' ? fetchNRLMatchTimeline(teamName, opponent) : Promise.resolve(undefined),
     ]);
     const cricketChart = isCricket ? buildCricketChart(cricScorecard) : undefined;
 
@@ -301,7 +302,7 @@ export async function POST(req: NextRequest) {
       teamRecentForm:     formExtras.teamRecentForm,
       opponentRecentForm: formExtras.opponentRecentForm,
       headToHead:         formExtras.headToHead,
-      scoringTimeline:    goalTimeline,
+      scoringTimeline:    goalTimeline ?? nrlTimeline?.scoringTimeline,
       cricketFormat, cricketResult, cricketInnings,
       cricketChart:       cricketChart?.length ? cricketChart : undefined,
     };
@@ -317,6 +318,7 @@ export async function POST(req: NextRequest) {
 
     // Standard key-contribution strip — deterministic, derived server-side.
     const contributions = buildContributions(league, matchStats, goalTimeline, cricketChart);
+    if (nrlTimeline?.topPerformerLines) contributions.push(...nrlTimeline.topPerformerLines);
     return NextResponse.json(contributions.length > 0 ? { ...review, contributions } : review);
   } catch (err) {
     if (err instanceof ReviewValidationError) {
