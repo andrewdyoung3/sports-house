@@ -630,6 +630,30 @@ expect('invented F1 driver in spotlight is rejected',
     validateNumeralBinding(preview({ context: 'Their 12th straight home win.' }), AFL_NUM_PROMPT).length > 0);
 }
 
+// ─── validateFinalsRedundancy — widened default-consequence class ───────────────
+
+{
+  const KO = 'FINALS PATH (authoritative on hosting, seeding, and consequences):\n  • knockout\n';
+  const QF = KO + '  • NEITHER side can be eliminated this week (double chance)\n';
+  const r = (t: string, p = KO) => validateFinalsRedundancy(preview({ context: t }), p);
+
+  console.log('validateFinalsRedundancy (widened):');
+  expect('live: "decides who advances to the Grand Final" rejected',
+    r('This contest decides who advances to the Grand Final.').length > 0);
+  expect('live: "needing this win to remain alive in the competition" rejected',
+    r('Both sides needing this win to remain alive in the competition.').length > 0);
+  expect('live: "the loser sees their season end one step short" rejected',
+    r('The loser sees their season end one step short of the MCG.').length > 0);
+  expect('"winner books a place in the decider" rejected',
+    r('The winner books a place in the decider at the MCG.').length > 0);
+  expect('counter-case passes: double chance spent',
+    r('Brisbane\'s double chance is now spent.').length === 0);
+  expect('counter-case passes: hosting earned by qualifying-final win',
+    r('Hawthorn earned this home final by winning their Qualifying Final.').length === 0);
+  expect('double-chance week guard still lifts the rule',
+    r('The loser is eliminated.', QF).length === 0);
+}
+
 // ─── validatePlayerNames — venue-noun head words are places, not people ────────
 
 {

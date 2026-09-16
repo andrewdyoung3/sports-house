@@ -669,7 +669,21 @@ export function validateFinalsRedundancy(output: AIPreview, prompt: string): str
   if (/NEITHER side can be eliminated/.test(prompt)) return [];
   const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
     .filter(Boolean).join('  ');
-  const redundantRe = /\b(?:the )?loser (?:is eliminated|goes home|is out|is knocked out)\b|\bloser'?s? (?:season|campaign) (?:ends|is over)\b|\blose,? and (?:your|their|the) (?:premiership )?(?:campaign|season) (?:ends|is over)\b/gi;
+  // The full default-consequence class, both directions. Loser side: any
+  // elimination/season-over restatement. Winner side: advancing/booking a
+  // place IS the definition of the round. "remain/stay alive" applies to both
+  // sides of every knockout, so it carries zero information. Counter-case
+  // consequences (double chance spent/earned, wildcard survival, hosting
+  // earned) deliberately match none of these.
+  const redundantRe = new RegExp([
+    /\b(?:the )?loser(?:'s)? (?:is eliminated|goes home|is out|is knocked out|bows out|sees? their season end)\b/.source,
+    /\bloser'?s? (?:season|campaign) (?:ends|is over)\b/.source,
+    /\blose,? and (?:your|their|the) (?:premiership )?(?:campaign|season) (?:ends|is over)\b/.source,
+    /\bdecides? who (?:advances|progresses|goes through|reaches|plays in)\b/.source,
+    /\b(?:the )?winner (?:advances|progresses|goes through|moves on|books|earns|claims|secures)\b[^.]{0,40}\b(?:grand final|decider|final|championship)\b/.source,
+    /\b(?:grand final|premiership) (?:berth|spot|place)\b[^.]{0,25}\b(?:on the line|at stake|awaits|up for grabs|for the winner)\b/.source,
+    /\bto (?:remain|stay) alive\b|\bkeep (?:their|the) season alive\b|\bremain alive in the (?:competition|premiership|finals)\b/.source,
+  ].join('|'), 'gi');
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of text.matchAll(redundantRe)) {
