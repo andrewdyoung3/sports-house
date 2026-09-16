@@ -136,3 +136,27 @@ note: scripts/benchmark-results.json shows the old "benchmark" only ever
 completed the incumbent — thinking 404'd (not pulled then) and qwen3:32b never
 ran. `backtest-generate.ts` now takes a model argument; the validator suite is
 the objective scorer (violations + refusals + elapsed), prose judged by eye.
+
+## Build log — 2026-09-16 media stack (both layers LIVE)
+
+**RSS standfirst layer** (`src/lib/rss-news.ts`, keyless): ABC Sport feed
+45924 (⚠ 45910 is GENERAL news, not sport), BBC football / rugby-union /
+rugby-league / cricket, Sky Sports 12040 (headline-only items; titles in
+CDATA). Conservative team matching (full name always; nickname only ≥4 chars
+and non-generic; single-word country names ONLY on sport-scoped BBC feeds).
+Merged + deduped into teamNews/opponentNews, rendered with an [Outlet] tag,
+per-side cap raised 3→4. 30-min in-process cache, 7-day freshness, fails soft.
+
+**Guardian Open Platform** (`src/lib/guardian.ts`, GUARDIAN_API_KEY, free
+tier 500/day): renders PRESS ANALYSIS (headline + byline + standfirst +
+sentence-clipped body excerpt) inside FROM THE MEDIA. Hard-won API facts:
+football lives OUTSIDE `section=sport` → query `section=football|sport`;
+bare `q=` full-text matches liveblogs incidentally → constrain with
+`query-fields=headline,standfirst&type=article`; ordering is unreliable →
+enforce freshness server-side with `from-date`. Never log the request URL
+(it carries the key).
+
+**Model A/B addendum:** pipeline switched to gemma3:27b (see framework doc).
+Second-wave candidates gpt-oss:20b and mistral-small3.2 pulled 2026-09-16;
+same two backtest legs (sru 603213 preview, rint 602516 review) queued as
+the comparator.
