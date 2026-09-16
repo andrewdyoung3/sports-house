@@ -27,6 +27,8 @@ import {
   validateCricketRegister,
   validateSeasonPlacement,
   validateDayCounts,
+  validateNumeralBinding,
+  validateVenueFormClaims,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -143,6 +145,8 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateCricketRegister(shaped, dataBlock),
     ...validateSeasonPlacement(shaped, dataBlock),
     ...validateDayCounts(shaped, dataBlock),
+    ...validateNumeralBinding(shaped, dataBlock),
+    ...validateVenueFormClaims(shaped, dataBlock),
     ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

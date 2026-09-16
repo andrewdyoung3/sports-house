@@ -15,7 +15,7 @@
  *    phase-free.
  */
 
-import type { GameResult, HeadToHeadMeeting } from '@/types';
+import type { GameResult, HeadToHeadMeeting, VenueRecord } from '@/types';
 
 export interface AngleInput {
   teamName: string;
@@ -32,6 +32,9 @@ export interface AngleInput {
   marketFavouriteIsTeam?: boolean; // from marketOdds when present
   /** Cricket: venue chase-win % from the venue profile (58+/42- = biased). */
   venueChaseWinPct?: number;
+  /** Season records at THIS fixture's venue (AFL: Squiggle-derived). */
+  teamVenueRecord?: VenueRecord;
+  opponentVenueRecord?: VenueRecord;
   /** 1 | 2 | 3 per the season-thirds policy; undefined = no table (finals/cup). */
   seasonThird?: number;
 }
@@ -124,7 +127,20 @@ export function deriveAngles(i: AngleInput): RankedAngle[] {
     else if (i.venueChaseWinPct <= 42) out.push({ kind: 'venue-bias', score: 66, line: `Totals defend well here — the side batting first wins ${100 - i.venueChaseWinPct}% of decided games.` });
   }
 
-  // 8. TABLE COLLISION — final third only (thirds policy).
+  // 8. VENUE FORTRESS / GRAVEYARD: a strong or dire season record at this
+  //    ground (≥4 completed games, ≥75% won or ≥75% lost; draws count neither).
+  for (const [side, rec, score] of [[t, i.teamVenueRecord, 68], [o, i.opponentVenueRecord, 66]] as const) {
+    if (!rec) continue;
+    const n = rec.wins + rec.draws + rec.losses;
+    if (n < 4) continue;
+    if (rec.wins / n >= 0.75) {
+      out.push({ kind: 'venue-fortress', score, line: `${side} have won ${rec.wins} of ${n} at ${rec.venue} this season.` });
+    } else if (rec.losses / n >= 0.75) {
+      out.push({ kind: 'venue-graveyard', score, line: `${side} have lost ${rec.losses} of ${n} at ${rec.venue} this season.` });
+    }
+  }
+
+  // 9. TABLE COLLISION — final third only (thirds policy).
   if (i.seasonThird === 3 && i.teamPosition !== undefined && i.opponentPosition !== undefined) {
     if (Math.max(i.teamPosition, i.opponentPosition) <= 2) {
       out.push({ kind: 'table-collision', score: 88, line: `First plays second with the run-in under way.` });

@@ -865,6 +865,91 @@ export function validateDayCounts(output: AIPreview, prompt: string): string[] {
   return violations;
 }
 
+/**
+ * Universal numeral binder — the net under the claim-type-specific validators.
+ * Every number ≥6 in the output (digit or word form) must appear somewhere in
+ * the data block. Numbers 0–5 are exempt (reliable small-count range, and the
+ * home of harmless idiom: "one of", "two sides", "four quarters"); year-shaped
+ * numbers are validateInventedYears' jurisdiction; each sport keeps a small
+ * lexicon of structural numbers ("inside 50", "the 22", 80 minutes) that need
+ * no data support. Catches the fabricated-figure class wholesale ("44 tackles",
+ * "74-point margin", "12 points per game") instead of claim type by claim type.
+ */
+const NUM_WORD_UNITS: Record<string, number> = {
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+  eighteen: 18, nineteen: 19, hundred: 100,
+};
+const NUM_WORD_TENS: Record<string, number> = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
+  eighty: 80, ninety: 90,
+};
+const SPORT_NUM_LEXICON: Record<string, number[]> = {
+  afl:         [50, 6],              // 50m arc / inside 50; 6 points a goal
+  nrl:         [10, 20, 40, 80, 13], // 10m, 20/40 & 40/20, 80 minutes, 13 players
+  super_rugby: [22, 10, 80, 15],     // the 22, 10m line, 80 minutes, 15 players
+  rugby_int:   [22, 10, 80, 15],
+  epl:         [90, 18],             // 90 minutes; 18-yard box
+  cricket_int: [6, 50, 100, 22],     // sixes; fifty/hundred milestones; 22 yards
+  bbl:         [6, 50, 100, 22],
+};
+export function validateNumeralBinding(output: AIPreview, prompt: string): string[] {
+  const allowed = new Set<number>();
+  for (const m of prompt.matchAll(/\d+/g)) allowed.add(Number(m[0]));
+  let sport: string | null = null;
+  for (const [re, sp] of SPORT_OF_PROMPT) { if (re.test(prompt)) { sport = sp; break; } }
+  for (const n of SPORT_NUM_LEXICON[sport ?? ''] ?? []) allowed.add(n);
+
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  const seen = new Set<number>();
+  const flag = (n: number, raw: string) => {
+    if (n <= 5 || (n >= 1900 && n <= 2099) || allowed.has(n) || seen.has(n)) return;
+    seen.add(n);
+    violations.push(`unsourced number "${raw}" — no figure ${n} appears in the data block; every number must come from the data`);
+  };
+  for (const m of factual.matchAll(/\b(\d+)(?:st|nd|rd|th)?\b/g)) flag(Number(m[1]), m[0]);
+  const tensAlt = Object.keys(NUM_WORD_TENS).join('|');
+  const unitsAlt = Object.keys(NUM_WORD_UNITS).join('|');
+  const wordRe = new RegExp(`\\b(${tensAlt})(?:[-\\s](one|two|three|four|five|${unitsAlt}))?\\b|\\b(${unitsAlt})\\b`, 'gi');
+  const smallWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  for (const m of factual.matchAll(wordRe)) {
+    if (m[3] !== undefined) { flag(NUM_WORD_UNITS[m[3].toLowerCase()], m[0]); continue; }
+    const tens = NUM_WORD_TENS[m[1].toLowerCase()];
+    const unitWord = m[2]?.toLowerCase();
+    const unit = unitWord ? (smallWords[unitWord] ?? NUM_WORD_UNITS[unitWord] ?? 0) : 0;
+    flag(tens + (unit === 100 ? 0 : unit), m[0]);
+  }
+  return violations;
+}
+
+/**
+ * Venue-form claims ("fortress", "performs well here", "strong record at")
+ * require a VENUE RECORD line (or the cricket VENUE PROFILE) in the data.
+ * Caught live: "have consistently performed well at the MCG" with nothing in
+ * the block beyond the ground being Hawthorn's home venue.
+ */
+const VENUE_FORM_RE = /\b(?:fortress|graveyard for|(?:strong|formidable|proud|excellent|imposing|poor|dire|dismal) (?:record|form|history|returns) (?:at|here)|(?:performed?|performs?|performing) (?:well|poorly|strongly|badly) (?:at|here)|(?:thrives?|struggles?|excels?) (?:at|in) (?:the|this)\b[^.]{0,30}?(?:ground|stadium|venue|oval|gabba|mcg|scg))\b/gi;
+export function validateVenueFormClaims(output: AIPreview, prompt: string): string[] {
+  if (/^VENUE RECORD THIS SEASON/m.test(prompt) || /VENUE PROFILE/.test(prompt)) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(VENUE_FORM_RE)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`venue-form claim "${m[0]}" — no VENUE RECORD data in the data block; venue reputation claims need data support`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -1046,6 +1131,8 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateInventedStatlines(v, prompt),
     ...validateInventedYears(v, prompt),
     ...validateDayCounts(v, prompt),
+    ...validateNumeralBinding(v, prompt),
+    ...validateVenueFormClaims(v, prompt),
   ];
 }
 

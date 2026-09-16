@@ -67,6 +67,14 @@ check('chase 62% fires', kinds({ ...base, venueChaseWinPct: 62 }).includes('venu
 check('defend 38% fires with inverted pct', deriveAngles({ ...base, venueChaseWinPct: 38 })[0].line.includes('62%'));
 check('50% silent', !kinds({ ...base, venueChaseWinPct: 50 }).includes('venue-bias'));
 
+console.log('venue fortress / graveyard');
+const vr = (w: number, d: number, l: number) => ({ venue: 'M.C.G.', wins: w, draws: d, losses: l });
+check('6W-2L at venue → fortress', deriveAngles({ ...base, teamVenueRecord: vr(6, 0, 2) })[0]?.kind === 'venue-fortress');
+check('fortress line counts games', deriveAngles({ ...base, teamVenueRecord: vr(6, 0, 2) })[0].line.includes('won 6 of 8'));
+check('1W-5L opponent → graveyard for Beta', deriveAngles({ ...base, opponentVenueRecord: vr(1, 0, 5) })[0]?.line.startsWith('Beta'));
+check('3 games at venue silent (below floor)', kinds({ ...base, teamVenueRecord: vr(3, 0, 0) }).length === 0);
+check('50% record silent', kinds({ ...base, teamVenueRecord: vr(3, 0, 3) }).length === 0);
+
 console.log('table collision + thirds gating');
 check('1v2 final third fires', kinds({ ...base, seasonThird: 3, teamPosition: 1, opponentPosition: 2 }).includes('table-collision'));
 check('1v2 FIRST third silent (thirds policy)', !kinds({ ...base, seasonThird: 1, teamPosition: 1, opponentPosition: 2 }).includes('table-collision'));

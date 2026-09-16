@@ -13,7 +13,7 @@
 import type {
   PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage,
   LeagueTableRow,
-  GameResult, HeadToHeadMeeting,
+  GameResult, HeadToHeadMeeting, VenueRecord,
 } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
@@ -97,6 +97,8 @@ export async function fetchAFLPreview(
   let teamRecentForm: GameResult[] | undefined;
   let opponentRecentForm: GameResult[] | undefined;
   let headToHead: HeadToHeadMeeting[] | undefined;
+  let teamVenueRecord: VenueRecord | undefined;
+  let opponentVenueRecord: VenueRecord | undefined;
 
   // gameId is like "afl-1234" or "afl-lions-vs-geelong-..." — extract numeric portion
   const numericId = gameId.replace(/^afl-/, '').match(/^\d+$/)?.[0];
@@ -155,6 +157,28 @@ export async function fetchAFLPreview(
         };
       });
     if (meetings.length > 0) headToHead = meetings;
+
+    // ── Season record at THIS fixture's venue (grounds venue-form claims and
+    //    feeds the angle engine's venue-fortress detector; no extra fetch) ──
+    const upcomingAtVenue = aflGames.find(g =>
+      Number(g.complete) < 100 && (g.hteam === sqTeam || g.ateam === sqTeam));
+    const fixtureVenue = upcomingAtVenue?.venue ? String(upcomingAtVenue.venue) : undefined;
+    if (fixtureVenue) {
+      const recordAt = (subject: string): VenueRecord => {
+        let wins = 0, draws = 0, losses = 0;
+        for (const g of completed) {
+          if (String(g.venue ?? '') !== fixtureVenue) continue;
+          if (g.hteam !== subject && g.ateam !== subject) continue;
+          const r = mapAflGame(g, subject);
+          if (r.isDraw) draws++; else if (r.isWin) wins++; else losses++;
+        }
+        return { venue: fixtureVenue, wins, draws, losses };
+      };
+      const tr = recordAt(sqTeam);
+      const or = recordAt(oppSqName);
+      if (tr.wins + tr.draws + tr.losses > 0) teamVenueRecord = tr;
+      if (or.wins + or.draws + or.losses > 0) opponentVenueRecord = or;
+    }
   }
 
   if (numericId && aflGames.length > 0) {
@@ -251,6 +275,8 @@ export async function fetchAFLPreview(
     teamRecentForm,
     opponentRecentForm,
     headToHead,
+    teamVenueRecord,
+    opponentVenueRecord,
   };
 }
 

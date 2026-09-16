@@ -169,6 +169,14 @@ export interface TipSummary {
   modelNames?: string[];
 }
 
+/** A team's completed-game record at one venue this season. */
+export interface VenueRecord {
+  venue: string;
+  wins: number;
+  draws: number;
+  losses: number;
+}
+
 /** One past meeting between the two fixture teams, from the followed team's perspective. */
 export interface HeadToHeadMeeting {
   /** ISO date of the meeting. Kept for ordering only — NEVER surfaced as a year in the prompt. */
@@ -235,6 +243,9 @@ export interface PreviewContext {
    */
   teamRecentForm?: GameResult[];
   opponentRecentForm?: GameResult[];
+  /** Season win-loss record at THIS fixture's venue (AFL: from Squiggle games). */
+  teamVenueRecord?: VenueRecord;
+  opponentVenueRecord?: VenueRecord;
   /** Recent meetings between the two fixture teams (most recent first), team perspective. */
   headToHead?: HeadToHeadMeeting[];
   /**

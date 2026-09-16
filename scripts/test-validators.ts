@@ -26,6 +26,8 @@ import {
   validateAbsenceCounts,
   validateSeasonPlacement,
   validateDayCounts,
+  validateNumeralBinding,
+  validateVenueFormClaims,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -590,6 +592,62 @@ expect('invented F1 driver in spotlight is rejected',
     validateDayCounts(preview({ context: 'A one-day fixture between these sides.' }), 'FIXTURE: Australia vs India\n').length === 0);
   expect('numberless day phrasing exempt ("match day", "day out")',
     validateDayCounts(preview({ context: 'A grand final day out at the MCG on match day.' }), ANGLE_PROMPT).length === 0);
+}
+
+// ─── validateNumeralBinding — every number ≥6 must appear in the data block ─────
+
+{
+  const AFL_NUM_PROMPT = [
+    'SPORT: Australian Rules Football (AFL). Use AFL-specific terminology.',
+    'FIXTURE: Hawthorn Hawks vs Brisbane Lions',
+    '  Hawthorn Hawks: rank 4 — played 23, 16W 7L',
+    '  1. Hawthorn Hawks have had 16 days between games; Brisbane Lions back up after 7.',
+    '',
+  ].join('\n');
+
+  console.log('validateNumeralBinding:');
+  expect('digit present in data passes ("16 days")',
+    validateNumeralBinding(preview({ context: 'A 16-day break for the Hawks.' }), AFL_NUM_PROMPT).length === 0);
+  expect('fabricated statline figure rejected ("44 tackles")',
+    validateNumeralBinding(preview({ playerSpotlight: 'He has made 44 tackles in that span.' }), AFL_NUM_PROMPT).length > 0);
+  expect('word-form compound rejected ("seventy-four-point margin")',
+    validateNumeralBinding(preview({ context: 'A seventy-four-point margin last week.' }), AFL_NUM_PROMPT).length > 0);
+  expect('small numbers exempt ("two sides", "four quarters", "five changes")',
+    validateNumeralBinding(preview({ context: 'The two sides go four quarters; five changes loom.' }), AFL_NUM_PROMPT).length === 0);
+  expect('year-shaped numbers left to the year validator',
+    validateNumeralBinding(preview({ context: 'Their 2019 meeting is folklore.' }), AFL_NUM_PROMPT).length === 0);
+  expect('AFL lexicon: "inside 50" passes without data support',
+    validateNumeralBinding(preview({ tacticalBattle: 'Repeat inside 50 entries are the key.' }), AFL_NUM_PROMPT).length === 0);
+  expect('rugby lexicon: "the 22" and "80 minutes" pass',
+    validateNumeralBinding(preview({ context: 'Exit from the 22 across 80 minutes.' }),
+      'SPORT: Super Rugby Pacific.\nFIXTURE: Hurricanes vs Chiefs\n').length === 0);
+  expect('cricket lexicon: "fifty" milestone passes',
+    validateNumeralBinding(preview({ context: 'He converted his fifty into a century score of 100.' }),
+      'SPORT: International Cricket (ODI).\nFIXTURE: Australia vs India\n').length === 0);
+  expect('sourced ordinal passes ("4th")',
+    validateNumeralBinding(preview({ context: 'They finished 4th.' }), AFL_NUM_PROMPT).length === 0);
+  expect('unsourced ordinal rejected ("12th")',
+    validateNumeralBinding(preview({ context: 'Their 12th straight home win.' }), AFL_NUM_PROMPT).length > 0);
+}
+
+// ─── validateVenueFormClaims — venue reputation needs VENUE RECORD data ─────────
+
+{
+  const NO_VR = 'FIXTURE: Hawthorn Hawks vs Brisbane Lions\nVENUE: M.C.G. — HAWTHORN HAWKS HOME GROUND\n';
+  const WITH_VR = NO_VR + 'VENUE RECORD THIS SEASON (completed games at this ground, all opponents): Hawthorn Hawks: 7W 1L; Brisbane Lions: 2W 2L\n';
+
+  console.log('validateVenueFormClaims:');
+  expect('the live bug: "consistently performed well at the MCG" rejected without data',
+    validateVenueFormClaims(preview({ keyInsights: ['Hawthorn have consistently performed well at the MCG'] }), NO_VR).length > 0);
+  expect('"fortress" rejected without data',
+    validateVenueFormClaims(preview({ context: 'The MCG fortress looms.' }), NO_VR).length > 0);
+  expect('same claims pass WITH a VENUE RECORD line',
+    validateVenueFormClaims(preview({ context: 'The MCG fortress looms; they have performed well at this ground.' }), WITH_VR).length === 0);
+  expect('cricket VENUE PROFILE also satisfies the gate',
+    validateVenueFormClaims(preview({ context: 'Chasing sides thrive at this ground.' }),
+      'VENUE PROFILE (M.C.G., T20):\n  Chase record: chasing sides win 61% here.\n').length === 0);
+  expect('plain home-advantage talk passes without data (not a form claim)',
+    validateVenueFormClaims(preview({ context: 'Hawthorn have home advantage at the MCG.' }), NO_VR).length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

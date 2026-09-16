@@ -1482,6 +1482,18 @@ export function buildDataBlock(
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
   const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome, context.venueNeutral);
   if (venueLine) lines.push(venueLine);
+  // Season record at this ground — grounds any venue-form claim ("fortress",
+  // "performs well here"): validateVenueFormClaims rejects such claims when
+  // this line is absent. Always in matchFacts, so it is block-toggle invariant.
+  if (context.teamVenueRecord || context.opponentVenueRecord) {
+    const vr = (name: string, r: NonNullable<typeof context.teamVenueRecord>) =>
+      `${name}: ${r.wins}W${r.draws > 0 ? ` ${r.draws}D` : ''} ${r.losses}L`;
+    const parts = [
+      context.teamVenueRecord ? vr(teamName, context.teamVenueRecord) : '',
+      context.opponentVenueRecord ? vr(opponentName, context.opponentVenueRecord) : '',
+    ].filter(Boolean);
+    lines.push(`VENUE RECORD THIS SEASON (completed games at this ground, all opponents): ${parts.join('; ')}`);
+  }
   lines.push(`COMPETITION: ${competition ?? leagueLabel}`);
   if (isOffLeague) {
     lines.push(`PRIMARY LEAGUE: ${leagueLabel} (background context only — this preview is about the ${competition})`);
@@ -1912,6 +1924,8 @@ export function buildDataBlock(
       opponentAbsenceCount: context.opponentInjuryReport?.length,
       marketFavouriteIsTeam: angleOdds?.homeFavorite === undefined ? undefined
         : angleOdds.homeFavorite ? isHome !== false : isHome === false,
+      teamVenueRecord: context.teamVenueRecord,
+      opponentVenueRecord: context.opponentVenueRecord,
       seasonThird: !inFinalsWindow && angleTotalRounds && anglePlayed !== undefined
         ? seasonThird(anglePlayed, angleTotalRounds)
         : undefined,
