@@ -405,6 +405,89 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Register-crutch guard (2026-09-16 editorial audit): the template
+ * incantations professional coverage never uses — announcing what matters
+ * instead of making the case ("The key contest will be…", "will be crucial"),
+ * plus the emptiest intensifiers. Small list, outright bans; the feedback
+ * retry converts them into direct claims.
+ */
+export function validateRegisterCrutches(output: AIPreview, prompt: string): string[] {
+  void prompt;
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(crutchRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`register crutch "${m[0]}" — never announce what matters; make the comparative case directly (e.g. "X tackle harder and win more of the ball")`);
+  }
+  return violations;
+}
+
+/**
+ * Cross-field redundancy guard (2026-09-16 editorial audit): tacticalBattle,
+ * playerSpotlight, and verdict were restating one thesis three ways (an AFL
+ * prelim said "midfield/inside 50s decide it" in all three). Fields have
+ * disjoint jobs (mechanism / people / call); heavy shared wording between any
+ * pair means one of them is not doing its job. Measured by shared 4-gram ratio.
+ */
+export function validateFieldOverlap(output: AIPreview, prompt: string): string[] {
+  void prompt;
+  const grams = (t: string): Set<string> => {
+    const w = (t ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const g = new Set<string>();
+    for (let i = 0; i + 3 < w.length; i++) g.add(w.slice(i, i + 4).join(' '));
+    return g;
+  };
+  const fields: Array<[string, string]> = [
+    ['tacticalBattle', output.tacticalBattle ?? ''],
+    ['playerSpotlight', output.playerSpotlight ?? ''],
+    ['verdict', output.verdict ?? ''],
+  ];
+  const violations: string[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    for (let j = i + 1; j < fields.length; j++) {
+      const a = grams(fields[i][1]), b = grams(fields[j][1]);
+      if (a.size < 8 || b.size < 8) continue;
+      let shared = 0;
+      for (const g of a) if (b.has(g)) shared++;
+      const ratio = shared / Math.min(a.size, b.size);
+      if (ratio > 0.22) {
+        violations.push(`${fields[i][0]} and ${fields[j][0]} substantially repeat each other (${Math.round(ratio * 100)}% shared phrasing) — each field has a distinct job (mechanism / people / call); rewrite one with different content`);
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * Absence-count binding (2026-09-16 editorial audit): "missing five starters"
+ * with three names listed, "missing nine key players". A claimed count of
+ * absences must be supported by the data block's absence/injury listings.
+ */
+export function validateAbsenceCounts(output: AIPreview, prompt: string): string[] {
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  // Count names in absence/injury lines (comma-separated after the marker).
+  let listed = 0;
+  for (const m of prompt.matchAll(/(?:Absent vs last lineup[^:]*|INJURY REPORT[^\n]*):?\s*\n?([^\n]+)/gi)) {
+    listed += m[1].split(',').filter(x => x.trim().length > 1).length;
+  }
+  const WORD_N: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+  const violations: string[] = [];
+  for (const m of text.matchAll(/\bmissing (\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:key |frontline |first[- ]choice )?(?:players?|starters?|names?)\b/gi)) {
+    const n = WORD_N[m[1].toLowerCase()] ?? parseInt(m[1], 10);
+    if (n > Math.max(listed, 0)) {
+      violations.push(`absence count "${m[0]}" — the data block lists ${listed} absent/injured name(s); never inflate the count`);
+    }
+  }
+  return violations;
+}
+
+/**
  * Cross-sport jargon fence (2026-09-16, journalism-register direction): the
  * written standard is top-tier sports journalism, and a term of art from one
  * sport's analysis is an error in another's. The map lists only UNAMBIGUOUS
@@ -848,6 +931,9 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateNarrativeOpener(v, prompt),
     ...validateFinalsRedundancy(v, prompt),
     ...validateAbsenceNarration(v, prompt),
+    ...validateRegisterCrutches(v, prompt),
+    ...validateFieldOverlap(v, prompt),
+    ...validateAbsenceCounts(v, prompt),
     ...validateCricketRegister(v, prompt),
     ...validateSportRegister(v, prompt),
     ...validatePlayerSideClaims(v, prompt),

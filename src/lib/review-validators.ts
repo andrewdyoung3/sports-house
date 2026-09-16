@@ -23,6 +23,7 @@ import {
   validateFinalsRedundancy,
   validateAbsenceNarration,
   validateSportRegister,
+  validateRegisterCrutches,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -111,6 +112,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateFinalsRedundancy(shaped, dataBlock),
     ...validateAbsenceNarration(shaped, dataBlock),
     ...validateSportRegister(shaped, dataBlock),
+    ...validateRegisterCrutches(shaped, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
     ...validateReviewOpener(review, dataBlock),

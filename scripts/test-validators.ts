@@ -21,6 +21,9 @@ import {
   validateAbsenceNarration,
   validateCricketRegister,
   validateSportRegister,
+  validateRegisterCrutches,
+  validateFieldOverlap,
+  validateAbsenceCounts,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -440,6 +443,35 @@ expect('invented F1 driver in spotlight is rejected',
     v('The death overs and required run rate decide it.', CRK_P).length === 0);
   expect('inert without a recognised SPORT line',
     validateSportRegister(preview({ context: 'A lineout in the powerplay.' }), 'LEAGUE TABLE:').length === 0);
+}
+
+// ─── Editorial-register guards (crutches / field overlap / absence counts) ──────
+
+{
+  console.log('\n── editorial register guards ──');
+  const vc = (context: string) => validateRegisterCrutches(preview({ context }), '');
+  expect('crutch: "The key contest will be" rejected',
+    vc('The key contest will be in the midfield.').length > 0);
+  expect('crutch: "will be crucial" rejected', vc('Ruck speed will be crucial.').length > 0);
+  expect('crutch: "high-stakes" rejected', vc('A high-stakes finals clash.').length > 0);
+  expect('direct comparative case passes',
+    vc('Hawthorn tackle harder and win more of the hitouts. The risk is rust.').length === 0);
+
+  const dup = 'The midfield contest and inside 50 conversion from stoppages will decide the tempo of the game for both sides on the night.';
+  expect('field overlap: near-identical tactical/spotlight rejected',
+    validateFieldOverlap(preview({ tacticalBattle: dup + ' Extra clause here.', playerSpotlight: dup + ' Another clause too.' }), '').length > 0);
+  expect('field overlap: distinct fields pass',
+    validateFieldOverlap(preview({
+      tacticalBattle: 'Hawthorn tackle harder and win the hitouts, so Brisbane must move it before the stoppage forms around the football.',
+      playerSpotlight: 'The ruck role carries the game: whoever gives first use at centre bounce sets the platform their mids feed from all night.',
+      verdict: 'Brisbane by less than two goals, unless a fortnight off leaves the hosts a beat slow early in the contest.',
+    }), '').length === 0);
+
+  const BLOCK = 'SQUAD SUBMISSION FOR THIS GAME:\n  Team (22 players): A B, C D\n  → Absent vs last lineup (likely out): James Tedesco, Daniel Tupou, Connor Watson\n';
+  expect('absence count: "missing five starters" with 3 listed rejected',
+    validateAbsenceCounts(preview({ context: 'The Roosters are missing five starters tonight.' }), BLOCK).length > 0);
+  expect('absence count: accurate "missing three players" passes',
+    validateAbsenceCounts(preview({ context: 'The Roosters are missing three players.' }), BLOCK).length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

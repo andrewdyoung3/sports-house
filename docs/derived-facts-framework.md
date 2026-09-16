@@ -132,3 +132,38 @@ The review builder (`review-prompt.ts`) shares COMP_RULES and the finals machine
 | Mar 2027 (NRL season start) | NRL 2027 finals schedule dates |
 | Aug 2027 (EPL 2027-28) | England's CL spot count (coefficient-dependent), relegation unchanged |
 | F1 2027 | calendar counts + points system |
+
+## Editorial audit vs professional coverage (2026-09-16)
+
+Method: five stored previews (2×AFL prelim, 2×NRL semi, 1×ODI) + two reviews read
+against real coverage of the SAME fixtures (AFL.com mega-preview, NRL finals
+previews, betting/analysis pages). Professional register reference: "Where
+Hawthorn win this is the pressure. They tackle harder than Brisbane and they win
+more of the hitouts. The risk is rust." — short declaratives, comparative claims,
+one named risk, no announcements.
+
+**Defects found (all sports):**
+1. Template incantations — "The key contest will be…", "The decisive factor will
+   be…", "will be crucial/paramount", "high-stakes". Journalism never announces
+   which contest matters; it makes the case directly.
+2. Sentence monotony — near-every sentence a 30–45-word compound with an em-dash
+   or "while/with" clause; no short punches.
+3. Cross-field repetition — tacticalBattle ≈ playerSpotlight ≈ verdict restating
+   one thesis three ways (the AFL prelim said "midfield/inside 50s decide it"
+   three times).
+4. Abstraction over evidence — "superior structure", "greater depth", "maintain
+   composure" where coverage uses comparatives ("tackle harder, win more hitouts").
+5. Angle-blindness — the data often CONTAINS the story the pros led with (rest vs
+   run is in FINALS PATH; the H2H callback "their only loss in eight came against
+   these Lions" is in form+H2H) but the model narrates categories instead.
+6. Inflated enumerations — "missing five starters" with three named; "missing
+   nine key players".
+Per sport: NRL leans on "structure/tempo/ball-in-hand" as filler; AFL chains
+categories (clearances→inside 50s→tempo); cricket recites the venue profile as a
+data readout instead of folding one number into a claim; reviews reach for
+"confirms their status as a serious contender"-class hollow verdicts.
+
+**Framework responses (S1–S5, implemented same day):** disjoint field contracts +
+overlap validator; crutch-phrase validator; per-sport Not/But register exemplars
+(placeholder-only); angle-first instruction with derivable angle types; count-claim
+binding for absence enumerations.
