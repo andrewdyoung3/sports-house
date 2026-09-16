@@ -647,6 +647,8 @@ expect('invented F1 driver in spotlight is rejected',
     validatePlayerNames(preview({ context: 'Brighton are strong at the Amex Stadium.' }), LINEUP_PROMPT).length === 0);
   expect('"Marcus Rashford" still flagged (not in lineup data)',
     validatePlayerNames(preview({ playerSpotlight: 'Marcus Rashford will start.' }), LINEUP_PROMPT).length > 0);
+  expect('the live refusal: form opponent "Manchester City" passes (known team name)',
+    validatePlayerNames(preview({ context: 'The defeat to Manchester City exposed the press.' }), LINEUP_PROMPT).length === 0);
 }
 
 // ─── validateVenueFormClaims — venue reputation needs VENUE RECORD data ─────────

@@ -13,6 +13,7 @@ import OpenAI from 'openai';
 import type { AIPreview, UpcomingGame, PreviewContext } from '@/types';
 import { SYSTEM_PROMPT, buildDataBlock, collectPlayerWhitelist } from '@/lib/preview-prompt';
 import { AI_MODEL } from '@/lib/ai-model';
+import { TEAMS } from '@/lib/teams';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { buildPreviewContext } from '@/lib/preview-context';
 
@@ -990,6 +991,12 @@ const VENUE_HEAD_WORDS = new Set([
   'stadium', 'arena', 'park', 'oval', 'ground', 'field', 'dome', 'gardens',
 ]);
 
+// Every followable team name — a candidate matching one is a TEAM the model may
+// legitimately cite from RECENT FORM / HEAD-TO-HEAD past-opponent data, never a
+// person. Live refusal: "Manchester City" (a form opponent) flagged as a player
+// name because only the two FIXTURE teams were excluded.
+const KNOWN_TEAM_NAMES = new Set(TEAMS.map(t => t.name.toLowerCase()));
+
 export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
 
@@ -1061,6 +1068,7 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
     // person — catches colloquial venue forms the VENUE line can't pre-seed
     // ("Amex Stadium" vs "American Express Community Stadium"; live refusal).
     if (VENUE_HEAD_WORDS.has(words[words.length - 1])) continue;
+    if (KNOWN_TEAM_NAMES.has(lower)) continue;
     if (teamName.toLowerCase().includes(lower) || opponentName.toLowerCase().includes(lower)) continue;
     if (competition.toLowerCase().includes(lower)) continue;
     if (whitelist.has(lower)) continue;
