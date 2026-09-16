@@ -14,7 +14,7 @@ const BUILT_LEAGUE_IDS = new Set([
 ]);
 const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';
-import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ export default function OnboardingPage() {
   const [activeSport, setActiveSport] = useState<SportKey | 'all'>('all');
   const [query, setQuery]             = useState('');
   const [selected, setSelected]       = useState<Team[]>([]);
+  // Whole-league follows — persisted immediately on toggle (device-local v1).
+  const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
   const prefsVersion = usePrefsVersion();
 
   // Pre-populate with any teams already saved so additions don't wipe existing
@@ -36,6 +38,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     const existing = getFollowedTeams();
     if (existing.length > 0) setSelected(existing);
+    setFollowedLeagues(getFollowedLeagues());
   }, [prefsVersion]);
 
   const filteredTeams = useMemo(
@@ -91,6 +94,28 @@ export default function OnboardingPage() {
           })}
         </div>
 
+        {/* Follow-whole-competition banner — shown when a single league tab is active */}
+        {activeSport !== 'all' && (() => {
+          const following = followedLeagues.includes(activeSport);
+          const leagueName = BUILT_LEAGUES.find(l => l.id === activeSport)?.name ?? activeSport.toUpperCase();
+          return (
+            <button
+              onClick={() => setFollowedLeagues(toggleFollowedLeague(activeSport))}
+              className={[
+                'mb-4 flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border',
+                following
+                  ? 'bg-amber-400/15 border-amber-300/40 text-amber-200'
+                  : 'bg-white/5 border-white/12 text-white/60 hover:bg-white/10 hover:text-white',
+              ].join(' ')}
+            >
+              <span className="text-base leading-none">{following ? '★' : '☆'}</span>
+              {following
+                ? <>Following all of {leagueName} — every fixture appears in your schedule</>
+                : <>Follow the whole competition — every {leagueName} fixture in your schedule</>}
+            </button>
+          );
+        })()}
+
         {/* Search */}
         <div className="mb-5 max-w-md">
           <Input
@@ -130,7 +155,11 @@ export default function OnboardingPage() {
           {/* Selected team chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none min-w-0">
             {selected.length === 0 ? (
-              <p className="text-sm text-white/35 whitespace-nowrap">No teams selected yet</p>
+              <p className="text-sm text-white/35 whitespace-nowrap">
+                {followedLeagues.length > 0
+                  ? `Following ${followedLeagues.length} competition${followedLeagues.length !== 1 ? 's' : ''} — add teams too, or finish up`
+                  : 'No teams selected yet'}
+              </p>
             ) : (
               <>
                 <span className="text-sm font-semibold text-white/75 whitespace-nowrap shrink-0">
@@ -164,12 +193,12 @@ export default function OnboardingPage() {
           {/* Confirm button */}
           <Button
             size="md"
-            disabled={selected.length === 0}
+            disabled={selected.length === 0 && followedLeagues.length === 0}
             onClick={handleFinish}
             className="gap-2 shrink-0"
           >
             <Check className="h-4 w-4" />
-            Select Teams
+            {selected.length === 0 && followedLeagues.length > 0 ? 'Done' : 'Select Teams'}
           </Button>
         </div>
       </div>

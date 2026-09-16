@@ -1522,8 +1522,13 @@ export default function SchedulePage() {
                     {games.map(game => {
                       const isHighlighted = hoveredDateKey === dateKey;
                       const isExpanded    = expandedId === game.id;
-                      // In league mode, highlight rows where the user follows either team.
-                      const isFollowed    = isLeagueMode && (
+                      // Highlight rows involving a followed team whenever the list is
+                      // BROADER than the user's own teams: league-browse mode, or the
+                      // "All" view with whole-league follows merged in. (In a pure
+                      // team view every row is followed — highlighting would be noise.)
+                      const inBroadView   = isLeagueMode ||
+                        (activeTeamId === 'all' && followedLeagues.length > 0);
+                      const isFollowed    = inBroadView && (
                         followedTeamIds.has(game.team.id) ||
                         (game.opponentId != null && followedTeamIds.has(game.opponentId))
                       );
