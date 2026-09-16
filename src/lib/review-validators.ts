@@ -25,6 +25,7 @@ import {
   validateSportRegister,
   validateRegisterCrutches,
   validateCricketRegister,
+  validateSeasonPlacement,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -139,6 +140,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateSportRegister(shaped, dataBlock),
     ...validateRegisterCrutches(shaped, dataBlock),
     ...validateCricketRegister(shaped, dataBlock),
+    ...validateSeasonPlacement(shaped, dataBlock),
     ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

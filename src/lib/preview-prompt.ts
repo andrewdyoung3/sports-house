@@ -9,7 +9,7 @@
 import type { PreviewContext, GameResult, AIPreview, WeatherData, LeagueTableRow } from '@/types';
 import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts } from '@/lib/competition-structure';
+import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts, seasonThird } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 import { venueProfileLines } from '@/lib/cricket-venue-facts';
 
@@ -1663,6 +1663,14 @@ export function buildDataBlock(
           `${roundsRemaining} round${roundsRemaining !== 1 ? 's' : ''} left in regular season` +
           (isFinalsPhase ? ' (FINALS SERIES UNDERWAY)' : ` (phase: ${phase})`)
         );
+        if (!isFinalsPhase) {
+          const third = seasonThird(played, totalRounds);
+          lines.push(third === 1
+            ? 'SEASON-PLACEMENT POLICY (first third of the season): make NO claims about end-of-season placement — no title/top-N/European/finals/relegation races, no "within reach of the top …", no "on course for …". State form and current position plainly; the table cannot yet carry season-outcome meaning.'
+            : third === 2
+            ? 'SEASON-PLACEMENT POLICY (second third): placement talk ONLY for genuine outliers the derived facts support — a side streaking clear, consolidating a spot, or falling adrift. Otherwise omit end-of-season framing.'
+            : 'SEASON-PLACEMENT POLICY (final third): finishing-position stakes are appropriate where the derived facts support them.');
+        }
         if (remParts.length > 0) lines.push(`  Games remaining: ${remParts.join(' | ')}`);
       }
     }

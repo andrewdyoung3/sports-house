@@ -24,6 +24,7 @@ import {
   validateRegisterCrutches,
   validateFieldOverlap,
   validateAbsenceCounts,
+  validateSeasonPlacement,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -541,6 +542,27 @@ expect('invented F1 driver in spotlight is rejected',
     validateSportRegister(preview({ context: 'A two-goal difference in a 48-46 thriller.' }), RINT_P).length > 0);
   expect('rugby "2-point margin" passes',
     validateSportRegister(preview({ context: 'A 2-point margin decided by the final kick.' }), RINT_P).length === 0);
+}
+
+// ─── Season-placement policy (thirds) + circular claims ─────────────────────────
+
+{
+  console.log('\n── season placement / circular claims ──');
+  const FIRST = 'SEASON-PLACEMENT POLICY (first third of the season): make NO claims...\nDERIVED FACTS:\n  • LADDER POSITION (authoritative): Arsenal — 1st of 20; Brighton & Hove Albion — 5th of 20.\n';
+  const LAST  = 'SEASON-PLACEMENT POLICY (final third): finishing-position stakes are appropriate...\nDERIVED FACTS:\n  • LADDER POSITION (authoritative): Arsenal — 1st of 20; Brighton & Hove Albion — 5th of 20.\n';
+  const v = (context: string, p: string) => validateSeasonPlacement(preview({ context }), p);
+  expect('first third: "within reach of the top five" rejected',
+    v('Brighton are within reach of the top five after a strong start.', FIRST).length > 0);
+  expect('first third: "title race" rejected', v('Arsenal look set for a title race.', FIRST).length > 0);
+  expect('first third: plain form/position passes',
+    v('Arsenal lead the table after four straight wins; Brighton sit fifth.', FIRST).length === 0);
+  expect('final third: placement talk passes',
+    v('Brighton remain in the hunt for the European places.', LAST).length === 0);
+  expect('circular: 5th "within reach of the top five" rejected in ANY phase',
+    v('Brighton, who are fifth, remain within reach of the top five.', LAST).length > 0);
+  expect('non-circular: 7th within reach of top five passes (final third)',
+    validateSeasonPlacement(preview({ context: 'Fulham, in seventh, are within reach of the top five.' }),
+      LAST.replace('Brighton & Hove Albion — 5th', 'Fulham — 7th')).length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@
 
 import type { LeagueTableRow, MatchStats, GameResult, HeadToHeadMeeting } from '@/types';
 import { getCompetitionProfile } from '@/lib/competition-context';
-import { finalsRoundDisplay, buildFinalsPathFacts, computePhase } from '@/lib/competition-structure';
+import { finalsRoundDisplay, buildFinalsPathFacts, computePhase, seasonThird } from '@/lib/competition-structure';
 import { COMP_RULES } from '@/lib/competition-rules';
 
 // ─── Sport-specific context ───────────────────────────────────────────────────
@@ -313,6 +313,14 @@ export function buildReviewDataBlock(input: ReviewInput): string {
         ? 'MID-SEASON: results shape position but nothing is decided. Momentum and trend language is right; finals/relegation certainty language is wrong.'
         : `RUN HOME: ${left} round${left !== 1 ? 's' : ''} left — cutoff arithmetic genuinely matters now. Weight the result against the gaps in DERIVED FACTS, and no further.`;
     lines.push(`SEASON PHASE: ${phase} (after ${maxPlayed} of ${rules.totalRounds} rounds). ${calibration}`);
+    {
+      const third = seasonThird(maxPlayed, rules.totalRounds);
+      lines.push(third === 1
+        ? 'SEASON-PLACEMENT POLICY (first third of the season): make NO claims about end-of-season placement — no title/top-N/European/finals/relegation races, no "within reach of the top …". State form and current position plainly.'
+        : third === 2
+        ? 'SEASON-PLACEMENT POLICY (second third): placement talk ONLY for genuine outliers the derived facts support — streaking clear, consolidating, or falling adrift.'
+        : 'SEASON-PLACEMENT POLICY (final third): finishing-position stakes are appropriate where the derived facts support them.');
+    }
     lines.push('');
   }
 

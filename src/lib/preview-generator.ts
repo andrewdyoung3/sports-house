@@ -405,6 +405,55 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Season-placement policy guard (user rule 2026-09-16): in the FIRST third of
+ * a season, end-of-season placement claims are banned outright ("Arsenal …
+ * five points clear … within reach of the top five" after FOUR games carries
+ * no season-outcome meaning). Second third is prompt-guided (outliers only —
+ * not machine-judgeable); final third is free. Also catches the CIRCULAR
+ * placement claim in any phase: "within reach of the top N" about a team whose
+ * authoritative position is already INSIDE the top N.
+ */
+const PLACEMENT_ORD: Record<string, number> = { four: 4, five: 5, six: 6, eight: 8, ten: 10 };
+export function validateSeasonPlacement(output: AIPreview, prompt: string): string[] {
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const flag = (v: string) => { if (!seen.has(v)) { seen.add(v); violations.push(v); } };
+
+  // First third: hard ban on placement-race framing.
+  if (/SEASON-PLACEMENT POLICY \(first third/.test(prompt)) {
+    const raceRe = /\bwithin (?:reach|touching distance|striking distance) of (?:the )?top\b|\btop[- ](?:\d+|four|five|six|eight|ten)[- ]?(?:race|push|charge|bid|finish|contention|hopes|chase)\b|\btitle (?:race|charge|contenders?|bid|hopes|credentials)\b|\brelegation (?:battle|scrap|fight|six-pointer|candidates?)\b|\b(?:on (?:course|track)|heading|destined) for (?:the )?(?:title|top|europe|finals|relegation)\b|\bin the (?:hunt|mix|frame) for\b|\b(?:champions league|european) (?:race|places?|spots?|qualification)\b|\bfinals (?:race|contention|push)\b/gi;
+    for (const m of text.matchAll(raceRe)) {
+      flag(`first-third placement claim "${m[0]}" — the table cannot carry end-of-season meaning yet; state form and position plainly (SEASON-PLACEMENT POLICY)`);
+    }
+  }
+
+  // Circular claim (any phase): "within reach of the top N" for a team already ≤ N.
+  const factLine = prompt.match(/LADDER POSITION[^\n]*?:\s*([^\n]+)/);
+  if (factLine) {
+    const positions: Array<{ tokens: string[]; pos: number }> = [];
+    for (const m of factLine[1].matchAll(/([A-Za-zÀ-ÿ][\w .'&-]+?)\s*[—–-]\s*(\d+)(?:st|nd|rd|th)\s+of\s+\d+/g)) {
+      positions.push({ tokens: m[1].trim().toLowerCase().split(/\s+/).filter(w => w.length >= 4), pos: parseInt(m[2], 10) });
+    }
+    const lower = text.toLowerCase();
+    for (const m of lower.matchAll(/within (?:reach|touching distance|striking distance) of (?:the )?top[- ](\d+|four|five|six|eight|ten)/g)) {
+      const n = PLACEMENT_ORD[m[1]] ?? parseInt(m[1], 10);
+      const idx = m.index ?? 0;
+      for (const p of positions) {
+        for (const tok of p.tokens) {
+          const at = lower.lastIndexOf(tok, idx);
+          if (at >= 0 && idx - at < 110 && p.pos <= n) {
+            flag(`circular placement claim "within reach of the top ${m[1]}" — that team is ALREADY ${p.pos <= n ? `inside the top ${n} (position ${p.pos})` : ''}; a position cannot be "within reach" of a band it occupies`);
+          }
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
  * Register-crutch guard (2026-09-16 editorial audit): the template
  * incantations professional coverage never uses — announcing what matters
  * instead of making the case ("The key contest will be…", "will be crucial"),
@@ -947,6 +996,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateFinalsRedundancy(v, prompt),
     ...validateAbsenceNarration(v, prompt),
     ...validateRegisterCrutches(v, prompt),
+    ...validateSeasonPlacement(v, prompt),
     ...validateFieldOverlap(v, prompt),
     ...validateAbsenceCounts(v, prompt),
     ...validateCricketRegister(v, prompt),

@@ -469,6 +469,18 @@ function isDeadRubber(
  * Mirrors the phase logic in preview-prompt.ts (SEASON STATE) so the two blocks
  * are always consistent. Same thresholds: quarter = ⌈total/4⌉, run-home = ⌊total×0.65⌋.
  */
+/**
+ * Season thirds — the END-OF-SEASON-PLACEMENT policy (user rule 2026-09-16):
+ * third 1 = no placement claims at all; third 2 = outliers only; third 3 =
+ * finishing-position talk appropriate. Distinct from computePhase (stakes
+ * labels), which stays on its own quarter/65% boundaries.
+ */
+export function seasonThird(played: number, totalRounds: number): 1 | 2 | 3 {
+  if (played <= Math.ceil(totalRounds / 3)) return 1;
+  if (played <= Math.ceil((2 * totalRounds) / 3)) return 2;
+  return 3;
+}
+
 export function computePhase(played: number, totalRounds: number): string {
   const quarter       = Math.ceil(totalRounds / 4);
   const runHomeCutoff = Math.floor(totalRounds * 0.65);
