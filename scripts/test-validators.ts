@@ -18,6 +18,8 @@ import {
   validateNarrativeOpener,
   validatePlayerSideClaims,
   validateFinalsRedundancy,
+  validateAbsenceNarration,
+  validateCricketRegister,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -375,6 +377,46 @@ expect('invented F1 driver in spotlight is rejected',
       'FINALS PATH:\n  • NEITHER side can be eliminated in this game...\n').length === 0);
   expect('inert outside finals mode',
     validateFinalsRedundancy(preview({ context: 'The loser is eliminated.' }), 'LEAGUE TABLE:').length === 0);
+}
+
+// ─── validateAbsenceNarration — data gaps are never content ─────────────────────
+
+{
+  console.log('\n── validateAbsenceNarration ──');
+  const v = (context: string) => validateAbsenceNarration(preview({ context }), '');
+  expect('incident: "No specific stakes … are available" rejected',
+    v('No specific stakes from the series standings are available, but experience will matter.').length > 0);
+  expect('"no injury news provided" rejected',
+    v('There is no injury news provided for either side.').length > 0);
+  expect('"statistics are unavailable" rejected',
+    v('Detailed statistics are unavailable at this stage of the tour.').length > 0);
+  expect('analytical negative "no injury concerns" passes',
+    v('Australia carry no injury concerns into the series opener.').length === 0);
+  expect('analytical negative "no clear favourite" passes',
+    v('There is no clear favourite in the middle overs battle.').length === 0);
+  expect('normal grounded prose passes',
+    v('Australia arrive with a settled top order and a rested pace attack.').length === 0);
+}
+
+// ─── validateCricketRegister — cricket speaks cricket ───────────────────────────
+
+{
+  console.log('\n── validateCricketRegister ──');
+  const C = 'CRICKET MATCH CONTEXT:\n  Format: ODI\n';
+  const CV = C + 'VENUE PROFILE (derived...):\n  • Average first-innings ODI score at X: 248.\n';
+  const v = (context: string, p = C) => validateCricketRegister(preview({ context }), p);
+  expect('incident: "structural edge … across all phases" rejected',
+    v('Australia holds a structural edge, with greater depth across all phases of the game.').length > 0);
+  expect('footy "gainline" rejected in cricket',
+    v('Zimbabwe must win the gainline battle early.').length > 0);
+  expect('cricket vocabulary passes',
+    v('Australia\'s new-ball spells and spin through the middle overs should squeeze the run rate.').length === 0);
+  expect('unsourced "flat wicket" speculation rejected without VENUE PROFILE',
+    v('The toss matters on what could be a flat wicket favouring batting.').length > 0);
+  expect('pitch talk passes WITH a VENUE PROFILE grounding it',
+    v('On a flat wicket where first innings average 248, the toss winner bats.', CV).length === 0);
+  expect('inert outside cricket',
+    validateCricketRegister(preview({ context: 'A structural edge in midfield.' }), 'LEAGUE TABLE:').length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

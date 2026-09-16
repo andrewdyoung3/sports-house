@@ -405,6 +405,64 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Cricket register guard (2026-09-16): the shared system prompt teaches a
+ * footy-code analytical register ("what it means structurally", "phases") and
+ * the model imported it into cricket ("Australia holds a structural edge …
+ * across all phases of the game" — unknowledgeable padding in cricket terms).
+ * Cricket previews/reviews must speak cricket; the SPORT_CONTEXT ban plus this
+ * check (with feedback retry) enforces it. Also rejects unsourced pitch
+ * speculation when no VENUE PROFILE grounds it.
+ */
+export function validateCricketRegister(output: AIPreview, prompt: string): string[] {
+  if (!/CRICKET MATCH CONTEXT/.test(prompt)) return [];
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const footyRe = /\bstructur(?:al|ally|es?)\b|\b(?:all )?phases? of the game\b|\bacross all phases\b|\bgain[- ]?line\b|\bfield position\b/gi;
+  for (const m of text.matchAll(footyRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`footy-register term "${m[0]}" in a cricket preview — use cricket vocabulary (top order, powerplay, death overs, spin through the middle, new-ball spells) instead`);
+  }
+  if (!/VENUE PROFILE/.test(prompt)) {
+    const pitchRe = /\b(?:flat|green|turning|spinning|slow|two-paced|road of a) (?:wicket|deck|pitch|track)\b|\bwicket (?:favouring|that favours)\b/gi;
+    for (const m of text.matchAll(pitchRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`unsourced pitch characterisation "${m[0]}" — no VENUE PROFILE in the data; do not speculate about conditions`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * Absence-narration guard (2026-09-16 economy rule, second species): the data
+ * block's gaps instruct the MODEL what not to discuss — they are never content.
+ * Incident: a cricket preview opened analysis with "No specific stakes from the
+ * series standings are available" — the reader learns nothing from being told
+ * what we don't know. Catches meta-statements about data availability only;
+ * analytical negatives ("no injury concerns", "no clear favourite") pass.
+ */
+export function validateAbsenceNarration(output: AIPreview, prompt: string): string[] {
+  void prompt; // applies to every preview/review, no marker gate
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const absenceRe = /\bno (?:specific |official |detailed |such )?(?:stakes|series (?:stakes|standings|context)|standings|stats|statistics|data|information|injury (?:news|data|information|updates?)|team news|lineup (?:data|information)|form data)\b[^.!?]{0,50}\b(?:available|provided|known|released|published|to hand)\b|\b(?:data|information|details|statistics|stats)\s+(?:is|are)\s+(?:not\s+|un)available\b|\b(?:no|little)\s+(?:information|data)\s+(?:is|was)\s+(?:yet\s+)?(?:available|provided)\b|\bwithout (?:specific|detailed|official) (?:data|information|stats|statistics)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(absenceRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`narrates missing data ("${m[0].slice(0, 60)}") — a data gap is never content; write only from what is known and do not raise the topic`);
+  }
+  return violations;
+}
+
+/**
  * Finals-redundancy guard (2026-09-16 economy rule): in a knockout final,
  * "the loser is eliminated" is the reader's default assumption — stating it
  * (or a paraphrase: "loser goes home", "lose and the season/campaign ends")
@@ -745,6 +803,8 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateFinalsSeeding(v, prompt),
     ...validateNarrativeOpener(v, prompt),
     ...validateFinalsRedundancy(v, prompt),
+    ...validateAbsenceNarration(v, prompt),
+    ...validateCricketRegister(v, prompt),
     ...validatePlayerSideClaims(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),

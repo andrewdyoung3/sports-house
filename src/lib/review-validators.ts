@@ -21,6 +21,7 @@ import {
   validatePlayerNames,
   validatePlayerSideClaims,
   validateFinalsRedundancy,
+  validateAbsenceNarration,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -107,6 +108,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validatePlayerNames(shaped, dataBlock),
     ...validatePlayerSideClaims(shaped, dataBlock),
     ...validateFinalsRedundancy(shaped, dataBlock),
+    ...validateAbsenceNarration(shaped, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
     ...validateReviewOpener(review, dataBlock),

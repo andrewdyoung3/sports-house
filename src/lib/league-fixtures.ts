@@ -1141,6 +1141,23 @@ async function buildCricketFixtures(
     }
   }
 
+  // Venue inheritance: bridge events often lack a venue until close to play,
+  // but a bilateral series is played at the venues its siblings name — inherit
+  // the series' known venue so the VENUE PROFILE (pitch facts) can ground the
+  // preview instead of leaving the model to speculate about conditions.
+  if (prefix === 'cint') {
+    const byComp = new Map<string, string>();
+    for (const f of out) {
+      if (f.competition && f.venue) byComp.set(f.competition, f.venue);
+    }
+    for (const f of out) {
+      if (!f.venue && f.competition) {
+        const known = byComp.get(f.competition);
+        if (known) f.venue = known;
+      }
+    }
+  }
+
   return out.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
