@@ -2058,6 +2058,13 @@ export function buildDataBlock(
     : 'Generate the match preview using the data provided above. Do not invent statistics or historical records not given. IMPORTANT: no player data was provided — the playerSpotlight field must describe a tactical role or positional unit, never a named individual player.'
   );
 
+  // First-third fixtures: end-of-prompt placement reminder — recency beats
+  // mid-block guidance on the local model (same lesson as the opener rule).
+  if (lines.some(l => l.startsWith('SEASON-PLACEMENT POLICY (first third'))) {
+    lines.push('');
+    lines.push('PLACEMENT RULE (enforced by automated checks): it is the FIRST THIRD of the season — do not mention title, top-N, European/Champions League, finals, or relegation implications ANYWHERE in any field. Form and current position only.');
+  }
+
   // Finals fixtures: end-of-prompt opener reminder — the recap habit ("This is
   // a Preliminary Final…") survives mid-prompt guidance, and automated checks
   // reject it, so the last thing the model reads is the rule.

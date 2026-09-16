@@ -1090,11 +1090,21 @@ export async function callOllamaValidated(
       aiLog(`retry-ok elapsed=${Date.now() - t0}ms`);
       return { preview: stripUnsourcedMediaWatch(retry, prompt), violations: [] };
     }
-    // Style-only residue (the recap-opener habit is sticky): previews are
-    // generated offline by the heartbeat, so a third attempt is cheap. Only for
-    // opener violations — factual violations get no extra bites at the apple.
-    if (retryViols.every(v => v.startsWith('context opens with a rules recap'))) {
-      aiLog(`retry-2 (opener only) elapsed=${Date.now() - t0}ms — third attempt`);
+    // Style-only residue: previews are generated offline by the heartbeat, so a
+    // third attempt is cheap. STYLE violations (register, crutches, placement
+    // framing, openers) get one more bite; FACTUAL violations never do.
+    const STYLE_PREFIXES = [
+      'context opens with a rules recap',
+      'register crutch',
+      'first-third placement claim',
+      'circular placement claim',
+      'footy-register term',
+      'redundant finals consequence',
+      'narrates missing data',
+    ];
+    const isStyle = (v: string) => STYLE_PREFIXES.some(p => v.startsWith(p)) || / vocabulary — outside this sport/.test(v) || /repeat each other/.test(v);
+    if (retryViols.every(isStyle)) {
+      aiLog(`retry-2 (style-only residue) elapsed=${Date.now() - t0}ms — third attempt`);
       const third      = await doGenerate(retryViols);
       const thirdViols = collectViolations(third, prompt);
       if (thirdViols.length === 0) {
