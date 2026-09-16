@@ -9,7 +9,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
-import { FinalsBracket } from '@/components/schedule/finals-bracket';
+import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components/schedule/finals-bracket';
 import { cn, ordinal } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
@@ -1102,14 +1102,17 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   const hasTips = !!context?.tips;
 
   const hasTable = standings && standings.length > 0;
+  const inFinals = isFinalsFixture(team.league, game.date);
 
   return (
     <div
       className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
       style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
     >
-      {/* ── Mobile tab bar — Preview / Table (or Groups for WC) ── */}
-      {hasTable && (
+      {/* ── Mobile tab bar — Preview / Table, or Preview / Bracket in finals.
+             Once a finals series is live the ladder is seeding-only, so its
+             tab slot becomes the bracket (full series, live results). ── */}
+      {(hasTable || inFinals) && (
         <div className="flex lg:hidden gap-0 border-b border-white/8 -mx-4 px-4 mb-4">
           <button
             onClick={() => setActiveTab('preview')}
@@ -1131,24 +1134,34 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
                 : 'text-white/35 border-transparent hover:text-white/60',
             )}
           >
-            Table
+            {inFinals ? 'Bracket' : 'Table'}
           </button>
         </div>
       )}
 
-      {/* ── Table tab (mobile only) ── */}
-      {hasTable && activeTab === 'table' && (
+      {/* ── Second tab (mobile only): bracket in finals, league table otherwise ── */}
+      {activeTab === 'table' && (
         <div className="lg:hidden">
-          <LeagueTableSh
-            league={team.league as import('@/types').SportKey}
-            rows={standings!}
-            followedTeamIds={new Set([team.id])}
-          />
+          {inFinals ? (
+            <FinalsBracketPanel
+              league={team.league}
+              gameDate={game.date}
+              teamName={team.name}
+              opponentName={game.opponent}
+              accent={team.primaryColor}
+            />
+          ) : hasTable ? (
+            <LeagueTableSh
+              league={team.league as import('@/types').SportKey}
+              rows={standings!}
+              followedTeamIds={new Set([team.id])}
+            />
+          ) : null}
         </div>
       )}
 
       {/* ── Main content — single centred column, hidden on mobile when table tab active ── */}
-      <div className={cn(hasTable && activeTab === 'table' ? 'hidden' : '')}>
+      <div className={cn((hasTable || inFinals) && activeTab === 'table' ? 'hidden' : '')}>
       <div className="max-w-[65ch] mx-auto space-y-5">
 
       {/* ── Collapse pill — drives the parent's EXISTING expand toggle (Phase B · Step 5) ── */}
