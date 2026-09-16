@@ -2054,13 +2054,15 @@ export function buildDataBlock(
       lines.push('FROM THE MEDIA (attributed editorial source material — present these as reporting or opinion with attribution, NEVER as your own factual claim; paraphrase, do not fabricate quotes):');
       if (hasNews) {
         lines.push('  RECENT HEADLINES (may be speculative or outdated):');
-        teamNews.slice(0, 3).forEach(n => {
+        teamNews.slice(0, 4).forEach(n => {
           const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
-          lines.push(`    ${teamName}: "${sanitizeFeedText(n.headline)}"${desc}`);
+          const attr = n.source ? ` [${n.source}]` : '';
+          lines.push(`    ${teamName}: "${sanitizeFeedText(n.headline)}"${desc}${attr}`);
         });
-        oppNews.slice(0, 3).forEach(n => {
+        oppNews.slice(0, 4).forEach(n => {
           const desc = n.description ? ` — ${sanitizeFeedText(n.description).slice(0, 100)}` : '';
-          lines.push(`    ${opponentName}: "${sanitizeFeedText(n.headline)}"${desc}`);
+          const attr = n.source ? ` [${n.source}]` : '';
+          lines.push(`    ${opponentName}: "${sanitizeFeedText(n.headline)}"${desc}${attr}`);
         });
       }
       if (hasTips) {

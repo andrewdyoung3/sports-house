@@ -21,9 +21,11 @@ import {
   fetchCricketPreview,
 } from './preview-fetchers';
 import { fetchVenueWeather, OUTDOOR_LEAGUES } from './weather';
+import { fetchRssTeamNews } from './rss-news';
 import type {
   PreviewContext,
   UpcomingGame,
+  NewsHeadline,
 } from '@/types';
 
 // ─── Module-level caches ──────────────────────────────────────────────────────
@@ -191,6 +193,25 @@ export async function buildPreviewContext(
   if (OUTDOOR_LEAGUES.has(league)) {
     ctx.weather = await _cachedWeather(fixture.venue, fixture.date);
   }
+
+  // RSS standfirst layer (ABC/BBC/Sky) — appended after the league fetcher's
+  // team news so outlet editorial reaches FROM THE MEDIA even where ESPN has
+  // nothing. Deduped by headline; fails soft (never breaks generation).
+  try {
+    const rss = await fetchRssTeamNews(league, teamName, fixture.opponent);
+    const merge = (base: NewsHeadline[] | undefined, extra: NewsHeadline[]) => {
+      const out = [...(base ?? [])];
+      const seen = new Set(out.map(n => n.headline.toLowerCase()));
+      for (const n of extra) {
+        if (seen.has(n.headline.toLowerCase())) continue;
+        seen.add(n.headline.toLowerCase());
+        out.push(n);
+      }
+      return out.length > 0 ? out : undefined;
+    };
+    if (rss.team.length > 0)     ctx.teamNews     = merge(ctx.teamNews, rss.team);
+    if (rss.opponent.length > 0) ctx.opponentNews = merge(ctx.opponentNews, rss.opponent);
+  } catch { /* RSS is enrichment only */ }
 
   return ctx;
 }

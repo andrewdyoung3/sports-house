@@ -158,6 +158,8 @@ export interface NewsHeadline {
   headline: string;
   description?: string;
   published?: string;      // ISO string
+  /** Outlet name for attribution (RSS layer: "ABC Sport", "BBC Sport", …). */
+  source?: string;
 }
 
 export interface TipSummary {
