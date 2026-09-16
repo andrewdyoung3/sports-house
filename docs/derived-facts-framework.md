@@ -197,3 +197,29 @@ standings fully suppressed; soccer-style "Score: 0 – 0" line suppressed). A
 cricket review without result/innings data is REFUSED (422) — a placeholder
 0-0 generated an invented "draw" in testing. Roadmap: series-tally facts
 ("leads the series 1-0") mirroring SOO.
+
+### Audit part 3 — out-of-season backtests (2026-09-16)
+
+`scripts/backtest-generate.ts <sru|rint> <espnEventId> <preview|review>` generates
+MOCK previews/reviews for historical fixtures (ESPN summaries are archival: form,
+H2H, lineups AS OF the match; standings-at-time are unavailable → reduced-data
+mode, sufficient for register measurement). Nothing is stored or cached.
+
+Run against the 2026 SRU Grand Final (Hurricanes 60–5 Chiefs) and the Six
+Nations decider (France 48–46 England) vs their real reports:
+- The validator stack FIRED on history: the mock SRU preview was refused
+  (invented "first title since 2016" — true but training-memory; then a
+  "will be crucial" crutch on retry). The system refusing accurate-but-unsourced
+  facts is the design working.
+- NEW defect classes found and fixed: rugby margins written as "two-goal
+  difference" (unit error — banned in the rugby codes + AFL via
+  SPORT_BANNED_PHRASES); crutch cousins "affirms/validates/cements/solidifies
+  their status/dominance" added to the ban.
+- IDENTIFIED, roadmap: position-ROLE claims from memory ("fly-half and
+  captain") — union jersey numbers make roles derivable (10 = fly-half);
+  a jersey→role map would upgrade role claims from unsourced to BIND, like
+  the side-claims work.
+- Backtest limitation: the harness doesn't wire match-stats, so historical
+  reviews lack protagonists (Ruben Love's 25 points) — production SRU/RINT
+  reviews DO fetch stats via the route; extend the harness if deeper backtests
+  are wanted.

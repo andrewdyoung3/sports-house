@@ -415,7 +415,7 @@ export function validateRegisterCrutches(output: AIPreview, prompt: string): str
   void prompt;
   const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
     .filter(Boolean).join('  ');
-  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\bconfirms? (?:their|its|his|her) (?:status|resilience|credentials|readiness)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
+  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\b(?:confirms?|affirms?|validates?|cements?|solidif(?:y|ies)) (?:their|its|his|her) (?:status|resilience|credentials|readiness|dominance)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of text.matchAll(crutchRe)) {
@@ -504,6 +504,12 @@ const SPORT_OF_PROMPT: Array<[RegExp, string]> = [
   [/^SPORT: International Cricket/m, 'cricket_int'],
   [/^SPORT: Big Bash League/m, 'bbl'],
 ];
+/** Phrases WRONG in specific sports (unit errors), even though the words exist there. */
+const SPORT_BANNED_PHRASES: Array<{ re: RegExp; bannedIn: string[]; why: string }> = [
+  { re: /\b(?:one|two|three|four|\d+)[- ]goal (?:difference|margin|lead|win|loss|victory|defeat)\b/gi,
+    bannedIn: ['nrl', 'super_rugby', 'rugby_int', 'afl'],
+    why: 'margins in this sport are POINTS, not goals — a 48–46 rugby game is a 2-point margin' },
+];
 const SPORT_MARKER_TERMS: Array<{ re: RegExp; sports: string[]; family: string }> = [
   { re: /\binside[- ]50s?\b|\bcentre bounces?\b|\bpremiership quarter\b|\bbehinds\b/gi, sports: ['afl'], family: 'AFL' },
   { re: /\blineouts?\b|\bmauls?\b|\bgarryowens?\b/gi, sports: ['super_rugby', 'rugby_int'], family: 'rugby union' },
@@ -519,6 +525,15 @@ export function validateSportRegister(output: AIPreview, prompt: string): string
     .filter(Boolean).join('  ');
   const violations: string[] = [];
   const seen = new Set<string>();
+  for (const { re, bannedIn, why } of SPORT_BANNED_PHRASES) {
+    if (!bannedIn.includes(sport)) continue;
+    for (const m of text.matchAll(re)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`"${m[0]}" — ${why}`);
+    }
+  }
   for (const { re, sports, family } of SPORT_MARKER_TERMS) {
     if (sports.includes(sport)) continue;
     for (const m of text.matchAll(re)) {

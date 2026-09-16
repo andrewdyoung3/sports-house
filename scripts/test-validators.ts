@@ -529,6 +529,20 @@ expect('invented F1 driver in spotlight is rejected',
       return /CUP TIE \(EFL Cup\)/.test(b) && !/LADDER POSITION|SEASON PHASE|CURRENT STANDINGS/.test(b); })());
 }
 
+// ─── Backtest-found guards (crutch cousins, rugby goal-margin) ──────────────────
+
+{
+  console.log('\n── backtest-found guards ──');
+  const vc = (context: string) => validateRegisterCrutches(preview({ context }), '');
+  expect('"affirms their status" rejected', vc('A win that affirms their status as the premier side.').length > 0);
+  expect('"validates their dominance" rejected', vc('It validates their dominance this season.').length > 0);
+  const RINT_P = 'SPORT: International Rugby Union Test match. ...\n';
+  expect('rugby "two-goal difference" rejected (unit error)',
+    validateSportRegister(preview({ context: 'A two-goal difference in a 48-46 thriller.' }), RINT_P).length > 0);
+  expect('rugby "2-point margin" passes',
+    validateSportRegister(preview({ context: 'A 2-point margin decided by the final kick.' }), RINT_P).length === 0);
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed\n`);
