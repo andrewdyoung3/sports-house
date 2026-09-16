@@ -160,3 +160,22 @@ enforce freshness server-side with `from-date`. Never log the request URL
 Second-wave candidates gpt-oss:20b and mistral-small3.2 pulled 2026-09-16;
 same two backtest legs (sru 603213 preview, rint 602516 review) queued as
 the comparator.
+
+### Second-wave A/B result (2026-09-16) — gemma3:27b confirmed
+
+Same two legs (SRU GF preview, Six Nations review), validator suite as scorer:
+
+- **gpt-oss:20b** — the discipline/speed runner-up: BOTH legs clean first
+  attempt, zero retries, ~140s preview / ~71s review (fastest quality-viable
+  candidate tested). Prose is wire-copy flat with occasional clunk ("engine
+  behind 15-metre play", "lock-half combination") — the typist class, but a
+  cleaner and faster typist than the a3b incumbent. **New designated fallback**
+  if gemma ever needs rolling back; no pipeline change.
+- **mistral-small3.2** — ELIMINATED on JSON discipline: unparseable output on
+  both preview attempts (7 min wasted) and JavaScript comments inside the
+  review JSON. Prose fragments read fine; the format contract does not hold.
+
+Final standings: gemma3:27b (pipeline, quality) > gpt-oss:20b (fallback,
+speed+discipline) > thinking-a3b > instruct-a3b > qwen3:32b / mistral-small3.2
+(both eliminated). Disk note: qwen3:32b (20GB) and mistral-small3.2 (15GB) are
+prunable via `ollama rm` if space is wanted.
