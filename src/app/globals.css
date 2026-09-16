@@ -467,6 +467,41 @@
   color: var(--text-3); font-weight: 600; font-size: 13.5px; transition: all .15s;
 }
 .sh-seg:hover { color: var(--text-2); }
+/* Whole-league follow star inside a competition chip. */
+.sh-league-follow {
+  margin-left: 5px; font-size: 12px; line-height: 1; opacity: 0.45;
+  transition: opacity .15s, transform .15s; cursor: pointer;
+}
+.sh-league-follow:hover { opacity: 1; transform: scale(1.15); }
+.sh-league-follow.is-on { opacity: 1; color: #f5c518; }
+
+/* ── Finals bracket (game expand panel, finals fixtures only) ── */
+.sh-bracket { margin-bottom: 18px; }
+.sh-bracket-title {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-3, rgba(255,255,255,0.4)); margin-bottom: 8px;
+}
+.sh-bracket-row {
+  display: flex; align-items: stretch; gap: 4px; overflow-x: auto;
+  padding-bottom: 4px; -webkit-overflow-scrolling: touch;
+}
+.sh-bracket-step { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.sh-bracket-node {
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+  padding: 6px 10px; min-width: 88px; background: rgba(255,255,255,0.03);
+}
+.sh-bracket-node.is-past { opacity: 0.45; }
+.sh-bracket-node.is-live { background: rgba(255,255,255,0.06); }
+.sh-bracket-round {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-2, rgba(255,255,255,0.65)); white-space: nowrap;
+}
+.sh-bracket-match {
+  font-size: 11px; font-weight: 700; color: var(--text, #fff); margin-top: 2px; white-space: nowrap;
+}
+.sh-bracket-slot { font-size: 10px; color: var(--text-3, rgba(255,255,255,0.35)); margin-top: 2px; min-height: 13px; }
+.sh-bracket-arrow { color: rgba(255,255,255,0.3); font-size: 12px; flex-shrink: 0; }
+.sh-bracket-caption { font-size: 11px; color: var(--text-3, rgba(255,255,255,0.5)); margin-top: 6px; line-height: 1.45; }
 .sh-seg.is-active { background: var(--accent); color: var(--on-accent); box-shadow: 0 1px 6px color-mix(in oklab, var(--accent) 35%, transparent); }
 
 /* ── Feed ── */

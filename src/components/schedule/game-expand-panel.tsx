@@ -9,6 +9,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
+import { FinalsBracket } from '@/components/schedule/finals-bracket';
 import { cn, ordinal } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
@@ -1161,6 +1162,17 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
           Collapse
         </button>
       )}
+
+      {/* ── Finals bracket — where this game sits in the series (finals only).
+             Visual replacement for the default-consequence prose the voice
+             rules removed ("winner advances / loser out" lives HERE now). ── */}
+      <FinalsBracket
+        league={team.league}
+        gameDate={game.date}
+        teamName={team.name}
+        opponentName={game.opponent}
+        accent={team.primaryColor}
+      />
 
       {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
       {aiLoading && aiEnabled && (

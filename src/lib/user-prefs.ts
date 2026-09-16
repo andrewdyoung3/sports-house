@@ -41,6 +41,12 @@ const GUEST_BACKUP_KEY = 'sports-house:guest-teams';
 const ACTIVE_IS_ANON_KEY = 'sports-house:active-anon';
 /** Fired whenever the active followed-teams cache changes (identity reload, edit, restore). */
 export const PREFS_UPDATED_EVENT = 'sporthouse:prefs-updated';
+/**
+ * Followed LEAGUES (whole-competition follows). Device-local v1 — deliberately
+ * not in the Supabase row (that schema stores team ids; a leagues column is a
+ * migration for later). Stored as league ids ('afl', 'epl', …).
+ */
+const LEAGUES_KEY = 'sports-house:leagues';
 
 /**
  * React hook: a counter that increments whenever the active followed-teams cache
@@ -127,6 +133,31 @@ export function saveFollowedTeams(teams: Team[]): void {
   if (getActiveIsAnon() !== 'false') writeGuestBackup(teams.map(t => t.id));
   // Durable write to the CURRENT identity's row — fire-and-forget so the UI never waits.
   void pushToSupabase(teams.map(t => t.id));
+}
+
+// ─── Followed leagues (whole-competition follows, device-local v1) ─────────────
+
+export function getFollowedLeagues(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(LEAGUES_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Toggle a whole-league follow and return the updated id list. */
+export function toggleFollowedLeague(leagueId: string): string[] {
+  const current = getFollowedLeagues();
+  const updated = current.includes(leagueId)
+    ? current.filter(id => id !== leagueId)
+    : [...current, leagueId];
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(LEAGUES_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
+  }
+  return updated;
 }
 
 /** Toggle a team and return the updated array. */

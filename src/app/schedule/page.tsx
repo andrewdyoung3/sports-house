@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
@@ -776,9 +776,10 @@ function TeamFilterPill({
 // PILLS, not a select). An ACTIVE chip self-colours by subject: the competition's brand
 // hue (leagueBrandAccent — EPL stays purple) is set inline as `--accent`.
 function LeagueFilterPill({
-  leagueId, active, onClick,
+  leagueId, active, onClick, followed, onToggleFollow,
 }: {
   leagueId: string; active: boolean; onClick: () => void;
+  followed?: boolean; onToggleFollow?: () => void;
 }) {
   const meta = LEAGUE_BADGE[leagueId];
   return (
@@ -789,6 +790,19 @@ function LeagueFilterPill({
     >
       <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
+      {onToggleFollow && (
+        // Whole-league follow toggle — a span (not nested button) so the chip
+        // stays valid HTML; stopPropagation keeps follow separate from browse.
+        <span
+          role="button"
+          aria-label={followed ? 'Unfollow this competition' : 'Follow this competition'}
+          title={followed ? 'Unfollow competition' : 'Follow competition — its fixtures join your schedule'}
+          onClick={e => { e.stopPropagation(); onToggleFollow(); }}
+          className={'sh-league-follow' + (followed ? ' is-on' : '')}
+        >
+          {followed ? '★' : '☆'}
+        </span>
+      )}
     </button>
   );
 }
@@ -895,6 +909,9 @@ export default function SchedulePage() {
   // avoids the one-render lag that caused the flash of the previous league's games.
   const leagueCacheRef    = useRef<Map<string, ScheduleEntry[]>>(new Map());
   const [leagueCacheVersion, setLeagueCacheVersion] = useState(0);
+  // Whole-league follows (device-local; see user-prefs). Their fixtures merge
+  // into the "All" schedule view alongside followed-team games.
+  const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
   const standingsCacheRef     = useRef<Map<string, StandingRow[] | null>>(new Map());
@@ -995,6 +1012,31 @@ export default function SchedulePage() {
   // NOTE: standings resolution (standingsLeague / standings / standingsMap) lives
   // *below* the heroGame memo — it now falls back to the hero game's league when the
   // hero panel is open, which requires heroGame to be defined first.
+
+  // Load whole-league follows (device-local) — re-read on prefs changes.
+  useEffect(() => {
+    setFollowedLeagues(getFollowedLeagues());
+  }, [prefsVersion]);
+
+  // Fetch fixtures for followed leagues into the same cache the browse pills
+  // use, so the "All" view can merge them synchronously.
+  useEffect(() => {
+    for (const lg of followedLeagues) {
+      if (leagueCacheRef.current.has(lg)) continue;
+      fetch(`/api/league-fixtures?league=${lg}`)
+        .then(r => r.ok ? r.json() : [])
+        .then((games: UpcomingGame[]) => {
+          const entries: ScheduleEntry[] = games.map(g => {
+            const team = TEAMS.find(t => t.id === g.teamId) ?? makeFallbackTeam(g, lg);
+            return { ...g, team };
+          });
+          entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          leagueCacheRef.current.set(lg, entries);
+          setLeagueCacheVersion(v => v + 1);
+        })
+        .catch(() => {});
+    }
+  }, [followedLeagues]);
 
   // Fetch league fixtures on first visit; subsequent visits are served from the
   // ref cache synchronously (same render as activeLeagueId changes — no flash).
@@ -1128,7 +1170,25 @@ export default function SchedulePage() {
     // out-of-season message — the followed-teams schedule flashing in was the
     // "wrong games before the right ones" bug.
     const cachedLeagueGames = activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [];
-    const source = isLeagueMode ? cachedLeagueGames : allGames;
+    let source = isLeagueMode ? cachedLeagueGames : allGames;
+    // "All" view: merge followed WHOLE-LEAGUE fixtures in with followed-team
+    // games. Fixture ids are per-game (not per-perspective), so the id-dedupe
+    // keeps the followed team's own entry and drops the league duplicate.
+    if (!isLeagueMode && activeTeamId === 'all' && followedLeagues.length > 0) {
+      const seen = new Set(allGames.map(g => g.id));
+      const extra: ScheduleEntry[] = [];
+      for (const lg of followedLeagues) {
+        for (const g of leagueCacheRef.current.get(lg) ?? []) {
+          if (seen.has(g.id)) continue;
+          seen.add(g.id);
+          extra.push(g);
+        }
+      }
+      if (extra.length > 0) {
+        source = [...allGames, ...extra].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      }
+    }
     return source.filter(g => {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
@@ -1137,7 +1197,7 @@ export default function SchedulePage() {
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -1383,6 +1443,8 @@ export default function SchedulePage() {
                       key={league.id}
                       leagueId={league.id}
                       active={activeLeagueId === league.id}
+                      followed={followedLeagues.includes(league.id)}
+                      onToggleFollow={() => setFollowedLeagues(toggleFollowedLeague(league.id))}
                       onClick={() => {
                         setActiveLeagueId(prev => prev === league.id ? null : league.id);
                         setActiveTeamId('all');
