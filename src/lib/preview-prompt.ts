@@ -11,6 +11,7 @@ import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
+import { venueProfileLines } from '@/lib/cricket-venue-facts';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
 
@@ -1230,6 +1231,13 @@ function buildF1DataBlock(context: PreviewContext): string {
     lines.push('');
   }
 
+  // OpenF1: latest completed session of THIS weekend (timing detail beyond the grid).
+  if (context.f1WeekendSession?.results?.length) {
+    lines.push(`WEEKEND SO FAR — ${context.f1WeekendSession.sessionName} result (live timing; gaps are to the session leader — use verbatim):`);
+    context.f1WeekendSession.results.forEach(r => lines.push(`  ${r}`));
+    lines.push('');
+  }
+
   lines.push(`Generate the race preview using only the data provided above. Do not invent statistics, driver names not mentioned, or historical records not given.`);
   return lines.join('\n');
 }
@@ -1260,6 +1268,13 @@ function buildCricketDataBlock(
       lines.push(`VENUE: ${venueStr} — ${opponentName.toUpperCase()} HOST (${teamName} are touring; conditions favour ${opponentName})`);
     } else {
       lines.push(`VENUE: ${venueStr} (cricket — treat as a neutral tournament/host venue unless the side is the designated host)`);
+    }
+    // Historical pitch profile (precomputed offline from cricsheet archives) —
+    // derived facts, zero API-quota cost; absent when the sample is too small.
+    const profile = venueProfileLines(venueStr, c.format);
+    if (profile) {
+      lines.push('VENUE PROFILE (derived from historical ball-by-ball archives — use these figures verbatim):');
+      profile.forEach(p => lines.push(`  • ${p}`));
     }
   }
   lines.push(`COMPETITION: ${c.seriesName || LEAGUE_LABELS[league] || league}`);
@@ -1848,8 +1863,12 @@ export function buildDataBlock(
     const oppInj    = context.opponentInjuryReport ?? [];
 
     if (teamSquad.length > 0 || oppSquad.length > 0) {
-      // AFL: 26-man squad submission — compare against last lineup to surface ins/outs
-      lines.push('SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
+      // Official named selections for THIS game, compared against the last
+      // lineup to surface ins/outs. AFL: 26-man CFS submission; NRL: the
+      // match-centre team lists (named ~Tuesday, 22 per side incl. reserves).
+      lines.push(league === 'nrl'
+        ? 'SQUAD SUBMISSION FOR THIS GAME (official NRL team list — the named side for this game; first 13 start, 14–17 interchange, the rest are reserves who may be trimmed):'
+        : 'SQUAD SUBMISSION FOR THIS GAME (official 26-man AFL selection):');
       const teamLineupSet = new Set((context.teamLastLineup ?? []).map(n => n.toLowerCase()));
       const oppLineupSet  = new Set((context.opponentLastLineup ?? []).map(n => n.toLowerCase()));
 

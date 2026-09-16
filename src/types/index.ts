@@ -351,6 +351,8 @@ export interface PreviewContext {
     h2hNote?: string;
   };
 
+  /** OpenF1: latest completed session of THIS race weekend (free timing API). */
+  f1WeekendSession?: { sessionName: string; results: string[] };
   f1SessionType?: string;   // "Race", "Qualifying", "Practice 1", etc.
   f1RaceName?: string;      // "Japanese Grand Prix"
   f1CircuitName?: string;   // "Suzuka Circuit"

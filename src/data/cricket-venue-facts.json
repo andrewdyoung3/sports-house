@@ -1,0 +1,583 @@
+{
+ "melbourne cricket ground|odi": {
+  "venue": "Melbourne Cricket Ground",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 265,
+  "chaseWinPct": 80
+ },
+ "sydney cricket ground|odi": {
+  "venue": "Sydney Cricket Ground",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 298,
+  "chaseWinPct": 13
+ },
+ "adelaide oval|odi": {
+  "venue": "Adelaide Oval",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 240,
+  "chaseWinPct": 83
+ },
+ "seddon park|odi": {
+  "venue": "Seddon Park",
+  "format": "odi",
+  "matches": 11,
+  "avgFirstInnings": 238,
+  "chaseWinPct": 64
+ },
+ "bay oval|odi": {
+  "venue": "Bay Oval",
+  "format": "odi",
+  "matches": 9,
+  "avgFirstInnings": 274,
+  "chaseWinPct": 56
+ },
+ "university oval|odi": {
+  "venue": "University Oval",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 258,
+  "chaseWinPct": 40
+ },
+ "hagley oval|odi": {
+  "venue": "Hagley Oval",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 242,
+  "chaseWinPct": 75
+ },
+ "kennington oval|odi": {
+  "venue": "Kennington Oval",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 276,
+  "chaseWinPct": 50
+ },
+ "sophia gardens|odi": {
+  "venue": "Sophia Gardens",
+  "format": "odi",
+  "matches": 7,
+  "avgFirstInnings": 262,
+  "chaseWinPct": 71
+ },
+ "trent bridge|odi": {
+  "venue": "Trent Bridge",
+  "format": "odi",
+  "matches": 9,
+  "avgFirstInnings": 318,
+  "chaseWinPct": 44
+ },
+ "riverside ground|odi": {
+  "venue": "Riverside Ground",
+  "format": "odi",
+  "matches": 7,
+  "avgFirstInnings": 283,
+  "chaseWinPct": 57
+ },
+ "old trafford|odi": {
+  "venue": "Old Trafford",
+  "format": "odi",
+  "matches": 11,
+  "avgFirstInnings": 268,
+  "chaseWinPct": 27
+ },
+ "lord's|odi": {
+  "venue": "Lord's",
+  "format": "odi",
+  "matches": 12,
+  "avgFirstInnings": 296,
+  "chaseWinPct": 0
+ },
+ "headingley|odi": {
+  "venue": "Headingley",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 251,
+  "chaseWinPct": 50
+ },
+ "supersport park|odi": {
+  "venue": "SuperSport Park",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 264,
+  "chaseWinPct": 56
+ },
+ "newlands|odi": {
+  "venue": "Newlands",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 274,
+  "chaseWinPct": 50
+ },
+ "the wanderers stadium|odi": {
+  "venue": "The Wanderers Stadium",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 258,
+  "chaseWinPct": 60
+ },
+ "shere bangla national stadium|odi": {
+  "venue": "Shere Bangla National Stadium",
+  "format": "odi",
+  "matches": 31,
+  "avgFirstInnings": 227,
+  "chaseWinPct": 47
+ },
+ "icc academy|odi": {
+  "venue": "ICC Academy",
+  "format": "odi",
+  "matches": 19,
+  "avgFirstInnings": 238,
+  "chaseWinPct": 58
+ },
+ "harare sports club|odi": {
+  "venue": "Harare Sports Club",
+  "format": "odi",
+  "matches": 45,
+  "avgFirstInnings": 248,
+  "chaseWinPct": 56
+ },
+ "bulawayo athletic club|odi": {
+  "venue": "Bulawayo Athletic Club",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 258,
+  "chaseWinPct": 50
+ },
+ "queens sports club|odi": {
+  "venue": "Queens Sports Club",
+  "format": "odi",
+  "matches": 21,
+  "avgFirstInnings": 253,
+  "chaseWinPct": 35
+ },
+ "pallekele international cricket stadium|odi": {
+  "venue": "Pallekele International Cricket Stadium",
+  "format": "odi",
+  "matches": 17,
+  "avgFirstInnings": 246,
+  "chaseWinPct": 59
+ },
+ "r.premadasa stadium|odi": {
+  "venue": "R.Premadasa Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 302,
+  "chaseWinPct": 20
+ },
+ "mangaung oval|odi": {
+  "venue": "Mangaung Oval",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 287,
+  "chaseWinPct": 50
+ },
+ "boland park|odi": {
+  "venue": "Boland Park",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 273,
+  "chaseWinPct": 50
+ },
+ "the rose bowl|odi": {
+  "venue": "The Rose Bowl",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 271,
+  "chaseWinPct": 63
+ },
+ "edgbaston|odi": {
+  "venue": "Edgbaston",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 293,
+  "chaseWinPct": 63
+ },
+ "providence stadium|odi": {
+  "venue": "Providence Stadium",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 191,
+  "chaseWinPct": 75
+ },
+ "county ground|odi": {
+  "venue": "County Ground",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 301,
+  "chaseWinPct": 75
+ },
+ "dubai international cricket stadium|odi": {
+  "venue": "Dubai International Cricket Stadium",
+  "format": "odi",
+  "matches": 41,
+  "avgFirstInnings": 220,
+  "chaseWinPct": 57
+ },
+ "sheikh zayed stadium|odi": {
+  "venue": "Sheikh Zayed Stadium",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 246,
+  "chaseWinPct": 33
+ },
+ "sylhet international cricket stadium|odi": {
+  "venue": "Sylhet International Cricket Stadium",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 267,
+  "chaseWinPct": 33
+ },
+ "zahur ahmed chowdhury stadium|odi": {
+  "venue": "Zahur Ahmed Chowdhury Stadium",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 283,
+  "chaseWinPct": 63
+ },
+ "mclean park|odi": {
+  "venue": "McLean Park",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 216,
+  "chaseWinPct": 80
+ },
+ "maharashtra cricket association stadium|odi": {
+  "venue": "Maharashtra Cricket Association Stadium",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 315,
+  "chaseWinPct": 38
+ },
+ "kensington oval|odi": {
+  "venue": "Kensington Oval",
+  "format": "odi",
+  "matches": 16,
+  "avgFirstInnings": 224,
+  "chaseWinPct": 81
+ },
+ "the village|odi": {
+  "venue": "The Village",
+  "format": "odi",
+  "matches": 9,
+  "avgFirstInnings": 271,
+  "chaseWinPct": 67
+ },
+ "rajiv gandhi international stadium|odi": {
+  "venue": "Rajiv Gandhi International Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 307,
+  "chaseWinPct": 40
+ },
+ "arun jaitley stadium|odi": {
+  "venue": "Arun Jaitley Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 295,
+  "chaseWinPct": 40
+ },
+ "castle avenue|odi": {
+  "venue": "Castle Avenue",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 324,
+  "chaseWinPct": 40
+ },
+ "sharjah cricket stadium|odi": {
+  "venue": "Sharjah Cricket Stadium",
+  "format": "odi",
+  "matches": 11,
+  "avgFirstInnings": 249,
+  "chaseWinPct": 73
+ },
+ "wanderers cricket ground|odi": {
+  "venue": "Wanderers Cricket Ground",
+  "format": "odi",
+  "matches": 21,
+  "avgFirstInnings": 212,
+  "chaseWinPct": 40
+ },
+ "ma chidambaram stadium|odi": {
+  "venue": "MA Chidambaram Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 254,
+  "chaseWinPct": 80
+ },
+ "wankhede stadium|odi": {
+  "venue": "Wankhede Stadium",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 330,
+  "chaseWinPct": 33
+ },
+ "queen's park oval|odi": {
+  "venue": "Queen's Park Oval",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 273,
+  "chaseWinPct": 40
+ },
+ "mannofield park|odi": {
+  "venue": "Mannofield Park",
+  "format": "odi",
+  "matches": 11,
+  "avgFirstInnings": 235,
+  "chaseWinPct": 64
+ },
+ "national stadium|odi": {
+  "venue": "National Stadium",
+  "format": "odi",
+  "matches": 12,
+  "avgFirstInnings": 284,
+  "chaseWinPct": 50
+ },
+ "central broward regional park stadium turf ground|odi": {
+  "venue": "Central Broward Regional Park Stadium Turf Ground",
+  "format": "odi",
+  "matches": 11,
+  "avgFirstInnings": 242,
+  "chaseWinPct": 30
+ },
+ "al amerat cricket ground oman cricket (ministry turf 1)|odi": {
+  "venue": "Al Amerat Cricket Ground Oman Cricket (Ministry Turf 1)",
+  "format": "odi",
+  "matches": 27,
+  "avgFirstInnings": 188,
+  "chaseWinPct": 62
+ },
+ "tribhuvan university international cricket ground|odi": {
+  "venue": "Tribhuvan University International Cricket Ground",
+  "format": "odi",
+  "matches": 46,
+  "avgFirstInnings": 226,
+  "chaseWinPct": 54
+ },
+ "rawalpindi cricket stadium|odi": {
+  "venue": "Rawalpindi Cricket Stadium",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 262,
+  "chaseWinPct": 78
+ },
+ "sportpark maarschalkerweerd|odi": {
+  "venue": "Sportpark Maarschalkerweerd",
+  "format": "odi",
+  "matches": 12,
+  "avgFirstInnings": 204,
+  "chaseWinPct": 58
+ },
+ "sir vivian richards stadium|odi": {
+  "venue": "Sir Vivian Richards Stadium",
+  "format": "odi",
+  "matches": 7,
+  "avgFirstInnings": 263,
+  "chaseWinPct": 100
+ },
+ "hazelaarweg|odi": {
+  "venue": "Hazelaarweg",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 218,
+  "chaseWinPct": 25
+ },
+ "r premadasa stadium|odi": {
+  "venue": "R Premadasa Stadium",
+  "format": "odi",
+  "matches": 28,
+  "avgFirstInnings": 242,
+  "chaseWinPct": 38
+ },
+ "al amerat cricket ground oman cricket (ministry turf 2)|odi": {
+  "venue": "Al Amerat Cricket Ground Oman Cricket (Ministry Turf 2)",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 230,
+  "chaseWinPct": 40
+ },
+ "narendra modi stadium|odi": {
+  "venue": "Narendra Modi Stadium",
+  "format": "odi",
+  "matches": 8,
+  "avgFirstInnings": 254,
+  "chaseWinPct": 50
+ },
+ "vra ground|odi": {
+  "venue": "VRA Ground",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 281,
+  "chaseWinPct": 50
+ },
+ "gaddafi stadium|odi": {
+  "venue": "Gaddafi Stadium",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 280,
+  "chaseWinPct": 60
+ },
+ "moosa cricket stadium|odi": {
+  "venue": "Moosa Cricket Stadium",
+  "format": "odi",
+  "matches": 10,
+  "avgFirstInnings": 228,
+  "chaseWinPct": 56
+ },
+ "bharat ratna shri atal bihari vajpayee ekana cricket stadium|odi": {
+  "venue": "Bharat Ratna Shri Atal Bihari Vajpayee Ekana Cricket Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 252,
+  "chaseWinPct": 40
+ },
+ "amini park|odi": {
+  "venue": "Amini Park",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 224,
+  "chaseWinPct": 0
+ },
+ "united cricket club ground|odi": {
+  "venue": "United Cricket Club Ground",
+  "format": "odi",
+  "matches": 16,
+  "avgFirstInnings": 230,
+  "chaseWinPct": 60
+ },
+ "eden gardens|odi": {
+  "venue": "Eden Gardens",
+  "format": "odi",
+  "matches": 6,
+  "avgFirstInnings": 254,
+  "chaseWinPct": 50
+ },
+ "takashinga sports club|odi": {
+  "venue": "Takashinga Sports Club",
+  "format": "odi",
+  "matches": 9,
+  "avgFirstInnings": 245,
+  "chaseWinPct": 75
+ },
+ "m chinnaswamy stadium|odi": {
+  "venue": "M Chinnaswamy Stadium",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 301,
+  "chaseWinPct": 60
+ },
+ "forthill|odi": {
+  "venue": "Forthill",
+  "format": "odi",
+  "matches": 16,
+  "avgFirstInnings": 255,
+  "chaseWinPct": 47
+ },
+ "maple leaf north-west ground|odi": {
+  "venue": "Maple Leaf North-West Ground",
+  "format": "odi",
+  "matches": 13,
+  "avgFirstInnings": 221,
+  "chaseWinPct": 62
+ },
+ "namibia cricket ground|odi": {
+  "venue": "Namibia Cricket Ground",
+  "format": "odi",
+  "matches": 5,
+  "avgFirstInnings": 239,
+  "chaseWinPct": 60
+ },
+ "sydney showground stadium|t20": {
+  "venue": "Sydney Showground Stadium",
+  "format": "t20",
+  "matches": 32,
+  "avgFirstInnings": 156,
+  "chaseWinPct": 39
+ },
+ "melbourne cricket ground|t20": {
+  "venue": "Melbourne Cricket Ground",
+  "format": "t20",
+  "matches": 51,
+  "avgFirstInnings": 159,
+  "chaseWinPct": 57
+ },
+ "bellerive oval|t20": {
+  "venue": "Bellerive Oval",
+  "format": "t20",
+  "matches": 49,
+  "avgFirstInnings": 168,
+  "chaseWinPct": 49
+ },
+ "brisbane cricket ground|t20": {
+  "venue": "Brisbane Cricket Ground",
+  "format": "t20",
+  "matches": 43,
+  "avgFirstInnings": 168,
+  "chaseWinPct": 52
+ },
+ "adelaide oval|t20": {
+  "venue": "Adelaide Oval",
+  "format": "t20",
+  "matches": 57,
+  "avgFirstInnings": 169,
+  "chaseWinPct": 47
+ },
+ "docklands stadium|t20": {
+  "venue": "Docklands Stadium",
+  "format": "t20",
+  "matches": 46,
+  "avgFirstInnings": 163,
+  "chaseWinPct": 54
+ },
+ "sydney cricket ground|t20": {
+  "venue": "Sydney Cricket Ground",
+  "format": "t20",
+  "matches": 42,
+  "avgFirstInnings": 159,
+  "chaseWinPct": 54
+ },
+ "manuka oval|t20": {
+  "venue": "Manuka Oval",
+  "format": "t20",
+  "matches": 28,
+  "avgFirstInnings": 167,
+  "chaseWinPct": 59
+ },
+ "perth stadium|t20": {
+  "venue": "Perth Stadium",
+  "format": "t20",
+  "matches": 48,
+  "avgFirstInnings": 161,
+  "chaseWinPct": 54
+ },
+ "carrara oval|t20": {
+  "venue": "Carrara Oval",
+  "format": "t20",
+  "matches": 18,
+  "avgFirstInnings": 158,
+  "chaseWinPct": 50
+ },
+ "aurora stadium|t20": {
+  "venue": "Aurora Stadium",
+  "format": "t20",
+  "matches": 7,
+  "avgFirstInnings": 140,
+  "chaseWinPct": 67
+ },
+ "international sports stadium|t20": {
+  "venue": "International Sports Stadium",
+  "format": "t20",
+  "matches": 5,
+  "avgFirstInnings": 157,
+  "chaseWinPct": 80
+ },
+ "gmhba stadium|t20": {
+  "venue": "GMHBA Stadium",
+  "format": "t20",
+  "matches": 8,
+  "avgFirstInnings": 146,
+  "chaseWinPct": 63
+ }
+}

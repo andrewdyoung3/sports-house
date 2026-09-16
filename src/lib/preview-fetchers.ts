@@ -414,9 +414,10 @@ export async function fetchNRLPreview(
     fetchESPNMatchExtras('rugby-league/3', eventId, teamESPNName, oppESPNName, 13),
     teamESPNId ? fetchESPNInjuries('rugby-league/3', teamESPNId)   : Promise.resolve([]),
     oppESPNId  ? fetchESPNInjuries('rugby-league/3', oppESPNId)    : Promise.resolve([]),
-    fetchNRLDrawOdds(teamESPNName, oppESPNName),
+    fetchNRLMatchCentre(teamESPNName, oppESPNName),
   ]);
-  const nrlMarketOdds = nrlOddsRes.status === 'fulfilled' ? nrlOddsRes.value : undefined;
+  const nrlMC = nrlOddsRes.status === 'fulfilled' ? nrlOddsRes.value : {};
+  const nrlMarketOdds = nrlMC.marketOdds;
 
   let teamStanding: TeamStanding | undefined;
   let opponentStanding: TeamStanding | undefined;
@@ -477,6 +478,10 @@ export async function fetchNRLPreview(
     teamInjuryReport:      teamInjuries.length   > 0 ? teamInjuries   : undefined,
     opponentInjuryReport:  oppInjuries.length    > 0 ? oppInjuries    : undefined,
     marketOdds:            nrlMarketOdds,
+    teamSquad:             nrlMC.teamSquad,
+    opponentSquad:         nrlMC.opponentSquad,
+    teamSquadPositions:    nrlMC.teamSquadPositions,
+    opponentSquadPositions: nrlMC.opponentSquadPositions,
   };
 }
 
@@ -1781,6 +1786,7 @@ export async function fetchF1Preview(
   circuitName: string,
   sessionType: string,
   roundNumber?: number,
+  fixtureDateISO?: string,
 ): Promise<PreviewContext> {
   // ── Fan out: driver standings + constructor standings + recent results + qualifying ──
   const qualifyingUrl = roundNumber
@@ -1944,6 +1950,7 @@ export async function fetchF1Preview(
     f1FollowedName,
     f1FollowedConstructorName,
     f1SessionType:  sessionType,
+    f1WeekendSession: await fetchOpenF1Weekend(fixtureDateISO, sessionType),
     f1RaceName:     raceName || undefined,
     f1CircuitName:  circuitName || undefined,
     f1RoundNumber:  roundNumber,
@@ -2272,17 +2279,26 @@ export async function buildPavNotes(squad: string[] | undefined): Promise<string
 // feed does — decimal odds per side on the current round, confirmed live
 // 2026-09-16 (Roosters 1.44 v Sharks 2.81). Unofficial but structured; any
 // failure degrades to no MARKET line.
-export async function fetchNRLDrawOdds(
+export interface NRLMatchCentre {
+  marketOdds?: PreviewContext['marketOdds'];
+  /** Official named team lists for THIS game (nrl.com match centre; named ~Tuesday). */
+  teamSquad?: string[];
+  opponentSquad?: string[];
+  teamSquadPositions?: Record<string, string>;
+  opponentSquadPositions?: Record<string, string>;
+}
+
+export async function fetchNRLMatchCentre(
   teamName: string,
   opponentName: string,
-): Promise<PreviewContext['marketOdds'] | undefined> {
+): Promise<NRLMatchCentre> {
   try {
     const season = new Date().getFullYear();
     const res = await fetchTimeout(
       `https://www.nrl.com/draw/data?competition=111&season=${season}`,
       { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }, next: { revalidate: 900 }, timeoutMs: 8000 },
     );
-    if (!res.ok) return undefined;
+    if (!res.ok) return {};
     const data = await res.json() as { fixtures?: any[] };
     const nm = (s: string) => (s ?? '').toLowerCase();
     const fx = (data.fixtures ?? []).find((f: any) => {
@@ -2291,15 +2307,93 @@ export async function fetchNRLDrawOdds(
       return (t.includes(h) || h.includes(t)) && (o.includes(a) || a.includes(o))
           || (t.includes(a) || a.includes(t)) && (o.includes(h) || h.includes(o));
     });
-    if (!fx) return undefined;
+    if (!fx) return {};
+
+    const out: NRLMatchCentre = {};
     const home = Number(fx.homeTeam?.odds), away = Number(fx.awayTeam?.odds);
-    if (!home || !away || Number.isNaN(home) || Number.isNaN(away)) return undefined;
-    return {
-      provider:     'NRL.com market',
-      homeDecimal:  home,
-      awayDecimal:  away,
-      homeFavorite: home < away,
-    };
+    if (home && away && !Number.isNaN(home) && !Number.isNaN(away)) {
+      out.marketOdds = { provider: 'NRL.com market', homeDecimal: home, awayDecimal: away, homeFavorite: home < away };
+    }
+
+    // Named team lists (players[] appears once teams are named, ~Tuesday).
+    const mcUrl = fx.matchCentreUrl as string | undefined;
+    if (mcUrl) {
+      try {
+        const mcRes = await fetchTimeout(
+          `https://www.nrl.com${mcUrl.replace(/\/$/, '')}/data`,
+          { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }, next: { revalidate: 1800 }, timeoutMs: 8000 },
+        );
+        if (mcRes.ok) {
+          const mc = await mcRes.json() as any;
+          const sideOf = (side: any) => {
+            const players: any[] = side?.players ?? [];
+            const names: string[] = [];
+            const pos: Record<string, string> = {};
+            for (const p of players) {
+              const name = `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim();
+              if (!name) continue;
+              names.push(name);
+              if (p.position) pos[name.toLowerCase()] = String(p.position);
+            }
+            return { names, pos };
+          };
+          const homeIsTeam = nm(teamName).includes(nm(mc.homeTeam?.nickName ?? '')) || nm(mc.homeTeam?.nickName ?? '').includes(nm(teamName));
+          const mine   = sideOf(homeIsTeam ? mc.homeTeam : mc.awayTeam);
+          const theirs = sideOf(homeIsTeam ? mc.awayTeam : mc.homeTeam);
+          if (mine.names.length   > 0) { out.teamSquad = mine.names;       out.teamSquadPositions = mine.pos; }
+          if (theirs.names.length > 0) { out.opponentSquad = theirs.names; out.opponentSquadPositions = theirs.pos; }
+        }
+      } catch { /* named teams unavailable — odds may still be set */ }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+
+// ─── OpenF1 — weekend session results (free, keyless; probed live 2026-09-16) ─
+// Jolpi covers standings + quali GRID; OpenF1 adds the timing detail of the
+// CURRENT meeting's completed sessions (practice/sprint/quali with gaps) so a
+// Race preview can say "out-qualified his rival by 0.14s" from data.
+export async function fetchOpenF1Weekend(
+  fixtureDateISO: string | undefined,
+  ownSessionType: string | undefined,
+): Promise<PreviewContext['f1WeekendSession'] | undefined> {
+  if (!fixtureDateISO) return undefined;
+  try {
+    const year = fixtureDateISO.slice(0, 4);
+    const res = await fetchTimeout(`https://api.openf1.org/v1/sessions?year=${year}`, { next: { revalidate: 1800 }, timeoutMs: 8000 });
+    if (!res.ok) return undefined;
+    const sessions = await res.json() as any[];
+    const fx = new Date(fixtureDateISO).getTime();
+    const nowIso = new Date().toISOString();
+    const sameMeeting = sessions.filter(s =>
+      Math.abs(new Date(s.date_start ?? 0).getTime() - fx) < 5 * 86400_000 &&
+      (s.date_end ?? '') < nowIso &&
+      (s.session_name ?? '') !== (ownSessionType ?? ''),
+    );
+    if (sameMeeting.length === 0) return undefined;
+    const latest = sameMeeting.sort((a, b) => String(a.date_end).localeCompare(String(b.date_end))).pop()!;
+
+    const [resultRes, driversRes] = await Promise.all([
+      fetchTimeout(`https://api.openf1.org/v1/session_result?session_key=${latest.session_key}`, { next: { revalidate: 3600 }, timeoutMs: 8000 }),
+      fetchTimeout(`https://api.openf1.org/v1/drivers?session_key=${latest.session_key}`, { next: { revalidate: 3600 }, timeoutMs: 8000 }),
+    ]);
+    if (!resultRes.ok || !driversRes.ok) return undefined;
+    const rows = (await resultRes.json() as any[]).filter(r => r.position).sort((a, b) => a.position - b.position).slice(0, 6);
+    const drivers = await driversRes.json() as any[];
+    const byNum = new Map(drivers.map(d => [d.driver_number, d]));
+    if (rows.length === 0) return undefined;
+
+    const results = rows.map(r => {
+      const d = byNum.get(r.driver_number);
+      const name = d?.full_name ? String(d.full_name).replace(/\b([A-Z]{2,})\b/g, w => w[0] + w.slice(1).toLowerCase()) : `#${r.driver_number}`;
+      const gapRaw = Array.isArray(r.gap_to_leader) ? r.gap_to_leader[r.gap_to_leader.length - 1] : r.gap_to_leader;
+      const gap = typeof gapRaw === 'number' && gapRaw > 0 ? ` (+${gapRaw.toFixed(3)}s)` : '';
+      return `P${r.position} ${name}${d?.team_name ? ` [${d.team_name}]` : ''}${gap}`;
+    });
+    return { sessionName: String(latest.session_name ?? 'Session'), results };
   } catch {
     return undefined;
   }

@@ -82,6 +82,21 @@ stats, runtime token), Open-Meteo weather.
 | The Odds API (keyed-free, ~500 req/mo) | AFL/NRL market lines where no free feed exists | Optional; nrl.com odds may make it unnecessary for NRL |
 | ESPN news API descriptions | Already used; deeper article text exists per news id if editorial grounding ever needs more than headlines | Low priority |
 
+## Build status (2026-09-16, same day)
+
+All five shortlist items are WIRED (branch fix/claim-grounding):
+1. ✅ nrl.com match-centre — market odds (decimal, current round) AND official named
+   team lists with positions (22/side, named ~Tuesday) → SQUAD block + ins/outs diff.
+2. ✅ cricsheet venue facts — `npm run venuefacts` precomputes 83 venue/format
+   profiles (923 ODIs + 455 BBL games since 2018) into src/data/; VENUE PROFILE
+   lines render in the cricket block (avg first-innings score, chase win %).
+3. ✅ Squiggle PAV (+ model names on MODEL TIP) — attributed PLAYER RATINGS block.
+4. ✅ NRL team-list outs — via the same match-centre lists diffed against last lineup.
+5. ✅ OpenF1 — WEEKEND SO FAR block: latest completed session of the meeting with
+   gaps (e.g. Madrid quali: Norris pole, Antonelli +0.011s).
+Also: cricket previews RESTORED (route/generator unification + series search
+discovery + ESPN bridge — see framework doc). Venue gazetteer remains roadmap.
+
 ## Priority shortlist (accuracy value ÷ effort)
 
 1. **nrl.com match-centre odds** — fills a declared-unfillable gap, free (✓June verified structure).

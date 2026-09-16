@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "next lint",
-    "clear-cache": "rimraf .next/cache/fetch-cache && echo \"Server cache cleared. Also open DevTools → Application → Local Storage and delete all ai-preview-* keys to clear browser cache.\"",
+    "clear-cache": "rimraf .next/cache/fetch-cache && echo \"Server cache cleared. Also open DevTools \u2192 Application \u2192 Local Storage and delete all ai-preview-* keys to clear browser cache.\"",
     "regen": "tsx scripts/regen-preview.ts",
     "warm": "tsx scripts/generate-previews.ts",
     "warm:force": "tsx scripts/generate-previews.ts --force",
@@ -21,7 +21,8 @@
     "test:lifecycle": "tsx scripts/test-preview-lifecycle.ts",
     "test:espn": "tsx scripts/test-espn-standings.ts",
     "test:team-coverage": "tsx scripts/check-team-coverage.ts",
-    "test:integration": "tsx scripts/verify-sandbox-faithful.ts"
+    "test:integration": "tsx scripts/verify-sandbox-faithful.ts",
+    "venuefacts": "tsx scripts/build-cricket-venue-facts.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

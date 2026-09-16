@@ -128,7 +128,7 @@ async function fetchRichContext(
       const round = parseInt(fixture.id.split('-')[1] ?? '', 10) || undefined;
       return fetchF1Preview(
         fixture.teamId, fixture.opponent, fixture.venue ?? '',
-        fixture.competition ?? 'Race', round,
+        fixture.competition ?? 'Race', round, fixture.date,
       );
     }
     default: return {};
