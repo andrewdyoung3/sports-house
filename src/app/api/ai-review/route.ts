@@ -82,7 +82,11 @@ async function fetchMatchStats(
 // Pinned to instruct-2507 — reviews are speed-critical (5-10 min post-match target).
 // ai-preview uses AI_MODEL (configurable) for quality testing; reviews stay on the
 // fast non-thinking model regardless of what ai-preview is pointed at.
-const REVIEW_MODEL = 'qwen3:30b-a3b-instruct-2507-q4_K_M';
+// gemma3:27b won the 2026-09-16 four-way local A/B (see framework doc): clean
+// validator passes, reads lineups like an analyst. ~60-90s/gen — acceptable
+// because poll-reviews prewarms recent games; single model across previews +
+// reviews avoids 17GB↔18GB model-swap thrash on the 32GB box.
+const REVIEW_MODEL = 'gemma3:27b';
 
 const ollama = new OpenAI({
   baseURL: process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1',

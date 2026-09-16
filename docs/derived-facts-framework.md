@@ -223,3 +223,20 @@ Nations decider (France 48–46 England) vs their real reports:
   reviews lack protagonists (Ruben Love's 25 points) — production SRU/RINT
   reviews DO fetch stats via the route; extend the harness if deeper backtests
   are wanted.
+
+### Local model A/B result (2026-09-16) — pipeline switched to gemma3:27b
+
+Four-way on identical backtests (SRU GF preview, RINT review), validator suite
+as objective scorer: **gemma3:27b wins decisively** — review passed clean first
+attempt; preview prose built around the ACTUAL lineup data (named prop matchup,
+halfback tempo, back-row jackal threat) where the incumbent produced category
+chains. qwen3:32b eliminated (failed 3 attempts inventing coaches/stats/years;
+~10min/gen from memory thrash at 20GB). thinking-a3b: tighter than instruct but
+~200s and no data-exploitation. Live AFL smoke confirmed the register jump
+("Hawthorn's MCG fortress looms large as Brisbane's double chance reaches its
+limit…"). Cost: ~60–90s/generation vs 15–30s — fine for the offline heartbeat;
+review latency covered by the poll-reviews prewarm. Both AI_MODEL and
+REVIEW_MODEL now gemma3:27b; rollback is a one-line revert to
+qwen3:30b-a3b-instruct-2507-q4_K_M (kept installed). Watch item: gemma wrote
+"a single converted penalty" (union unit slip) — consider a rugby entry in the
+unit-error phrase map if it recurs.
