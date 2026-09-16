@@ -10,7 +10,8 @@
  * measurement, which is the point. Nothing is stored or cached.
  *
  * Usage:
- *   npx tsx scripts/backtest-generate.ts <sru|rint> <espnEventId> <preview|review>
+ *   npx tsx scripts/backtest-generate.ts <sru|rint> <espnEventId> <preview|review> [modelName]
+ *   (modelName defaults to the pipeline model — pass e.g. gemma3:27b for A/B runs)
  */
 import { readFileSync } from 'fs';
 for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -21,7 +22,7 @@ const SPORT_PATH: Record<string, string> = { sru: 'rugby/242041', rint: 'rugby/1
 const LEAGUE: Record<string, string> = { sru: 'super_rugby', rint: 'rugby_int' };
 
 async function main() {
-  const [shortLeague, eventId, mode] = process.argv.slice(2);
+  const [shortLeague, eventId, mode, modelName] = process.argv.slice(2);
   const sportPath = SPORT_PATH[shortLeague];
   const league = LEAGUE[shortLeague];
   if (!sportPath || !eventId || !['preview', 'review'].includes(mode)) {
@@ -56,7 +57,7 @@ async function main() {
     };
     const block = buildDataBlock(league, teamName, oppName, ctx, [], [], undefined, false, undefined, venue, true, '', undefined, undefined);
     void SYSTEM_PROMPT;
-    const { preview, violations } = await callOllamaValidated(block, false);
+    const { preview, violations } = await callOllamaValidated(block, false, undefined, modelName || undefined);
     console.log('\n── VIOLATIONS:', violations.length ? violations : 'none');
     console.log(JSON.stringify(preview, null, 1).slice(0, 2600));
   } else {
@@ -73,7 +74,7 @@ async function main() {
     const block = buildReviewDataBlock(input);
     const ollama = new OpenAI({ baseURL: process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1', apiKey: 'ollama' });
     const msg = await ollama.chat.completions.create({
-      model: 'qwen3:30b-a3b-instruct-2507-q4_K_M', max_tokens: 3000,
+      model: modelName || 'qwen3:30b-a3b-instruct-2507-q4_K_M', max_tokens: 3000,
       messages: [{ role: 'system', content: REVIEW_SYSTEM_PROMPT }, { role: 'user', content: block }],
     });
     const raw = (msg.choices[0]?.message?.content ?? '{}').replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();

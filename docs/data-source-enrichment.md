@@ -107,3 +107,32 @@ discovery + ESPN bridge — see framework doc). Venue gazetteer remains roadmap.
 6. **ESPN rugby injuries probe + EPL team leaders probe** — same patterns as existing code.
 7. **Venue gazetteer** — hardens internationals; unlocks altitude/travel facts.
 8. **Squiggle virtual (in-season)** — projected-ladder stakes, re-probe March 2027.
+
+## Free reporting-gap investigation (2026-09-16, live-probed)
+
+Target: the 15–25% "reporting" gap (quotes, team news depth, event colour) using
+free sources only.
+
+| Source | Probed | What it yields | Verdict |
+|---|---|---|---|
+| **nrl.com match-centre `timeline`** | ✓ 119 entries on a finals game | Full event stream: tries with `gameSeconds` + running score + player name (via `content.name`), conversions, line breaks, errors, set restarts; plus `stats.topPerformers` (most tackles/run metres/line breaks with values), `attendance`, `groundConditions` | **Wire it** — closes the NRL event-anchoring gap ESPN can't (no scoringPlays), from the official source, same feed as odds/team lists |
+| ESPN news API | ✓ | Headline + 139-char description only — no `story` field on this endpoint | Already used; no full text here |
+| ABC News sport RSS | ✓ 200, 25 items | Headlines + descriptions, free, no key | Cheap secondary headline source for AFL/NRL/cricket; full-article scraping is ToS-grey — RSS fields only |
+| The Guardian Open Platform | not probed (needs free dev key — user signup) | FULL article text via official API, free non-commercial tier; strong AFL/NRL/EPL/cricket desks incl. press-conference quotes | **Best legitimate full-text source** — one signup unlocks licensed quotes/reporting for mediaWatch-style attributed use |
+| Reddit match threads (.json) | not probed | Fan sentiment, unofficial | Noisy; skip |
+
+Framework-data (30–35% band) leads confirmed this pass: NRL timeline (above);
+multi-season season-arc facts derivable from Squiggle full-history (AFL) and
+ESPN month archives (NRL/EPL) — venue records, streaks vs top-N opposition,
+coach head-to-heads; angle-engine + narrative-memory remain the two big builds.
+
+## Local model A/B (2026-09-16)
+
+Hardware: Apple M4, 32GB unified, 338GB disk. The pipeline model is a MoE with
+~3B ACTIVE params — the "typist ceiling". Dense candidates that fit 32GB:
+`qwen3:32b` (~20GB) and `gemma3:27b` (~17GB), plus the already-installed
+`qwen3:30b-a3b-thinking` (free candidate; pipeline strips <think>). Historical
+note: scripts/benchmark-results.json shows the old "benchmark" only ever
+completed the incumbent — thinking 404'd (not pulled then) and qwen3:32b never
+ran. `backtest-generate.ts` now takes a model argument; the validator suite is
+the objective scorer (violations + refusals + elapsed), prose judged by eye.
