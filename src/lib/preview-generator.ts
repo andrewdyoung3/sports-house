@@ -1261,23 +1261,30 @@ export async function callOllamaValidated(
       'narrates missing data',
     ];
     const isStyle = (v: string) => STYLE_PREFIXES.some(p => v.startsWith(p)) || / vocabulary — outside this sport/.test(v) || /repeat each other/.test(v);
-    if (retryViols.every(isStyle)) {
-      aiLog(`retry-2 (style-only residue) elapsed=${Date.now() - t0}ms — third attempt`);
-      const third      = await doGenerate(retryViols);
-      const thirdViols = collectViolations(third, prompt);
-      if (thirdViols.length === 0) {
-        aiLog(`retry-2-ok elapsed=${Date.now() - t0}ms`);
-        return { preview: stripUnsourcedMediaWatch(third, prompt), violations: [] };
+    // Style-only retry loop — budget 2 extra attempts (4 total). The style-rule
+    // count has grown (consequence rule, register nets, placement policy), so a
+    // single style retry left too many refusals that pure sampling clears; a
+    // FACTUAL violation still ends the run immediately.
+    let bestPreview = retryViols.length < violations.length ? retry : result;
+    let bestViols   = retryViols.length < violations.length ? retryViols : violations;
+    let lastViols   = retryViols;
+    const MAX_STYLE_RETRIES = 2;
+    for (let i = 0; i < MAX_STYLE_RETRIES && lastViols.every(isStyle); i++) {
+      aiLog(`retry-${i + 2} (style-only residue) elapsed=${Date.now() - t0}ms — attempt ${i + 3}`);
+      const next      = await doGenerate(lastViols);
+      const nextViols = collectViolations(next, prompt);
+      if (nextViols.length === 0) {
+        aiLog(`retry-${i + 2}-ok elapsed=${Date.now() - t0}ms`);
+        return { preview: stripUnsourcedMediaWatch(next, prompt), violations: [] };
       }
+      if (nextViols.length < bestViols.length) { bestPreview = next; bestViols = nextViols; }
+      lastViols = nextViols;
     }
-    // Both attempts violate — surface the better attempt AND its remaining
-    // violations so the caller can refuse to store (REL-1). We no longer return a
-    // "clean-looking" first attempt that silently buries caught hallucinations.
-    aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(retryViols)} — both attempts violate, will not store`);
-    const best = retryViols.length < violations.length
-      ? { preview: retry,  violations: retryViols }
-      : { preview: result, violations };
-    return { preview: stripUnsourcedMediaWatch(best.preview, prompt), violations: best.violations };
+    // All attempts violate — surface the best attempt AND its remaining
+    // violations so the caller can refuse to store (REL-1). We never return a
+    // "clean-looking" attempt that silently buries caught hallucinations.
+    aiLog(`retry-fail elapsed=${Date.now() - t0}ms violations=${JSON.stringify(bestViols)} — all attempts violate, will not store`);
+    return { preview: stripUnsourcedMediaWatch(bestPreview, prompt), violations: bestViols };
   } catch (e) {
     aiLog(`retry-error elapsed=${Date.now() - t0}ms err=${e}`);
     return { preview: stripUnsourcedMediaWatch(result, prompt), violations };
