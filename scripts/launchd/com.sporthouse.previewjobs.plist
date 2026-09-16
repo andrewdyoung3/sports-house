@@ -45,7 +45,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh" || export PATH="/Users/andreasjenkins/.nvm/versions/node/v20.20.2/bin:$PATH"; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run poll</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh" || export PATH="/Users/andreasjenkins/.nvm/versions/node/v20.20.2/bin:$PATH"; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run poll; npm run poll:reviews</string>
   </array>
 
   <!-- Poll every 60 seconds. -->

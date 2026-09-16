@@ -24,7 +24,8 @@
     "test:integration": "tsx scripts/verify-sandbox-faithful.ts",
     "venuefacts": "tsx scripts/build-cricket-venue-facts.ts",
     "test:angles": "tsx scripts/test-angle-engine.ts",
-    "test:rss": "tsx scripts/test-rss.ts"
+    "test:rss": "tsx scripts/test-rss.ts",
+    "poll:reviews": "tsx scripts/poll-reviews.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",
