@@ -17,6 +17,8 @@ import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTeam } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
+import { fetchLeagueFixtures } from '@/lib/league-fixtures';
+import { TEAMS } from '@/lib/teams';
 import { enforceRateLimit } from '@/lib/request-guards';
 import { SOO_META, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
@@ -1151,6 +1153,39 @@ async function fetchCricketIntFixtures(teamId: string): Promise<UpcomingGame[]> 
     .slice(0, 10);
 }
 
+// ─── Cricket internationals — unified with the generator's builder ───────────
+// fetchLeagueFixtures('cricket_int') = cricketdata + ESPN bridge, the same list
+// the heartbeat generates previews from. Fixtures are emitted from the first
+// tracked side's perspective, so a request for the OTHER side swaps perspective
+// (ids stay identical — that is the whole point).
+async function fetchCricketIntUnified(teamId: string): Promise<UpcomingGame[]> {
+  const all = await fetchLeagueFixtures('cricket_int', 0);
+  const teamName = TEAMS.find(t => t.id === teamId)?.name ?? '';
+  return all
+    .filter(f => f.teamId === teamId || f.opponentId === teamId)
+    .map(f => {
+      if (f.teamId === teamId) return f;
+      // Swap to the requested team's perspective.
+      const myEntry = TEAMS.find(t => t.id === f.teamId);
+      return {
+        ...f,
+        teamId,
+        opponent:        myEntry?.name ?? f.teamId,
+        opponentAbbr:    myEntry?.abbreviation ?? initialsOf(myEntry?.name ?? ''),
+        opponentColor:   myEntry?.primaryColor ?? '#6B7280',
+        opponentLogoUrl: TEAM_LOGOS[f.teamId],
+        opponentId:      f.teamId,
+        isHome:          f.neutralSite === true ? false : !f.isHome,
+      };
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, 10);
+}
+function initialsOf(name: string): string {
+  const words = name.trim().split(/\s+/);
+  return (words.length >= 2 ? words.map(w => w[0]).join('') : name).slice(0, 3).toUpperCase();
+}
+
 // ─── NBA — ESPN scoreboard ────────────────────────────────────────────────────
 
 const NBA_ESPN_NAME: Record<string, string> = {
@@ -1324,7 +1359,11 @@ export async function GET(req: NextRequest) {
     else if (league === 'rugby_int')   fixtures = await fetchInternationalRugbyFixtures(teamId);
     else if (league === 'f1')          fixtures = await fetchF1Fixtures(teamId);
     else if (league === 'bbl')         fixtures = await fetchBBLFixtures(teamId);
-    else if (league === 'cricket_int') fixtures = await fetchCricketIntFixtures(teamId);
+    // Unified with the generator's builder (cricketdata + ESPN bridge) so
+    // display fixture ids ALWAYS match preview game_ids — the 2026-09-16
+    // "cricket shows no previews" root cause was this route running its own
+    // legacy ESPN path with ids the generator never produced.
+    else if (league === 'cricket_int') fixtures = await fetchCricketIntUnified(teamId);
     else if (league === 'nba')         fixtures = await fetchNBAFixtures(teamId);
 
     return NextResponse.json(fixtures, { headers: CACHE_HEADERS });

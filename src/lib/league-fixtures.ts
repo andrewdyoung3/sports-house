@@ -12,13 +12,14 @@
  *   The route always calls with the default (0 = upcoming only).
  */
 
+import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
-import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, type CricMatch } from '@/lib/cricketdata';
+import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, cricSeriesSearch, type CricMatch } from '@/lib/cricketdata';
 import { INTL_TEAM_COUNTRY, resolveIntlVenueStatus, countryFromVenueString, type IntlVenueStatus } from '@/lib/international';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
 
@@ -870,6 +871,44 @@ const BBL_LEAGUE_TEAMS: Record<string, TeamEntry> = {
 // tracked is live. Emits ONE fixture per match (teamId = first tracked side), as
 // the ESPN path did — avoids duplicate game ids.
 
+// ─── ESPN cricket bridge (curated) ────────────────────────────────────────────
+// cricketdata's free tier ships some tours with matches:0 (2026-09-16: BOTH of
+// Australia's next tours — Zimbabwe and South Africa — were empty, so previews
+// silently stopped). ESPN's per-series cricket endpoints work again (probed
+// 2026-09-16; only cricinfo remains WAF-blocked), but ESPN has no series
+// directory, so the bridge is HAND-CURATED per confirmed tour and exists only
+// to cover matches cricketdata lacks — cricketdata entries always win dedupe.
+// RE-CHECK when new bilateral tours are announced; the coverage report flags
+// followed teams with no upcoming fixture.
+export const ESPN_CRICKET_SERIES: Partial<Record<string, number[]>> = {
+  'int-aus': [1530201, 24203], // Zimbabwe ODIs (Sep 2026); SA tour (Sep-Oct 2026)
+};
+export const ESPN_CRICKET_EVENT_IDS: Record<number, number[]> = {
+  1530201: [1530203, 1530204, 1530205],           // ODI 1-3, Australia tour of Zimbabwe
+  24203:   [1525655, 1525656, 1525657, 1525659],  // ODI 1-3 + 1st Test, Australia tour of South Africa
+};
+
+async function fetchESPNCricketEvent(seriesId: number, eventId: number): Promise<any | null> {
+  const urls = [
+    `https://site.api.espn.com/apis/site/v2/sports/cricket/${seriesId}/scoreboard?event=${eventId}`,
+    `https://site.api.espn.com/apis/site/v2/sports/cricket/${seriesId}/summary?event=${eventId}`,
+  ];
+  for (const url of urls) {
+    try {
+      const res = await fetchTimeout(url, { next: { revalidate: 3600 }, timeoutMs: 8000 });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const fromEvents = (data.events ?? []).find((e: any) => String(e.id) === String(eventId));
+      if (fromEvents) return fromEvents;
+      const comps: any[] = data.header?.competitions ?? data.competitions ?? [];
+      if (comps.length > 0) {
+        return { id: String(eventId), date: comps[0].date ?? data.header?.date ?? '', name: data.header?.name ?? '', competitions: comps, status: comps[0].status };
+      }
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 async function buildCricketFixtures(
   prefix: 'cint' | 'bbl',
   teamMap: Record<string, TeamEntry & { abbr: string }>,
@@ -898,6 +937,79 @@ async function buildCricketFixtures(
   for (const m of current) {
     if (m.series_id && (m.teams ?? []).some(t => lookup(t))) trackedSeries.add(m.series_id);
   }
+
+  // Durable series memory. Expansion previously required a tracked-team match
+  // to be IN currentMatches at fetch time, so tracked upcoming fixtures
+  // vanished whenever the feed's ~25 current matches rotated to other comps
+  // (incident 2026-09-16: Australia's Zimbabwe/South Africa tours invisible —
+  // and previews silently stopped — while currentMatches held only CPL/County).
+  // Series ids seen with a tracked team are remembered on /tmp for 45 days and
+  // kept in the expansion set; series_info stays file-cached, so this costs no
+  // extra quota between refreshes.
+  const memFile = `/tmp/sporthouse-cric-tracked-series-${prefix}.json`;
+  let remembered: Record<string, number> = {};
+  try { remembered = JSON.parse(readFileSync(memFile, 'utf8')); } catch { /* first run */ }
+  // Bootstrap: on an empty memory (first run after the incident, or after a
+  // /tmp sweep), adopt series ids from any series_info cache files already on
+  // disk whose match lists include a tracked team.
+  if (Object.keys(remembered).length === 0 && trackedSeries.size === 0) {
+    try {
+      for (const f of readdirSync('/tmp')) {
+        const sid = f.match(/^sporthouse-cric-series-(.+)\.json$/)?.[1];
+        if (!sid) continue;
+        try {
+          const s = JSON.parse(readFileSync(`/tmp/${f}`, 'utf8'));
+          const list: any[] = s?.matchList ?? s?.data?.matchList ?? [];
+          if (list.some((m: any) => (m.teams ?? []).some((t: string) => lookup(t)))) {
+            remembered[sid] = now;
+          }
+        } catch { /* skip unreadable */ }
+      }
+    } catch { /* no /tmp listing — non-fatal */ }
+  }
+  // Discovery by SERIES SEARCH (internationals): tours are named after their
+  // participants, but the unfiltered series list is ordered furthest-future
+  // first (current tours sit hundreds deep), so discovery searches per tracked
+  // nation instead — 1 hit per nation, 24h-cached, and only during droughts
+  // (currentMatches shows nothing tracked; remembered tours may be finished).
+  // Incident 2026-09-16: "Australia tour of Zimbabwe 2026" (started Sep 15)
+  // was invisible to every non-search path while currentMatches held CPL/County.
+  if (prefix === 'cint' && trackedSeries.size === 0) {
+    // startDate is ISO for some entries, "MMM DD" (no year) for others —
+    // resolve the latter to the nearest occurrence.
+    const parseStart = (s?: string): number => {
+      if (!s) return NaN;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return Date.parse(s);
+      const y = new Date(now).getFullYear();
+      for (const cand of [Date.parse(`${s} ${y - 1}`), Date.parse(`${s} ${y}`), Date.parse(`${s} ${y + 1}`)]) {
+        if (!Number.isNaN(cand) && Math.abs(cand - now) <= 200 * 86400_000) return cand;
+      }
+      return NaN;
+    };
+    let adopted = 0;
+    for (const nation of Object.keys(teamMap)) {
+      if (adopted >= 8) break;
+      const results = await cricSeriesSearch(nation);
+      for (const s of results) {
+        if (adopted >= 8) break;
+        const n = norm(s.name);
+        if (/\bwomen\b|\bu19\b|\bdomestic\b/.test(n)) continue;       // senior men's tours only
+        if (/\b[a-z]+ a (?:tour|vs)\b/.test(n)) continue;             // "Australia A tour of …"
+        const start = parseStart(s.startDate);
+        if (Number.isNaN(start) || start < now - 60 * 86400_000 || start > now + 35 * 86400_000) continue;
+        if (remembered[s.id]) continue;
+        remembered[s.id] = now;
+        adopted++;
+      }
+    }
+  }
+  for (const sid of trackedSeries) remembered[sid] = now;
+  for (const [sid, ts] of Object.entries(remembered)) {
+    if (now - ts > 45 * 86400_000) delete remembered[sid];
+    else trackedSeries.add(sid);
+  }
+  try { writeFileSync(memFile, JSON.stringify(remembered)); } catch { /* non-fatal */ }
+
   let budget = 6;
   for (const sid of trackedSeries) {
     if (budget-- <= 0) break;
@@ -960,6 +1072,73 @@ async function buildCricketFixtures(
       matchDays:       fmt === 'test' ? 5 : undefined,
       completed:       ended || undefined,
     });
+  }
+
+  // ── ESPN bridge (cint only): fill matches cricketdata lacks ───────────────
+  // Dedupe by day + participants; cricketdata entries (richer preview context)
+  // always win. Bridge fixture ids are cint-<espnEventId> — the preview path
+  // synthesizes a minimal cricketContext for those (no cricketdata record).
+  if (prefix === 'cint') {
+    const have = new Set(out.map(f => `${f.date.slice(0, 10)}|${[norm(TEAMS.find(t => t.id === f.teamId)?.name ?? f.teamId), norm(f.opponent)].sort().join('|')}`));
+    const jobs: Array<Promise<any | null>> = [];
+    for (const [tid, seriesIds] of Object.entries(ESPN_CRICKET_SERIES)) {
+      if (!TEAMS.some(t => t.id === tid && t.league === 'cricket_int')) continue;
+      for (const sid of seriesIds ?? []) {
+        for (const eid of ESPN_CRICKET_EVENT_IDS[sid] ?? []) jobs.push(fetchESPNCricketEvent(sid, eid));
+      }
+    }
+    const events = (await Promise.allSettled(jobs))
+      .filter(r => r.status === 'fulfilled' && r.value)
+      .map(r => (r as PromiseFulfilledResult<any>).value);
+    const seenEv = new Set<string>();
+    for (const e of events) {
+      const id = String(e.id ?? '');
+      if (!id || seenEv.has(id)) continue;
+      seenEv.add(id);
+      const comp: any = e.competitions?.[0] ?? {};
+      const competitors: any[] = comp.competitors ?? [];
+      const names = competitors.map((c: any) => c.team?.displayName ?? '').filter(Boolean);
+      const homeIdx2 = names.findIndex((t: string) => lookup(t));
+      if (homeIdx2 < 0 || names.length < 2) continue;
+      const me2      = lookup(names[homeIdx2])!;
+      const oppName2 = names[1 - homeIdx2] ?? '';
+      const opp2     = lookup(oppName2);
+      const state    = comp.status?.type?.state ?? e.status?.type?.state ?? '';
+      const dateMs2  = new Date(e.date ?? 0).getTime();
+      if (state === 'post') {
+        if (!(lookbackDays > 0 && dateMs2 >= cutoff)) continue;
+      } else if (dateMs2 && dateMs2 > lookaheadEnd) continue;
+      const key = `${new Date(dateMs2).toISOString().slice(0, 10)}|${[norm(names[homeIdx2]), norm(oppName2)].sort().join('|')}`;
+      if (have.has(key)) continue;
+      have.add(key);
+      const fmt2 = parseCricketFormat(comp.class?.eventType ?? comp.class?.name ?? '');
+      const espnHome = competitors[homeIdx2]?.homeAway === 'home';
+      const intl2 = resolveIntlVenueStatus(
+        INTL_TEAM_COUNTRY[me2.id],
+        opp2?.id ? INTL_TEAM_COUNTRY[opp2.id] : undefined,
+        (comp.venue?.address?.country as string | undefined) ?? countryFromVenueString(comp.venue?.fullName),
+      );
+      out.push({
+        id:              `cint-${id}`,
+        teamId:          me2.id,
+        opponent:        oppName2,
+        opponentAbbr:    opp2?.abbr ?? initials(oppName2),
+        opponentColor:   opp2?.color ?? '#6B7280',
+        opponentLogoUrl: TEAM_LOGOS[opp2?.id ?? ''],
+        isHome:          intl2.isHome ?? espnHome,
+        neutralSite:     intl2.neutralSite,
+        date:            new Date(dateMs2).toISOString(),
+        time:            aestDisplay(new Date(dateMs2 + 10 * 3600 * 1000)),
+        venue:           comp.venue?.fullName ?? '',
+        broadcast,
+        streaming,
+        opponentId:      opp2?.id,
+        cricketFormat:   fmt2,
+        matchDays:       fmt2 === 'test' ? 5 : undefined,
+        competition:     (e.name as string) || undefined,
+        completed:       state === 'post' || undefined,
+      });
+    }
   }
 
   return out.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());

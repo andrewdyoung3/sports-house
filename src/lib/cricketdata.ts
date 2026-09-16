@@ -155,6 +155,58 @@ export async function cricSeriesInfo(id: string): Promise<CricSeriesInfo | null>
   return data;
 }
 
+/**
+ * Recent/ongoing series list (id + name + dates) — the DISCOVERY endpoint for
+ * tracked series whose matches have rotated out of currentMatches (incident
+ * 2026-09-16: Australia's Zimbabwe/SA tours invisible while currentMatches
+ * held only CPL/County, so cricket previews silently stopped). 1 hit, cached
+ * 12h on file, so recovery costs ≤2 hits/day.
+ */
+const TTL_SERIES_LIST = 12 * 3600_000;
+let _seriesList: { fetched: boolean; data: Array<{ id: string; name: string; startDate?: string }> } = { fetched: false, data: [] };
+export async function cricSeriesList(): Promise<Array<{ id: string; name: string; startDate?: string }>> {
+  if (_seriesList.fetched) return _seriesList.data;
+  const cached = fileCacheGet<Array<{ id: string; name: string; startDate?: string }>>('series-list', TTL_SERIES_LIST);
+  if (cached) { _seriesList = { fetched: true, data: cached }; return cached; }
+  // Two pages (list is ordered furthest-future first, so in-progress tours can
+  // sit on page 2) — 2 hits per 12h window.
+  const pages = await Promise.all([call('series', 'offset=0'), call('series', 'offset=25')]);
+  const data: Array<{ id: string; name: string; startDate?: string }> = [];
+  let anyOk = false;
+  for (const j of pages) {
+    if (!j) continue;
+    anyOk = true;
+    for (const s of (j.data as any[]) ?? []) {
+      if (s?.id && s?.name) data.push({ id: String(s.id), name: String(s.name), startDate: s.startDate ? String(s.startDate) : undefined });
+    }
+  }
+  if (anyOk) { _seriesList = { fetched: true, data }; fileCacheSet('series-list', data); }
+  return data;
+}
+
+/**
+ * Series search by nation name ("Zimbabwe" → "Australia tour of Zimbabwe 2026")
+ * — the reliable discovery path: the unfiltered series list is ordered
+ * furthest-future-first and current tours sit hundreds deep. 1 hit per term,
+ * file-cached 24h, and callers only search during discovery droughts, so the
+ * steady-state cost is zero.
+ */
+const TTL_SERIES_SEARCH = 24 * 3600_000;
+const _seriesSearch = new Map<string, Array<{ id: string; name: string; startDate?: string }>>();
+export async function cricSeriesSearch(term: string): Promise<Array<{ id: string; name: string; startDate?: string }>> {
+  const slug = term.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  if (_seriesSearch.has(slug)) return _seriesSearch.get(slug)!;
+  const cached = fileCacheGet<Array<{ id: string; name: string; startDate?: string }>>(`series-search-${slug}`, TTL_SERIES_SEARCH);
+  if (cached) { _seriesSearch.set(slug, cached); return cached; }
+  const j = await call('series', `offset=0&search=${encodeURIComponent(term)}`);
+  const data = ((j?.data as any[]) ?? [])
+    .filter(s => s?.id && s?.name)
+    .map(s => ({ id: String(s.id), name: String(s.name), startDate: s.startDate ? String(s.startDate) : undefined }));
+  _seriesSearch.set(slug, data);
+  if (j) fileCacheSet(`series-search-${slug}`, data);
+  return data;
+}
+
 /** Single match detail — caches (30m). */
 export async function cricMatchInfo(id: string): Promise<CricMatch | null> {
   if (_matchInfo.has(id)) return _matchInfo.get(id)!;

@@ -102,6 +102,24 @@ async function fetchRichContext(
     case 'bbl':
     case 'cricket_int': {
       const matchId = fixture.id.replace(/^(cint|bbl)-/, '');
+      // ESPN-bridge fixtures carry numeric ESPN event ids (cricketdata never
+      // has a record for them — its free tier shipped these tours empty).
+      // Synthesize a minimal cricketContext from the fixture itself so the
+      // cricket data block renders honestly (format/series/venue; no toss,
+      // scores, or squads — those sections suppress cleanly).
+      if (/^\d+$/.test(matchId)) {
+        const fmtLabel = fixture.cricketFormat === 'test' ? 'Test' : fixture.cricketFormat === 'odi' ? 'ODI' : fixture.cricketFormat ? 'T20' : undefined;
+        return {
+          cricketContext: {
+            format:     fmtLabel,
+            seriesName: fixture.competition,
+            venue:      fixture.venue || undefined,
+            status:     'Match not started',
+            started:    false,
+            ended:      false,
+          },
+        };
+      }
       return fetchCricketPreview(matchId, teamName, opp);
     }
     case 'f1': {
