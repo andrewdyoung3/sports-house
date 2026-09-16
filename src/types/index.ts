@@ -165,6 +165,8 @@ export interface TipSummary {
   tipsFor: number;
   tipsTotal: number;
   avgMargin: number;
+  /** Names of the models tipping the favourite (Squiggle `source`), for attribution. */
+  modelNames?: string[];
 }
 
 /** One past meeting between the two fixture teams, from the followed team's perspective. */
@@ -242,6 +244,12 @@ export interface PreviewContext {
    */
   /** Venue neutrality carried from the fixture (see UpcomingGame.neutralSite). */
   venueNeutral?: boolean;
+  /**
+   * AFL: attributed analytic player-quality notes (Squiggle PAV — Player
+   * Approximate Value), for the named squads' top-rated players. Grounds
+   * "elite midfielder"-class claims that were previously training-memory.
+   */
+  playerRatings?: { team?: string[]; opponent?: string[] };
   marketOdds?: {
     provider: string;
     overUnder?: number;
@@ -249,6 +257,9 @@ export interface PreviewContext {
     homeML?: number;
     awayML?: number;
     drawML?: number;
+    /** Decimal (AU-style) odds — NRL.com market. Either ML or decimal is set. */
+    homeDecimal?: number;
+    awayDecimal?: number;
   };
   /**
    * Forecast at kickoff for outdoor fixtures (Open-Meteo). When present, the WEATHER

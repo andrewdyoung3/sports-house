@@ -1882,6 +1882,16 @@ export function buildDataBlock(
         if (returns.length > 0 && returns.length <= 6) lines.push(`  → In squad, not in last lineup (possible returns/inclusions): ${returns.join(', ')}`);
       }
       lines.push('');
+
+      // Attributed analytic player quality (Squiggle PAV) — the grounded source
+      // for "their best midfielder"-class claims; cite as a rating, not a fact.
+      const pr = context.playerRatings;
+      if (pr?.team?.length || pr?.opponent?.length) {
+        lines.push('PLAYER RATINGS (PAV — Player Approximate Value, an attributed analytic rating by Squiggle/HPN; cite as "rated", never as your own judgement):');
+        if (pr.team?.length)     pr.team.forEach(n => lines.push(`  ${teamName}: ${n}`));
+        if (pr.opponent?.length) pr.opponent.forEach(n => lines.push(`  ${opponentName}: ${n}`));
+        lines.push('');
+      }
     }
 
     if (teamInj.length > 0 || oppInj.length > 0) {
@@ -1943,7 +1953,8 @@ export function buildDataBlock(
         const t = context.tips!;
         // Keep the exact "average predicted winning margin: N points" phrasing —
         // validatePointsClaims keys off it to bound any margin claim in the output.
-        lines.push(`  MODEL TIP (a prediction, not a result): ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}, average predicted winning margin: ${t.avgMargin} points`);
+        const modelAttr = t.modelNames?.length ? ` (models incl. ${t.modelNames.join(', ')})` : '';
+        lines.push(`  MODEL TIP (a prediction, not a result): ${t.tipsFor} of ${t.tipsTotal} models tip ${t.favouriteTeam}${modelAttr}, average predicted winning margin: ${t.avgMargin} points`);
       }
       if (hasOdds) {
         const o = context.marketOdds!;
@@ -1953,7 +1964,14 @@ export function buildDataBlock(
         const dog      = fav === homeName ? awayName : homeName;
         const ml = (n?: number) => n === undefined ? undefined : n > 0 ? `+${n}` : String(n);
         const bits: string[] = [];
-        if (fav) bits.push(`${fav} are the bookmakers' favourites${ml(o.homeFavorite ? o.homeML : o.awayML) ? ` (moneyline ${ml(o.homeFavorite ? o.homeML : o.awayML)}; ${dog} ${ml(o.homeFavorite ? o.awayML : o.homeML) ?? 'n/a'}${o.drawML !== undefined ? `; draw ${ml(o.drawML)}` : ''})` : ''}`);
+        if (o.homeDecimal !== undefined && o.awayDecimal !== undefined && fav) {
+          // Decimal (AU) odds — NRL.com market.
+          const favD = o.homeFavorite ? o.homeDecimal : o.awayDecimal;
+          const dogD = o.homeFavorite ? o.awayDecimal : o.homeDecimal;
+          bits.push(`${fav} are the market favourites at $${favD.toFixed(2)} (${dog} $${dogD.toFixed(2)})`);
+        } else if (fav) {
+          bits.push(`${fav} are the bookmakers' favourites${ml(o.homeFavorite ? o.homeML : o.awayML) ? ` (moneyline ${ml(o.homeFavorite ? o.homeML : o.awayML)}; ${dog} ${ml(o.homeFavorite ? o.awayML : o.homeML) ?? 'n/a'}${o.drawML !== undefined ? `; draw ${ml(o.drawML)}` : ''})` : ''}`);
+        }
         if (o.overUnder !== undefined) bits.push(`total-goals line ${o.overUnder}`);
         if (bits.length > 0) {
           lines.push(`  MARKET (odds via ${o.provider} — an attributed market view, cite as "the market"/"the bookmakers", never as your own prediction or a result): ${bits.join('; ')}.`);

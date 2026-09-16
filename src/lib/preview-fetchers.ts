@@ -17,6 +17,7 @@ import type {
 } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
+import { readFileSync, writeFileSync, statSync } from 'fs';
 import { fetchTimeout } from '@/lib/espn';
 import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
@@ -182,11 +183,18 @@ export async function fetchAFLPreview(
           }
 
           const favourite = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+          // Attribution: name the models tipping the favourite (Squiggle `source`).
+          const modelNames = [...new Set(
+            (rawTips as any[])
+              .filter(t => t.tip === favourite[0] && typeof t.source === 'string' && t.source)
+              .map(t => t.source as string),
+          )].slice(0, 4);
           tips = {
             favouriteTeam: favourite[0],
             tipsFor:       favourite[1],
             tipsTotal:     rawTips.length,
             avgMargin:     Math.round(totalMargin / rawTips.length),
+            modelNames:    modelNames.length > 0 ? modelNames : undefined,
           };
         }
       }
@@ -227,6 +235,9 @@ export async function fetchAFLPreview(
     }
   }
 
+  // Attributed player-quality notes (Squiggle PAV) for the named squads.
+  const [teamPav, oppPav] = await Promise.all([buildPavNotes(teamSquad), buildPavNotes(opponentSquad)]);
+
   return {
     teamStanding,
     opponentStanding,
@@ -236,6 +247,7 @@ export async function fetchAFLPreview(
     opponentSquad,
     teamSquadPositions,
     opponentSquadPositions,
+    playerRatings: (teamPav || oppPav) ? { team: teamPav, opponent: oppPav } : undefined,
     teamRecentForm,
     opponentRecentForm,
     headToHead,
@@ -382,7 +394,7 @@ export async function fetchNRLPreview(
   const oppId       = Object.entries(NRL_ESPN_NAME).find(([, v]) => v === oppESPNName)?.[0];
   const oppESPNId   = oppId ? NRL_ESPN_ID[oppId] : undefined;
 
-  const [standingsRes, teamNewsRes, oppNewsRes, extrasRes, teamInjuryRes, oppInjuryRes] = await Promise.allSettled([
+  const [standingsRes, teamNewsRes, oppNewsRes, extrasRes, teamInjuryRes, oppInjuryRes, nrlOddsRes] = await Promise.allSettled([
     fetchTimeout(
       'https://site.api.espn.com/apis/v2/sports/rugby-league/3/standings',
       { next: { revalidate: 3600 } },
@@ -402,7 +414,9 @@ export async function fetchNRLPreview(
     fetchESPNMatchExtras('rugby-league/3', eventId, teamESPNName, oppESPNName, 13),
     teamESPNId ? fetchESPNInjuries('rugby-league/3', teamESPNId)   : Promise.resolve([]),
     oppESPNId  ? fetchESPNInjuries('rugby-league/3', oppESPNId)    : Promise.resolve([]),
+    fetchNRLDrawOdds(teamESPNName, oppESPNName),
   ]);
+  const nrlMarketOdds = nrlOddsRes.status === 'fulfilled' ? nrlOddsRes.value : undefined;
 
   let teamStanding: TeamStanding | undefined;
   let opponentStanding: TeamStanding | undefined;
@@ -462,6 +476,7 @@ export async function fetchNRLPreview(
     headToHead:            extras.headToHead,
     teamInjuryReport:      teamInjuries.length   > 0 ? teamInjuries   : undefined,
     opponentInjuryReport:  oppInjuries.length    > 0 ? oppInjuries    : undefined,
+    marketOdds:            nrlMarketOdds,
   };
 }
 
@@ -2186,6 +2201,104 @@ async function fetchESPNSoccerOdds(
       homeML:       typeof o.homeTeamOdds?.moneyLine === 'number' ? o.homeTeamOdds.moneyLine : undefined,
       awayML:       typeof o.awayTeamOdds?.moneyLine === 'number' ? o.awayTeamOdds.moneyLine : undefined,
       drawML:       typeof o.drawOdds?.moneyLine === 'number' ? o.drawOdds.moneyLine : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+// ─── Squiggle PAV (Player Approximate Value) — AFL player-quality grounding ──
+// Free analytic ratings (Squiggle/HPN). One year-level fetch cached on /tmp
+// (7d), matched against named squads to produce ATTRIBUTED quality notes —
+// "elite midfielder"-class claims previously came from training memory.
+// Probed live 2026-09-16 (?q=pav).
+
+interface PavRow {
+  firstname?: string; surname?: string; team?: number; year?: number;
+  PAV_total?: string; PAV_off?: string; PAV_mid?: string; PAV_def?: string;
+}
+async function fetchSquigglePAVYear(year: number): Promise<PavRow[]> {
+  const cacheP = `/tmp/sporthouse-pav-${year}.json`;
+  try {
+    const st = statSync(cacheP);
+    if (Date.now() - st.mtimeMs < 7 * 86400_000) return JSON.parse(readFileSync(cacheP, 'utf8'));
+  } catch { /* fetch */ }
+  try {
+    const res = await fetchTimeout(
+      `https://api.squiggle.com.au/?q=pav;year=${year}`,
+      { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, next: { revalidate: 86400 }, timeoutMs: 10000 },
+    );
+    if (!res.ok) return [];
+    const { pav = [] } = await res.json() as { pav?: PavRow[] };
+    try { writeFileSync(cacheP, JSON.stringify(pav)); } catch { /* non-fatal */ }
+    return pav;
+  } catch { return []; }
+}
+
+/** Attributed top-player notes for a named squad (top 3 by PAV_total). */
+export async function buildPavNotes(squad: string[] | undefined): Promise<string[] | undefined> {
+  if (!squad?.length) return undefined;
+  const year = new Date().getFullYear() - 1; // last COMPLETE season's ratings
+  const pav = await fetchSquigglePAVYear(year);
+  if (pav.length === 0) return undefined;
+  const bySurname = new Map<string, PavRow[]>();
+  for (const r of pav) {
+    const k = (r.surname ?? '').toLowerCase();
+    if (k) (bySurname.get(k) ?? bySurname.set(k, []).get(k)!).push(r);
+  }
+  const rated: Array<{ name: string; total: number; role: string }> = [];
+  for (const name of squad) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    const first = parts[0].toLowerCase();
+    const sur   = parts.slice(1).join(' ').toLowerCase();
+    const cand  = (bySurname.get(sur) ?? []).find(r => (r.firstname ?? '').toLowerCase() === first);
+    if (!cand) continue;
+    const off = Number(cand.PAV_off ?? 0), mid = Number(cand.PAV_mid ?? 0), def = Number(cand.PAV_def ?? 0);
+    const total = Number(cand.PAV_total ?? 0);
+    if (!total) continue;
+    const role = mid >= off && mid >= def ? 'midfielder' : off >= def ? 'forward' : 'defender';
+    rated.push({ name, total, role });
+  }
+  if (rated.length === 0) return undefined;
+  return rated
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 3)
+    .map(r => `${r.name} — highest-rated ${r.role} in this squad (PAV ${r.total.toFixed(1)}, ${year} season)`);
+}
+
+// ─── NRL.com market odds (draw/data) ─────────────────────────────────────────
+// ESPN carries NO NRL odds (probed 2026-09-13); nrl.com's match-centre draw
+// feed does — decimal odds per side on the current round, confirmed live
+// 2026-09-16 (Roosters 1.44 v Sharks 2.81). Unofficial but structured; any
+// failure degrades to no MARKET line.
+export async function fetchNRLDrawOdds(
+  teamName: string,
+  opponentName: string,
+): Promise<PreviewContext['marketOdds'] | undefined> {
+  try {
+    const season = new Date().getFullYear();
+    const res = await fetchTimeout(
+      `https://www.nrl.com/draw/data?competition=111&season=${season}`,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }, next: { revalidate: 900 }, timeoutMs: 8000 },
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json() as { fixtures?: any[] };
+    const nm = (s: string) => (s ?? '').toLowerCase();
+    const fx = (data.fixtures ?? []).find((f: any) => {
+      const h = nm(f.homeTeam?.nickName), a = nm(f.awayTeam?.nickName);
+      const t = nm(teamName), o = nm(opponentName);
+      return (t.includes(h) || h.includes(t)) && (o.includes(a) || a.includes(o))
+          || (t.includes(a) || a.includes(t)) && (o.includes(h) || h.includes(o));
+    });
+    if (!fx) return undefined;
+    const home = Number(fx.homeTeam?.odds), away = Number(fx.awayTeam?.odds);
+    if (!home || !away || Number.isNaN(home) || Number.isNaN(away)) return undefined;
+    return {
+      provider:     'NRL.com market',
+      homeDecimal:  home,
+      awayDecimal:  away,
+      homeFavorite: home < away,
     };
   } catch {
     return undefined;
