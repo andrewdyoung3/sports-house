@@ -595,6 +595,16 @@
 .sh-detail-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--border); }
 .sh-detail-two > .sh-detail-section { padding: 14px 20px; border-top: none; }
 .sh-detail-two > .sh-detail-section + .sh-detail-section { border-left: 1px solid var(--border); }
+/* Mobile: side-by-side Spotlight/Verdict columns get too narrow and read as
+   very long strips — stack them vertically; the divider rotates with them.
+   Desktop keeps the two-column layout. */
+@media (max-width: 639px) {
+  .sh-detail-two { grid-template-columns: 1fr; }
+  .sh-detail-two > .sh-detail-section + .sh-detail-section {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
 /* Variable-column variant — the Form/Ladder row carries 2 OR 3 cells (Weather stays as the
    3rd when present). Same sectioned look as .sh-detail-two; column count set inline. */
 .sh-detail-cols { display: grid; border-top: 1px solid var(--border); }
