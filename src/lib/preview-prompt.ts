@@ -12,6 +12,7 @@ import { getCompetitionProfile } from '@/lib/competition-context';
 import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts, seasonThird } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
 import { venueProfileLines } from '@/lib/cricket-venue-facts';
+import { deriveAngles } from '@/lib/angle-engine';
 
 // ─── Block types ──────────────────────────────────────────────────────────────
 
@@ -23,13 +24,14 @@ export type BlockId =
   | 'standings'         // cup group standings + LEAGUE TABLE + COMPETITION STATUS + DERIVED FACTS
   | 'recentForm'        // RECENT FORM
   | 'headToHead'        // HEAD-TO-HEAD — recent meetings between the two sides
+  | 'angle'             // THE ANGLE — derived, ranked story angles (angle-engine.ts)
   | 'personnel'         // LINEUP + SQUAD SUBMISSION + INJURY REPORT + KEY PERFORMERS
   | 'mediaWatch'        // FROM THE MEDIA — attributed news headlines + model tips (editorial)
   | 'weather';          // WEATHER AT KICKOFF
 
 export const BLOCK_ORDER: readonly BlockId[] = [
   'matchFacts', 'fixtureContext', 'competitionProfile', 'sportContext',
-  'standings', 'recentForm', 'headToHead', 'personnel', 'mediaWatch', 'weather',
+  'standings', 'recentForm', 'headToHead', 'angle', 'personnel', 'mediaWatch', 'weather',
 ] as const;
 
 export const ALL_BLOCKS: ReadonlySet<BlockId> = new Set(BLOCK_ORDER);
@@ -42,6 +44,7 @@ export const BLOCK_LABELS: Record<BlockId, string> = {
   standings:           'League table & derived facts',
   recentForm:          'Recent form',
   headToHead:          'Head-to-head meetings',
+  angle:               'The angle (derived story lines)',
   personnel:           'Lineups, squads & injuries',
   mediaWatch:          'From the media (news, tips, angles)',
   weather:             'Weather at kickoff',
@@ -1609,6 +1612,39 @@ export function buildDataBlock(
     }
   }
 
+  // ── Enabled-invariant tail-reminder conditions ──────────────────────────────
+  // The end-of-prompt reminders (PLACEMENT RULE / OPENER RULE) must appear in
+  // EVERY block-toggle variant whenever they appear in the full build: the
+  // sandbox decomposition (buildBlocks) derives its footer as a common suffix,
+  // and a reminder gated on another block's emitted lines breaks byte-faithful
+  // reassembly (footer collapses to empty, the tail sticks to matchFacts).
+  // So the conditions are computed from context alone, and the emission sites
+  // below reuse these values verbatim.
+  const seasonStateKnown = !isOffLeague && !!totalRounds && played !== undefined;
+  const isFinalsPhaseInv = seasonStateKnown
+    && (finalsRoundForDate(league, context.fixtureDate) !== null || played >= totalRounds);
+  const firstThirdPolicyInv = seasonStateKnown && !isFinalsPhaseInv
+    && seasonThird(played, totalRounds) === 1;
+
+  const knockoutTieInv = !!context.competitionStage && !context.competitionStage.isGroupPhase;
+  const suppressStandingsInv = (isOffLeague && league !== 'f1') || knockoutTieInv;
+  let finalsSeedT: number | undefined;
+  let finalsSeedO: number | undefined;
+  let finalsPathFactsInv: string[] = [];
+  if (!suppressStandingsInv && league !== 'f1'
+      && context.leagueTable && context.leagueTable.length > 0 && totalRounds
+      && finalsRoundForDate(league, context.fixtureDate) !== null) {
+    const seedSorted = [...context.leagueTable].sort((a, b) => a.position - b.position);
+    finalsSeedT = seedSorted.find(r => rowMatchesTeam(r.name, teamName))?.position;
+    finalsSeedO = seedSorted.find(r => rowMatchesTeam(r.name, opponentName))?.position;
+    finalsPathFactsInv = buildFinalsPathFacts(
+      league, context.fixtureDate, teamName, opponentName,
+      finalsSeedT, finalsSeedO, isHome,
+      context.teamRecentForm ?? teamResults,
+      context.opponentRecentForm ?? oppResults,
+    );
+  }
+
   if (enabled('sportContext')) {
     lines.push(`SPORT: ${sportCtx}`);
 
@@ -1620,8 +1656,9 @@ export function buildDataBlock(
       // Regular season complete: a finals date-window match is authoritative
       // (windows are per-season absolute dates); played >= totalRounds is only
       // the fallback — it undercounts for comps with byes (NRL: 24 games over
-      // 27 rounds, so the count alone never fires there).
-      const isFinalsPhase = finalsRoundForDate(league, context.fixtureDate) !== null || played >= totalRounds;
+      // 27 rounds, so the count alone never fires there). Hoisted so the tail
+      // PLACEMENT RULE gate agrees with this emission exactly.
+      const isFinalsPhase = isFinalsPhaseInv;
       const phase =
         isFinalsPhase      ? 'finals series'
         : played <= quarter    ? 'early season'
@@ -1726,12 +1763,11 @@ export function buildDataBlock(
         // the played-count test misses bye leagues like NRL).
         const isFinalsKnockout = !!finalsRoundForDate(league, context.fixtureDate);
         if (isFinalsKnockout) {
-          const sorted   = [...context.leagueTable].sort((a, b) => a.position - b.position);
-          const tRow = sorted.find(r => rowMatchesTeam(r.name, teamName));
-          const oRow = sorted.find(r => rowMatchesTeam(r.name, opponentName));
+          // Seeds + path facts are the hoisted enabled-invariant values above —
+          // the tail OPENER RULE gate must agree with this emission exactly.
           const seedParts = [
-            tRow ? `${teamName} finished ${ordinalSuffix(tRow.position)}` : '',
-            oRow ? `${opponentName} finished ${ordinalSuffix(oRow.position)}` : '',
+            finalsSeedT !== undefined ? `${teamName} finished ${ordinalSuffix(finalsSeedT)}` : '',
+            finalsSeedO !== undefined ? `${opponentName} finished ${ordinalSuffix(finalsSeedO)}` : '',
           ].filter(Boolean);
           if (seedParts.length > 0) {
             lines.push('REGULAR-SEASON SEEDING (context only — this is a finals fixture; the ladder no longer applies and there is no "minor premiership" or finals-cutoff at stake here):');
@@ -1742,12 +1778,7 @@ export function buildDataBlock(
           // hosting, how each side got here, and what winning/losing means. The
           // model must take hosting/seeding/consequence logic from HERE — never
           // infer it (a host is NOT "the higher seed" from week two onward).
-          const pathFacts = buildFinalsPathFacts(
-            league, context.fixtureDate, teamName, opponentName,
-            tRow?.position, oRow?.position, isHome,
-            context.teamRecentForm ?? teamResults,
-            context.opponentRecentForm ?? oppResults,
-          );
+          const pathFacts = finalsPathFactsInv;
           if (pathFacts.length > 0) {
             lines.push('FINALS PATH (authoritative on hosting, seeding, and consequences — these bind your LOGIC, not your wording: weave the one or two that carry the story into the narrative; never recite this list or open with a structure lesson):');
             pathFacts.forEach(f => lines.push(`  • ${f}`));
@@ -1857,6 +1888,38 @@ export function buildDataBlock(
       lines.push(`HEAD-TO-HEAD (matchup trend only — no scores, years or dates are given; use for context, do NOT recite a record):`);
       lines.push(`  Over the last ${h2h.length} meetings, ${trend}.`);
       lines.push(`  Most recently, ${teamName} ${lastVerb}${venueNote}.`);
+      lines.push('');
+    }
+  }
+
+  // THE ANGLE — deterministically derived, ranked story angles (angle-engine.ts).
+  // Hands the model its opening material so opener quality is a floor, not a
+  // sampling accident. Every line is arithmetic over data already in this block;
+  // placement-flavoured angles are thirds-gated inside the engine.
+  if (enabled('angle') && league !== 'f1') {
+    const inFinalsWindow = finalsRoundForDate(league, context.fixtureDate) !== null;
+    const angleTotalRounds = LEAGUE_TOTAL_ROUNDS[league];
+    const anglePlayed = context.teamStanding?.played;
+    const angleOdds = context.marketOdds;
+    const angles = deriveAngles({
+      teamName, opponentName, isHome,
+      fixtureDateISO: context.fixtureDate,
+      teamForm: tForm, opponentForm: oForm,
+      headToHead: context.headToHead,
+      teamPosition: context.teamStanding?.position,
+      opponentPosition: context.opponentStanding?.position,
+      teamAbsenceCount: context.teamInjuryReport?.length,
+      opponentAbsenceCount: context.opponentInjuryReport?.length,
+      marketFavouriteIsTeam: angleOdds?.homeFavorite === undefined ? undefined
+        : angleOdds.homeFavorite ? isHome !== false : isHome === false,
+      seasonThird: !inFinalsWindow && angleTotalRounds && anglePlayed !== undefined
+        ? seasonThird(anglePlayed, angleTotalRounds)
+        : undefined,
+    });
+    if (angles.length > 0) {
+      lines.push('THE ANGLE (derived, ranked — the story of this fixture; every line below is factual):');
+      angles.forEach((a, idx) => lines.push(`  ${idx + 1}. ${a.line}`));
+      lines.push('  Build the context field\'s opening around angle 1; angles 2-3 are secondary colour, used only where they fit naturally. Never contradict an angle.');
       lines.push('');
     }
   }
@@ -2060,17 +2123,20 @@ export function buildDataBlock(
 
   // First-third fixtures: end-of-prompt placement reminder — recency beats
   // mid-block guidance on the local model (same lesson as the opener rule).
-  if (lines.some(l => l.startsWith('SEASON-PLACEMENT POLICY (first third'))) {
+  // Gated on the enabled-invariant flag, NOT a lines-scan: the reminder must
+  // survive block toggles or the sandbox footer decomposition breaks.
+  if (firstThirdPolicyInv) {
     lines.push('');
     lines.push('PLACEMENT RULE (enforced by automated checks): it is the FIRST THIRD of the season — do not mention title, top-N, European/Champions League, finals, or relegation implications ANYWHERE in any field. Form and current position only.');
   }
 
   // Finals fixtures: end-of-prompt opener reminder — the recap habit ("This is
   // a Preliminary Final…") survives mid-prompt guidance, and automated checks
-  // reject it, so the last thing the model reads is the rule.
-  if (lines.some(l => l.startsWith('FINALS PATH'))) {
+  // reject it, so the last thing the model reads is the rule. Gated on the
+  // enabled-invariant flag, NOT a lines-scan (see footer note above).
+  if (finalsPathFactsInv.length > 0) {
     lines.push('');
-    lines.push('OPENER RULE (enforced by automated checks): the FIRST sentence of the context field must begin with a team name, a consequence, or a tension — NEVER with "This is", "It\'s", or the round name. Weave the round name in mid-sentence at most once.');
+    lines.push('OPENER RULE (enforced by automated checks): the FIRST sentence of the context field must begin with a team name, a consequence, or a tension — NEVER with "This is", "It\'s", or the round name. Weave the round name in mid-sentence at most once. When a THE ANGLE section is present, angle 1 IS that tension — open with it.');
   }
 
   return lines.join('\n');
