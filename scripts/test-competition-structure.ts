@@ -352,9 +352,12 @@ console.log('\n── EPL: table, no finals ────────────
   has('QF: neither side can be eliminated', qf, 'NEITHER side can be eliminated');
   has('QF: minor premiers tagged', qf, 'minor premiers');
 
-  // Week 1 Elimination Final: knockout.
+  // Week 1 Elimination Final: consequence = what the WINNER gets (elimination
+  // is the reader's default and is never stated — 2026-09-16 economy rule).
   const ef = buildFinalsPathFacts('nrl', '2026-09-12', 'Team5', 'Team8', 5, 8, true);
-  has('EF: loser eliminated', ef, 'loser is eliminated');
+  has('EF: winner advances to away semi', ef, 'advances to an away Semi-Final');
+  lacks('EF: default elimination unstated', ef, 'loser is eliminated');
+  lacks('prelim: default elimination unstated', prelim, 'loser is eliminated');
 
   // Grand Final: venue fixed, no seeding-hosting inference.
   const gf = buildFinalsPathFacts('nrl', '2026-10-04', 'Team1', 'Team3', 1, 3, true);

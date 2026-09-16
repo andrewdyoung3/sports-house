@@ -106,7 +106,7 @@ export function finalsRoundDisplay(
       if (teamSeed >= 5 && oppSeed >= 5) {
         return {
           name: 'Elimination Final',
-          detail: 'knockout — the loser is eliminated; the winner advances to an away semi-final',
+          detail: 'knockout (no second chance) — the winner advances to an away semi-final',
           decider: false,
         };
       }
@@ -225,13 +225,13 @@ export function buildFinalsPathFacts(
 
   if (round.decider) {
     facts.push('Both sides won Preliminary Finals to reach the Grand Final. The Grand Final venue is fixed — a home-ground label here does not mean higher seeding.');
-    facts.push('The winner is the premier. There is no next week for either side.');
+    facts.push('The winner is the premier.');
     return facts;
   }
 
   if (round.name === 'Wildcard Round') {
     if (knownHost) facts.push(`Hosting: ${home} host as the higher seed — wildcard hosting follows ladder position.`);
-    facts.push("One game for a final-eight place: the winner takes one of the last two spots in the final eight; the loser's season is over.");
+    facts.push('One game for a final-eight place: the winner takes one of the last two spots in the final eight.');
     return facts;
   }
 
@@ -241,7 +241,7 @@ export function buildFinalsPathFacts(
     if (isQualifying) {
       facts.push('NEITHER side can be eliminated in this game: the Qualifying Final loser drops to a home Semi-Final next week (the double chance); the winner advances straight to a home Preliminary Final with a week off.');
     } else {
-      facts.push('Knockout: the Elimination Final loser is eliminated; the winner advances to an away Semi-Final.');
+      facts.push('The Elimination Final winner advances to an away Semi-Final.');
     }
     return facts;
   }
@@ -255,10 +255,10 @@ export function buildFinalsPathFacts(
   if (round.name === 'Semi-Final') {
     if (knownHost && hostSeedConsistent) {
       facts.push(`Hosting: ${home} host because they LOST a Qualifying Final and hold the double chance — semi-final hosting comes from the bracket, not from being the higher seed.`);
-      if (homeSeed !== undefined) facts.push(`${home} (${ord(homeSeed)}) lost their Qualifying Final — this is their double chance; lose here and their season is over.`);
+      if (homeSeed !== undefined) facts.push(`${home} (${ord(homeSeed)}) lost their Qualifying Final — this Semi-Final is their double chance, now being used.`);
       if (awaySeed !== undefined && awaySeed >= 5) facts.push(`${away} (${ord(awaySeed)}) won an Elimination Final to reach this Semi-Final${viaWildcard(awaySeed) ? ', having already survived the Wildcard Round' : ''}.`);
     }
-    facts.push('Knockout: the loser is eliminated; the winner advances to an away Preliminary Final.');
+    facts.push('The winner advances to an away Preliminary Final.');
     return facts;
   }
 
@@ -267,11 +267,11 @@ export function buildFinalsPathFacts(
       facts.push(`Hosting: ${home} earned this home Preliminary Final by WINNING their Qualifying Final (and had last week off) — hosting here is earned in the bracket and does NOT follow ladder position.`);
       if (awaySeed !== undefined) {
         facts.push(awaySeed <= 4
-          ? `${away} (${ord(awaySeed)}) LOST their Qualifying Final, then survived a home Semi-Final — their double chance is spent; lose here and they are out.`
+          ? `${away} (${ord(awaySeed)}) LOST their Qualifying Final, then survived a home Semi-Final — their double chance is spent.`
           : `${away} (${ord(awaySeed)}) have taken the long road: an Elimination Final win, then a Semi-Final win${viaWildcard(awaySeed) ? ', after coming through the Wildcard Round' : ''}.`);
       }
     }
-    facts.push('Knockout: the winner advances to the Grand Final; the loser is eliminated.');
+    facts.push('The winner advances to the Grand Final.');
     return facts;
   }
 

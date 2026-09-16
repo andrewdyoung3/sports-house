@@ -405,6 +405,33 @@ export function validateFinalsSeeding(output: AIPreview, prompt: string): string
 }
 
 /**
+ * Finals-redundancy guard (2026-09-16 economy rule): in a knockout final,
+ * "the loser is eliminated" is the reader's default assumption — stating it
+ * (or a paraphrase: "loser goes home", "lose and the season/campaign ends")
+ * adds nothing. Only consequences that DIFFER from the default earn words
+ * (the double chance, wildcard survival). Catches the flat restatement forms
+ * only; tension idioms like "season on the line" are left alone.
+ */
+export function validateFinalsRedundancy(output: AIPreview, prompt: string): string[] {
+  if (!/FINALS PATH|FINALS CONTEXT/.test(prompt)) return [];
+  // The double-chance rounds are the counter-case — elimination talk there can
+  // be genuinely informative, so only plain knockout rounds are policed.
+  if (/NEITHER side can be eliminated/.test(prompt)) return [];
+  const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+    .filter(Boolean).join('  ');
+  const redundantRe = /\b(?:the )?loser (?:is eliminated|goes home|is out|is knocked out)\b|\bloser'?s? (?:season|campaign) (?:ends|is over)\b|\blose,? and (?:your|their|the) (?:premiership )?(?:campaign|season) (?:ends|is over)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(redundantRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`redundant finals consequence "${m[0]}" — elimination is the default in a knockout and goes unsaid; state only consequences that differ (double chance earned/spent, wildcard survival)`);
+  }
+  return violations;
+}
+
+/**
  * Positional-side binding — the generalised rule behind the "Saka plays off
  * the left" incident (2026-09-16). The player-name whitelist verifies WHO
  * exists; nothing verified what was SAID about them, so side-of-pitch claims
@@ -717,6 +744,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateLadderPosition(v, prompt),
     ...validateFinalsSeeding(v, prompt),
     ...validateNarrativeOpener(v, prompt),
+    ...validateFinalsRedundancy(v, prompt),
     ...validatePlayerSideClaims(v, prompt),
     ...validateF1ChampionshipClaims(v, prompt),
     ...validatePlayerNames(v, prompt),

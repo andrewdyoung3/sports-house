@@ -17,6 +17,7 @@ import {
   validateFinalsSeeding,
   validateNarrativeOpener,
   validatePlayerSideClaims,
+  validateFinalsRedundancy,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -354,6 +355,26 @@ expect('invented F1 driver in spotlight is rejected',
     countryFromVenueString('Kensington Oval, Bridgetown, Barbados') === 'Barbados');
   expect('venue string with city-only tail extracts nothing',
     countryFromVenueString('Perth Stadium, Perth') === undefined);
+}
+
+// ─── validateFinalsRedundancy — default consequences go unsaid ──────────────────
+
+{
+  console.log('\n── validateFinalsRedundancy ──');
+  const KO_PROMPT = 'FINALS PATH (authoritative...):\n  • The winner advances to the Grand Final.\n';
+  const v = (context: string) => validateFinalsRedundancy(preview({ context }), KO_PROMPT);
+  expect('flat "the loser is eliminated" rejected', v('The winner advances; the loser is eliminated.').length > 0);
+  expect('paraphrase "lose and your premiership campaign ends" rejected',
+    v('Win and you are in the Grand Final; lose and your premiership campaign ends.').length > 0);
+  expect('informative counter-case passes',
+    v('Their double chance is spent after the qualifying-final loss.').length === 0);
+  expect('tension idiom "season on the line" passes',
+    v('With the season on the line, the midfield battle decides it.').length === 0);
+  expect('inert on double-chance (Qualifying Final) rounds',
+    validateFinalsRedundancy(preview({ context: 'The loser is eliminated.' }),
+      'FINALS PATH:\n  • NEITHER side can be eliminated in this game...\n').length === 0);
+  expect('inert outside finals mode',
+    validateFinalsRedundancy(preview({ context: 'The loser is eliminated.' }), 'LEAGUE TABLE:').length === 0);
 }
 
 // ─── Summary ────────────────────────────────────────────────────────────────────

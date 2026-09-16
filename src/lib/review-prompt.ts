@@ -230,7 +230,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     lines.push(
       finalsRound.decider
         ? `  The winner is the premier — there is no next game. Frame the review around the championship, not the ladder.`
-        : `  The regular-season ladder no longer applies. Frame the result as finals-series progression (who advances, who is eliminated, who gets a second chance per the round structure above) — never as ladder movement or a finals-qualification race.`
+        : `  The regular-season ladder no longer applies. Frame the result as finals-series progression — who advances and where, plus any consequence that DIFFERS from simple elimination (a double chance earned or spent). Do NOT state that the loser is eliminated: in a knockout that is the reader's default assumption. Never frame as ladder movement or a finals-qualification race.`
     );
     const pathFacts = buildFinalsPathFacts(
       league, date, teamName, opponent, teamPosition, opponentPosition, isHome,
