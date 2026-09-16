@@ -17,7 +17,7 @@ import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
-import { fetchTimeout, aestDisplay, parseCricketFormat } from '@/lib/espn';
+import { fetchTimeout, aestDisplay, parseCricketFormat, espnMonthParams, fetchESPNScoreboard } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, cricSeriesSearch, type CricMatch } from '@/lib/cricketdata';
 import { INTL_TEAM_COUNTRY, resolveIntlVenueStatus, countryFromVenueString, type IntlVenueStatus } from '@/lib/international';
@@ -121,7 +121,7 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
   const end        = new Date(nowDate.getTime() + 90 * 86400_000);
   const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
@@ -205,7 +205,7 @@ async function fetchSOOGenerationFixtures(lookbackDays: number): Promise<Upcomin
   const year   = new Date().getFullYear();
   const cutoff = Date.now() - lookbackDays * 86400_000;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${year}0415-${year}0901&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -326,9 +326,11 @@ export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
       const isUEFA   = slug.startsWith('uefa.');
       const eventMap = new Map<string, any>();
 
-      const urls: string[] = [
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${range}&limit=200`,
-      ];
+      // ESPN soccer no longer honours dates=START-END (2026-09-16) — fan out
+      // per month instead; the window filter below still bounds the results.
+      const urls: string[] = espnMonthParams(start.getTime(), end.getTime()).map(m =>
+        `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${m}&limit=200`,
+      );
       if (isUEFA) {
         urls.push(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?limit=50`);
       }
@@ -463,7 +465,7 @@ export async function fetchSRUFixtures(lookbackDays = 0): Promise<UpcomingGame[]
   const end        = new Date(nowDate.getTime() + 90 * 86400_000);
   const fmt        = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
     { cache: 'no-store' },
   );
@@ -565,7 +567,7 @@ export async function fetchRINTFixtures(lookbackDays = 0): Promise<UpcomingGame[
 
   const settled = await Promise.allSettled(
     RINT_COMP_IDS.map(async (compId) => {
-      const res = await fetchTimeout(
+      const res = await fetchESPNScoreboard(
         `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
         { cache: 'no-store' },
       );
@@ -696,7 +698,7 @@ export async function fetchNBAFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
   await Promise.allSettled(
     urls.map(url =>
-      fetchTimeout(url, { cache: 'no-store' })
+      fetchESPNScoreboard(url, { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data) return;

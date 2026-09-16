@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
-import { fetchTimeout, parseCricketFormat, espnDateRange, aestDisplay, unknownTeam } from '@/lib/espn';
+import { fetchTimeout, parseCricketFormat, espnDateRange, espnMonthParams, aestDisplay, unknownTeam, fetchESPNScoreboard } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
 import { fetchLeagueFixtures } from '@/lib/league-fixtures';
@@ -205,9 +205,13 @@ async function fetchESPNCompetition(
   // fixtures when the API supports it) and, for UEFA slugs, also try an undated
   // request which reliably returns the current/next scheduled round.
   const isUEFA = slug.startsWith('uefa.');
-  const urls: string[] = [
-    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${range}&limit=200`,
-  ];
+  // ESPN soccer no longer honours dates=START-END (2026-09-16) — expand the
+  // range into per-month queries; downstream state/date filters still apply.
+  const [rs, reEnd] = range.split('-');
+  const toMs = (v: string) => Date.parse(`${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T00:00:00Z`);
+  const urls: string[] = espnMonthParams(toMs(rs), toMs(reEnd ?? rs)).map(m =>
+    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${m}&limit=200`,
+  );
   if (isUEFA) {
     urls.push(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?limit=50`);
   }
@@ -372,7 +376,7 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
   const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const range = `${fmt(now)}-${fmt(end)}`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -432,7 +436,7 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
   const start = `${year}0415`;
   const end   = `${year}0901`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${start}-${end}&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -578,7 +582,7 @@ async function fetchSuperRugbyFixtures(teamId: string): Promise<UpcomingGame[]> 
   const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const range = `${fmt(now)}-${fmt(end)}`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -688,7 +692,7 @@ async function fetchRintCompetition(
   teamId: string,
   range: string,
 ): Promise<UpcomingGame[]> {
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -915,7 +919,7 @@ async function fetchBBLFixtures(teamId: string): Promise<UpcomingGame[]> {
   if (!teamName) return [];
 
   const range = espnDateRange(0, 150); // look 150 days forward (season may be months away)
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
     { next: { revalidate: 3600 } },
   );
@@ -1277,7 +1281,7 @@ async function fetchNBAFixtures(teamId: string): Promise<UpcomingGame[]> {
   const eventMap = new Map<string, any>();
   await Promise.allSettled(
     urls.map(url =>
-      fetchTimeout(url, { next: { revalidate: 300 } })
+      fetchESPNScoreboard(url, { next: { revalidate: 300 } })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data) return;

@@ -139,3 +139,55 @@ export interface EspnBoxscore {
 export interface EspnSummaryResponse {
   boxscore?: EspnBoxscore;
 }
+
+/**
+ * ESPN soccer scoreboards stopped honouring dates=START-END ranges (observed
+ * 2026-09-16: any range → 0 events, while single-date and month forms still
+ * work — upstream change, not ours). Expand a window into per-MONTH `dates=`
+ * values (YYYYMM) covering it; callers keep their own date filtering.
+ */
+export function espnMonthParams(startMs: number, endMs: number): string[] {
+  const months: string[] = [];
+  const d = new Date(startMs);
+  d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
+  while (d.getTime() <= endMs && months.length < 8) {
+    months.push(`${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+    d.setUTCMonth(d.getUTCMonth() + 1);
+  }
+  return months;
+}
+
+/**
+ * Drop-in scoreboard fetcher for the 2026-09-16 ESPN change: dates=START-END
+ * range queries now return 0 events on EVERY sport feed, while single-date and
+ * month (YYYYMM) forms still work. When the resolved URL carries an 8digit-8digit
+ * range, this fans out per month, merges events by id, and returns a
+ * Response-shaped object ({ok, json}) whose payload keeps the first month's
+ * non-events fields. Month spillover is harmless — every call site already
+ * bounds results with its own date/state filters. Non-range URLs pass through.
+ */
+export async function fetchESPNScoreboard(
+  url: string,
+  init?: Parameters<typeof fetchTimeout>[1],
+): Promise<{ ok: boolean; status?: number; json: () => Promise<any> }> {
+  const m = url.match(/([?&])dates=(\d{8})-(\d{8})/);
+  if (!m) return fetchTimeout(url, init);
+  const iso = (v: string) => `${v.slice(0, 4)}-${v.slice(4, 6)}-${v.slice(6, 8)}T00:00:00Z`;
+  const months = espnMonthParams(Date.parse(iso(m[2])), Date.parse(iso(m[3])));
+  let base: any = null;
+  const events = new Map<string, any>();
+  await Promise.all(months.map(async mo => {
+    try {
+      const res = await fetchTimeout(url.replace(m[0], `${m[1]}dates=${mo}`), init);
+      if (!res.ok) return;
+      const j = await res.json();
+      if (!base) base = j;
+      for (const ev of (j?.events ?? []) as any[]) {
+        const id = String(ev?.id ?? '');
+        if (id && !events.has(id)) events.set(id, ev);
+      }
+    } catch { /* skip month */ }
+  }));
+  if (!base) return { ok: false, status: 502, json: async () => ({}) };
+  return { ok: true, json: async () => ({ ...base, events: [...events.values()] }) };
+}

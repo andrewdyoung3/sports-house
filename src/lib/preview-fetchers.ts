@@ -18,7 +18,7 @@ import type {
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { readFileSync, writeFileSync, statSync } from 'fs';
-import { fetchTimeout } from '@/lib/espn';
+import { fetchTimeout, fetchESPNScoreboard } from '@/lib/espn';
 import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import {
@@ -354,7 +354,7 @@ async function fetchSOOPreview(teamId: string, eventId?: string): Promise<Previe
   let seriesState: string | undefined;
   try {
     const year = new Date().getFullYear();
-    const res = await fetchTimeout(
+    const res = await fetchESPNScoreboard(
       `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${year}0415-${year}0901&limit=200`,
       { next: { revalidate: 3600 } },
     );
@@ -548,7 +548,7 @@ async function fetchCompetitionStage(
       `https://site.api.espn.com/apis/v2/sports/soccer/${slug}/standings`,
       { next: { revalidate: 3600 } },
     ),
-    fetchTimeout(
+    fetchESPNScoreboard(
       `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dateRange}&limit=100`,
       { next: { revalidate: 1800 } },
     ),
@@ -1570,7 +1570,7 @@ export async function fetchNBAPreview(teamId: string, opponentName: string, even
   const fmt  = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const now  = new Date();
   const past = new Date(now.getTime() - 14 * 86400000);
-  const scoreboard = await fetchTimeout(
+  const scoreboard = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${fmt(past)}-${fmt(now)}&limit=50`,
     { next: { revalidate: 300 } },
   ).then(r => r.ok ? r.json() : null).catch(() => null);

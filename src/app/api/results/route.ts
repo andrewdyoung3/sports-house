@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { GameResult } from '@/types';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
-import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange } from '@/lib/espn';
+import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange, fetchESPNScoreboard } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
 import { enforceRateLimit } from '@/lib/request-guards';
@@ -98,7 +98,7 @@ const fetchNRLResults = unstable_cache(async (teamId: string): Promise<GameResul
   const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const range = `${fmt(start)}-${fmt(now)}`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${range}&limit=200`,
     { cache: 'no-store' },
   );
@@ -165,7 +165,7 @@ const fetchSOOResults = unstable_cache(async (teamId: string): Promise<GameResul
   const start = `${year}0415`;
   const end   = `${year}0901`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${start}-${end}&limit=200`,
     { cache: 'no-store' },
   );
@@ -271,7 +271,7 @@ async function fetchESPNResultsForSlug(
   label: string,
   range: string,
 ): Promise<GameResult[]> {
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${range}&limit=200`,
     { cache: 'no-store' },
   );
@@ -407,7 +407,7 @@ const fetchSuperRugbyResults = unstable_cache(async (teamId: string): Promise<Ga
   const fmt   = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
   const range = `${fmt(start)}-${fmt(now)}`;
 
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${range}&limit=200`,
     { cache: 'no-store' },
   );
@@ -496,7 +496,7 @@ async function fetchRintResultsComp(
   compId: string,
   range: string,
 ): Promise<GameResult[]> {
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${range}&limit=200`,
     { cache: 'no-store' },
   );
@@ -781,7 +781,7 @@ async function fetchBBLResults(teamId: string): Promise<GameResult[]> {
   if (!teamName) return [];
 
   const range = espnDateRange(200, 0); // look 200 days back (full season)
-  const res = await fetchTimeout(
+  const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/cricket/8044/scoreboard?dates=${range}&limit=200`,
     { cache: 'no-store' },
   );
@@ -1049,7 +1049,7 @@ async function fetchNBAResults(teamId: string): Promise<GameResult[]> {
   const eventMap = new Map<string, any>();
   await Promise.allSettled(
     urls.map(url =>
-      fetchTimeout(url, { next: { revalidate: 300 } })
+      fetchESPNScoreboard(url, { next: { revalidate: 300 } })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data) return;
