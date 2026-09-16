@@ -393,6 +393,12 @@ export interface MatchStats {
 // ─── AI Match Review (post-match, retrospective) ─────────────────────────────
 
 export interface AIReview {
+  /**
+   * Standard per-sport key-contribution lines, derived SERVER-SIDE from match
+   * data (never LLM-generated): soccer goals+assists with minutes, rugby try
+   * scorers, AFL goal kickers, cricket scoring chart. Rendered as a strip.
+   */
+  contributions?: string[];
   /** 2–3 sentences explaining what happened tactically and why. */
   summary: string;
   /** 2–3 specific, grounded factors that determined the match. */

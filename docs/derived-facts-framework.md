@@ -167,3 +167,33 @@ data readout instead of folding one number into a claim; reviews reach for
 overlap validator; crutch-phrase validator; per-sport Not/But register exemplars
 (placeholder-only); angle-first instruction with derivable angle types; count-claim
 binding for absence enumerations.
+
+### Audit part 2 — historical reviews vs real match reports (2026-09-16)
+
+Regenerated 5 historical reviews under the first-pass regime and compared with
+the real reports of the same games (ABC/AFL.com on Brisbane–Adelaide; Sky/ESPN
+on Ipswich 2–4 Arsenal). Three further structural defects found and fixed:
+1. **Event-anchoring gap** — real reports lead with WHEN it turned (five goals
+   in the first 7:13; a 7'/47' brace) and WHO did it; ours were aggregate-only.
+   → SCORING TIMELINE derived block for soccer reviews (ESPN keyEvents) +
+   PEOPLE FIRST requirement (summary must name the decisive contribution when
+   scorer data exists).
+2. **Cup category error** — an EFL Cup review praised "extending their lead at
+   the top of the Table". → CUP TIE framing: league table fully suppressed for
+   cup reviews (mirror of the preview path's isOffLeague rule).
+3. **Hollow-verdict family** — "confirms their status as a serious contender /
+   confirms their resilience" appeared in 3 of 5. → added to the crutch ban.
+
+**Standard key-contribution strips (user requirement):** `review-contributions.ts`
+derives per-sport lines SERVER-side (never LLM prose) — soccer goals+assists with
+minutes from the timeline, rugby-code try scorers + goal kickers, AFL goal
+kickers, cricket scoring chart from the cricketdata scorecard (1 hit, 24h cache)
+— attached to the review response as `contributions` and rendered as a panel strip.
+
+**Cricket reviews (user requirement):** cricket_int + bbl added to review
+leagues with their own block (CRICKET MATCH CONTEXT marker → cricket register
+guard applies; innings + result passed from the result object; ladder/phase/
+standings fully suppressed; soccer-style "Score: 0 – 0" line suppressed). A
+cricket review without result/innings data is REFUSED (422) — a placeholder
+0-0 generated an invented "draw" in testing. Roadmap: series-tally facts
+("leads the series 1-0") mirroring SOO.

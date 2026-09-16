@@ -74,10 +74,17 @@ INFORMATION ECONOMY:
 • Every sentence must add interpretation the data display cannot show: WHY the result happened, what structural pattern it reflects, what it means going forward.
 • ABSENT DATA GOES UNMENTIONED: never tell the reader what information is unavailable — a data gap tells YOU what not to discuss; it is never content.
 
+REGISTER MECHANICS — how the professionals write match reports:
+• NEVER announce what mattered ("the key factor was…", "X proved crucial/decisive") — make the case: "[Winner] won the ball at the contest and turned it into goals; [Loser] had entries but no polish." (structure template — never reuse its details).
+• VARY the rhythm: at least one sentence under ten words. Metronomic 30-word compounds read like a machine.
+• COMPARATIVES over abstractions: "won more of the ball after halftime" beats "superior structure"; verdicts like "confirms their status as a serious contender" say nothing — state the specific trend confirmed or weakness exposed.
+• ONE number per claim, folded into an argument — never a sequence of stats read aloud.
+
 MARGIN CALIBRATION — read from DERIVED FACTS, do not compute:
 • Use the margin label from DERIVED FACTS verbatim. Never call a competitive defeat "heavy" or vice versa.
 
 STRUCTURE — four elements required, distributed naturally:
+• PEOPLE FIRST: when SCORERS / KEY PERFORMERS data exists, the summary MUST name the decisive individual contribution early (the real report of a 4-2 cup win led with the two-goal teenager, not "momentum continued") — a match report without its protagonist is a defect.
 • KEY MATCHUP: The decisive tactical or personnel contest that determined the result. Name it specifically.
 • RECENT FORM: What the form pattern before this game suggested — and whether this result fits or breaks it.
 • STATISTICAL ANGLE: One meaningful number from the MATCH STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
@@ -131,6 +138,14 @@ export interface ReviewInput {
   teamRecentForm?:     GameResult[];
   opponentRecentForm?: GameResult[];
   headToHead?:         HeadToHeadMeeting[];
+  /** Soccer: derived goal timeline lines from ESPN keyEvents ("7' Max Dowman (Arsenal) — 0-1"). */
+  scoringTimeline?:    string[];
+  // Cricket (cricket_int / bbl): innings context passed from the result object.
+  cricketFormat?:   'test' | 'odi' | 't20';
+  cricketResult?:   string;   // "Australia won by 45 runs"
+  cricketInnings?:  Array<{ team: string; score: string; overs?: number }>;
+  /** Cricket: derived scoring-chart lines (top batters/bowlers), server-side. */
+  cricketChart?:    string[];
 }
 
 function ordinalSuffix(n: number): string {
@@ -166,7 +181,8 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     isHome, date, competition, leagueTable, matchStats,
     teamPosition, teamPlayed, teamPoints, teamPercentage,
     opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
-    teamRecentForm, opponentRecentForm, headToHead,
+    teamRecentForm, opponentRecentForm, headToHead, scoringTimeline,
+    cricketFormat, cricketResult, cricketInnings, cricketChart,
   } = input;
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
@@ -185,6 +201,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   // cutoffs, CL gaps, "standings after this result") describes a table that no
   // longer moves — seeding, not stakes — so they are suppressed and replaced
   // with the finals-series framing. Seeds = final ladder positions.
+  const isCricket = league === 'cricket_int' || league === 'bbl';
   const rules = COMP_RULES[league];
   const maxPlayed = Math.max(teamPlayed ?? 0, opponentPlayed ?? 0);
   // A finals date-window match is authoritative (per-season absolute dates);
@@ -195,6 +212,11 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     : null;
   const regularSeasonDone = rules?.archetype === 'ladder-finals'
     && (!!finalsRound || (!!rules.totalRounds && maxPlayed >= rules.totalRounds));
+  // Cup ties (EFL Cup, FA Cup, Europe): the LEAGUE table has no bearing on a cup
+  // result — mirroring the preview path's isOffLeague suppression. A cup review
+  // that says "extending their lead at the top of the Table" is a category error
+  // (observed 2026-09-16 on an EFL Cup tie).
+  const isCupTie = !isCricket && !!competition && !/regular season/i.test(competition);
 
   const lines: string[] = [];
 
@@ -219,9 +241,36 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   lines.push(`COMPETITION: ${comp}`);
   lines.push(`Date: ${dateStr}`);
   lines.push(`${homeAway}: ${teamName} vs ${opponent}`);
-  lines.push(`Score: ${teamName} ${teamScore} – ${opponentScore} ${opponent}`);
-  lines.push(`Result: ${result}`);
+  if (!isCricket) {
+    // Cricket scores are innings, not a two-number line — the cricket block
+    // below carries them; a placeholder "0 – 0" here invites hallucination.
+    lines.push(`Score: ${teamName} ${teamScore} – ${opponentScore} ${opponent}`);
+    lines.push(`Result: ${result}`);
+  }
   lines.push('');
+
+  // ── Cricket match context (innings, format, chart) ─────────────────────────
+  if (isCricket) {
+    lines.push('CRICKET MATCH CONTEXT (a bilateral/tournament match — there is NO league ladder; frame within the series and the innings below):');
+    if (cricketFormat) lines.push(`  Format: ${cricketFormat.toUpperCase()}`);
+    if (cricketResult) lines.push(`  Result: ${cricketResult}`);
+    for (const inn of cricketInnings ?? []) {
+      if (!inn.score || inn.score === '0/0') continue; // results-parser phantom rows
+      lines.push(`  ${inn.team}: ${inn.score}${inn.overs ? ` (${inn.overs} ov)` : ''}`);
+    }
+    lines.push('');
+    if (cricketChart && cricketChart.length > 0) {
+      lines.push('SCORING CHART (derived — top contributions; use names and figures verbatim):');
+      cricketChart.forEach(l => lines.push(`  ${l}`));
+      lines.push('');
+    }
+  }
+
+  // ── Cup-tie framing (league table has no bearing) ──────────────────────────
+  if (isCupTie && !finalsRound) {
+    lines.push(`CUP TIE (${competition}): this is a knockout cup match — the league table has NO bearing on it and must not be discussed. Frame the result within the cup run and what the performance showed.`);
+    lines.push('');
+  }
 
   // ── Finals context (authoritative — replaces ladder framing) ───────────────
   if (finalsRound) {
@@ -245,7 +294,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   } else if (regularSeasonDone) {
     lines.push('FINALS CONTEXT: the regular season is complete and the finals series is underway; the ladder is final (seeding only). Do not frame this result as ladder movement.');
     lines.push('');
-  } else if (rules?.totalRounds && maxPlayed > 0) {
+  } else if (!isCupTie && !isCricket && rules?.totalRounds && maxPlayed > 0) {
     // ── Season-phase calibration (regular season) ─────────────────────────────
     // Reviews were overstating single results ("season on the brink" in April)
     // and understating late ones. State the phase and the permitted weight so
@@ -281,7 +330,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   // meaningless once the ladder is final.
   const tPts  = teamPoints;
   const oPts  = opponentPoints;
-  if (!regularSeasonDone && tPts !== undefined && oPts !== undefined) {
+  if (!regularSeasonDone && !isCupTie && !isCricket && tPts !== undefined && oPts !== undefined) {
     const ptsDiff = tPts - oPts;
     if (ptsDiff > 0) {
       facts.push(`${teamName} lead ${opponent} by ${ptsDiff} competition point${ptsDiff !== 1 ? 's' : ''} on the table.`);
@@ -296,7 +345,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
 
   // Finals / relegation gaps from full table — cutoff arithmetic only means
   // anything while the ladder can still move.
-  if (!regularSeasonDone && leagueTable && leagueTable.length > 0) {
+  if (!regularSeasonDone && !isCupTie && !isCricket && leagueTable && leagueTable.length > 0) {
     const sorted = [...leagueTable].sort((a, b) => a.position - b.position);
     const finalsSpot = FINALS_SPOTS[league];
 
@@ -364,7 +413,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   }
 
   // ── Current standings ──────────────────────────────────────────────────────
-  if (teamPosition !== undefined || opponentPosition !== undefined) {
+  if (!isCupTie && !isCricket && (teamPosition !== undefined || opponentPosition !== undefined)) {
     lines.push(regularSeasonDone
       ? 'REGULAR-SEASON SEEDING (final ladder — context only, no longer at stake):'
       : 'CURRENT STANDINGS (after this result):');
@@ -380,7 +429,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     }
     // Authoritative single-line position fact — the ladder-position validator
     // binds every positional ordinal in the prose to this line.
-    if (!regularSeasonDone && leagueTable && leagueTable.length > 0) {
+    if (!regularSeasonDone && !isCupTie && !isCricket && leagueTable && leagueTable.length > 0) {
       const posBits: string[] = [];
       if (teamPosition !== undefined)     posBits.push(`${teamName} — ${ordinalSuffix(teamPosition)} of ${leagueTable.length}`);
       if (opponentPosition !== undefined) posBits.push(`${opponent} — ${ordinalSuffix(opponentPosition)} of ${leagueTable.length}`);
@@ -402,6 +451,13 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     const h2hBits = headToHead.slice(0, 3).map(h =>
       `${h.result} ${h.teamScore}–${h.opponentScore}${h.teamWasHome === undefined ? '' : h.teamWasHome ? ' (home)' : ' (away)'}`);
     lines.push(`HEAD-TO-HEAD (previous meetings, ${teamName} perspective, most recent first — do not restate as this season's form): ${h2hBits.join(', ')}`);
+    lines.push('');
+  }
+
+  // ── Scoring timeline (soccer — derived from ESPN keyEvents) ────────────────
+  if (scoringTimeline && scoringTimeline.length > 0) {
+    lines.push('SCORING TIMELINE (derived — the sequence is authoritative; anchor the story in WHEN it turned):');
+    scoringTimeline.forEach(l => lines.push(`  ${l}`));
     lines.push('');
   }
 

@@ -474,6 +474,61 @@ expect('invented F1 driver in spotlight is rejected',
     validateAbsenceCounts(preview({ context: 'The Roosters are missing three players.' }), BLOCK).length === 0);
 }
 
+// ─── Review overlap + widened pitch paraphrases ─────────────────────────────────
+
+{
+  console.log('\n── review overlap / pitch paraphrase ──');
+  const { validateReviewOverlap } = require('@/lib/review-validators');
+  const dup = 'their ability to convert form into finals success while the missed opportunities in the forward half highlight a recurring issue in big games';
+  expect('review: verdict restating summary rejected',
+    validateReviewOverlap({ summary: 'The Lions won because of ' + dup + '.', keyMoments: [], verdict: 'A result that confirms ' + dup + '.' }, '').length > 0);
+  expect('review: distinct summary/verdict pass',
+    validateReviewOverlap({ summary: 'Brisbane won the ball at the contest and turned it into goals; Adelaide had entries but no polish.', keyMoments: [], verdict: 'An away preliminary final now awaits, and the clearance edge travels.' }, '').length === 0);
+
+  const CK = 'CRICKET MATCH CONTEXT:\n  Format: ODI\n';
+  const vp = (context: string) => validateCricketRegister(preview({ context }), CK);
+  expect('pitch paraphrase "turn that often develops" rejected without profile',
+    vp('The spinners can exploit the turn that often develops on this surface.').length > 0);
+  expect('pitch paraphrase "expected to favour" rejected without profile',
+    vp('The pitch is expected to favour batting early.').length > 0);
+}
+
+// ─── Contributions strips + cricket review block ────────────────────────────────
+
+{
+  console.log('\n── contributions / cricket reviews ──');
+  const { buildContributions, buildCricketChart } = require('@/lib/review-contributions');
+  const soccer = buildContributions('epl', null, ["7' Max Dowman (Arsenal)", "16' Noni Madueke (Arsenal)", "47' Max Dowman (Arsenal)"], undefined);
+  expect('soccer goals grouped with minutes',
+    soccer.length === 1 && /Max Dowman \(Arsenal\) 7', 47'/.test(soccer[0]) && /Noni Madueke/.test(soccer[0]));
+  const nrl = buildContributions('nrl', {
+    team: { teamName: 'Sharks', aggStats: [], players: [
+      { name: 'Sione Katoa', position: 'W', stats: [{ label: 'T', value: '2' }] },
+      { name: 'Braydon Trindall', position: 'HB', stats: [{ label: 'G', value: '3/4' }] } ] },
+    opponent: { teamName: 'Cowboys', aggStats: [], players: [ { name: 'Kyle Feldt', stats: [{ label: 'T', value: '1' }] } ] },
+  } as any, undefined, undefined);
+  expect('nrl try scorers + goal kickers',
+    nrl.some((l: string) => /Tries \(Sharks\): Sione Katoa 2/.test(l)) && nrl.some((l: string) => /Goals \(Sharks\): Braydon Trindall 3\/4/.test(l)) && nrl.some((l: string) => /Tries \(Cowboys\): Kyle Feldt/.test(l)));
+  const chart = buildCricketChart([{ inning: 'Australia Inning 1', batting: [
+    { batsman: { name: 'T Head' }, r: 84, b: 92 }, { batsman: { name: 'S Smith' }, r: 40, b: 61 } ],
+    bowling: [ { bowler: { name: 'B Muzarabani' }, o: 10, r: 41, w: 3 } ] }] as any);
+  expect('cricket chart: batting + bowling lines',
+    chart.some((l: string) => /T Head 84 \(92\)/.test(l)) && chart.some((l: string) => /B Muzarabani 3\/41/.test(l)));
+
+  const crBlock = buildReviewDataBlock({
+    league: 'cricket_int', teamName: 'Australia', opponent: 'Zimbabwe',
+    teamScore: 0, opponentScore: 0, isHome: false, date: '2026-09-15',
+    cricketFormat: 'odi', cricketResult: 'Australia won by 45 runs',
+    cricketInnings: [{ team: 'Australia', score: '287/6', overs: 50 }, { team: 'Zimbabwe', score: '242', overs: 48.2 }],
+    cricketChart: ['Australia — batting: T Head 84 (92)'],
+  });
+  expect('cricket review block: marker + innings, no ladder/phase',
+    /CRICKET MATCH CONTEXT/.test(crBlock) && /287\/6/.test(crBlock) && !/LADDER POSITION|SEASON PHASE|CURRENT STANDINGS/.test(crBlock));
+  expect('cup review block: CUP TIE line, no table',
+    (() => { const b = buildReviewDataBlock({ league: 'epl', teamName: 'Arsenal', opponent: 'Ipswich Town', teamScore: 4, opponentScore: 2, isHome: false, date: '2026-09-15', competition: 'EFL Cup', teamPosition: 1, teamPlayed: 4, leagueTable: [{ name: 'Arsenal', position: 1, played: 4, wins: 4, draws: 0, losses: 0, points: 12 }] as any });
+      return /CUP TIE \(EFL Cup\)/.test(b) && !/LADDER POSITION|SEASON PHASE|CURRENT STANDINGS/.test(b); })());
+}
+
 // ─── Summary ────────────────────────────────────────────────────────────────────
 
 console.log(`\n${passed + failed} tests: ${passed} passed, ${failed} failed\n`);

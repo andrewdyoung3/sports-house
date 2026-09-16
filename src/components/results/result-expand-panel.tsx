@@ -26,7 +26,7 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // v5: AFL player stats (CFS) + named finals paths (2026-09-13) — bump to drop
 // reviews generated before those data sources existed.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v5:${id}`;
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v7:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
 
 function loadJSON<T>(key: string): T | null {
@@ -289,6 +289,9 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
             teamPlayed:       teamRow?.played,
             opponentPosition: oppRow?.position,
             opponentPlayed:   oppRow?.played,
+            cricketFormat:    result.cricketFormat,
+            cricketResult:    result.cricketResult,
+            cricketInnings:   result.cricketInnings,
           }),
         })
           .then(r => r.ok ? r.json() : null)
@@ -347,6 +350,19 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
               }
             </p>
           )}
+        </div>
+      )}
+
+      {/* ── Key contributions (standard per-sport strip: scorers/assists/tries/
+             goal kickers/scoring chart) — derived server-side, never LLM prose ── */}
+      {!aiLoading && aiReview?.contributions && aiReview.contributions.length > 0 && (
+        <div>
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Key contributions</div>
+          <ul className="sh-quick-list">
+            {aiReview.contributions.map((m, i) => (
+              <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{m}</li>
+            ))}
+          </ul>
         </div>
       )}
 

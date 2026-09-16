@@ -17,7 +17,9 @@ import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
 import { validateReviewOutput } from '@/lib/review-validators';
-import { fetchReviewFormAndH2H } from '@/lib/preview-fetchers';
+import { fetchReviewFormAndH2H, fetchSoccerGoalTimeline } from '@/lib/preview-fetchers';
+import { buildContributions, buildCricketChart } from '@/lib/review-contributions';
+import { cricMatchScorecard } from '@/lib/cricketdata';
 import { fetchAflMatchStats } from '@/lib/afl-roster';
 
 /** Thrown (not returned) so unstable_cache never stores a failed-validation review. */
@@ -180,13 +182,15 @@ const generateReview = unstable_cache(
   // v6: date-window-first finals classification (2026-09-13) — invalidates
   // reviews built while NRL finals were misclassified as regular season
   // (played counts games, totalRounds counts rounds; byes broke the >=).
-  ['ai-review-v6'],
+  // v7: editorial register regime (2026-09-16) — crutch ban, overlap guard,
+  // register mechanics; invalidates pre-regime reviews.
+  ['ai-review-v8'],
   { revalidate: false },
 );
 
 // ─── Input validation ─────────────────────────────────────────────────────────
 
-const ALLOWED_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
+const ALLOWED_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int', 'cricket_int', 'bbl']);
 const SAFE_STR = /^[\w\s'.&\-,()]+$/;
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -221,6 +225,7 @@ export async function POST(req: NextRequest) {
     const {
       league, teamName, opponent, teamScore, opponentScore,
       isHome, date, competition, gameId, teamId, opponentId,
+      cricketFormat, cricketResult, cricketInnings,
     } = body as ReviewInput & { gameId?: string };
 
     // Basic validation
@@ -236,14 +241,29 @@ export async function POST(req: NextRequest) {
 
     // Fetch standings + match-stats + pre-match form/H2H in parallel to enrich
     // the review data block (form/H2H from the same sources the preview mines).
-    const [standings, matchStats, formExtras] = await Promise.all([
-      fetchStandings(league),
+    const isCricket  = league === 'cricket_int' || league === 'bbl';
+    const soccerSlug = typeof gameId === 'string' ? gameId.match(/^soccer-([\w.]+)-\d+$/)?.[1] : undefined;
+    const soccerEventId = league === 'epl' && typeof gameId === 'string' ? gameId.split('-').pop() : undefined;
+    const cricketUuid = isCricket && typeof gameId === 'string' && !/^\d+$/.test(gameId.replace(/^(cint|bbl)-/, ''))
+      ? gameId.replace(/^(cint|bbl)-/, '') : undefined;
+    const [standings, matchStats, formExtras, goalTimeline, cricScorecard] = await Promise.all([
+      isCricket ? Promise.resolve([]) : fetchStandings(league),
       // AFL: CFS playerStats (ESPN has no AFL player stats); others: ESPN match-stats.
       league === 'afl'
         ? fetchAflMatchStats(teamName, opponent, String(date))
-        : teamId ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
+        : (!isCricket && teamId) ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
       fetchReviewFormAndH2H(league, gameId ? String(gameId) : undefined, teamName, opponent, String(date)),
+      soccerEventId ? fetchSoccerGoalTimeline(soccerSlug ?? 'eng.1', soccerEventId) : Promise.resolve(undefined),
+      cricketUuid ? cricMatchScorecard(cricketUuid) : Promise.resolve(null),
     ]);
+    const cricketChart = isCricket ? buildCricketChart(cricScorecard) : undefined;
+
+    // Cricket without a real result/innings would generate from placeholder
+    // 0-0 scores — a hallucination factory (observed: an invented "0-0 draw").
+    // Refuse instead; the panel's plain fallback line covers the gap.
+    if (isCricket && !cricketResult && (!cricketInnings || cricketInnings.length === 0)) {
+      return NextResponse.json({ error: 'Cricket review requires result/innings data' }, { status: 422 });
+    }
 
     // Resolve team standings from the table
     let teamPosition: number | undefined, teamPlayed: number | undefined, teamPoints: number | undefined, teamPercentage: number | undefined;
@@ -281,6 +301,9 @@ export async function POST(req: NextRequest) {
       teamRecentForm:     formExtras.teamRecentForm,
       opponentRecentForm: formExtras.opponentRecentForm,
       headToHead:         formExtras.headToHead,
+      scoringTimeline:    goalTimeline,
+      cricketFormat, cricketResult, cricketInnings,
+      cricketChart:       cricketChart?.length ? cricketChart : undefined,
     };
 
     const dataBlock = buildReviewDataBlock(input);
@@ -292,7 +315,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Generation failed' }, { status: 500 });
     }
 
-    return NextResponse.json(review);
+    // Standard key-contribution strip — deterministic, derived server-side.
+    const contributions = buildContributions(league, matchStats, goalTimeline, cricketChart);
+    return NextResponse.json(contributions.length > 0 ? { ...review, contributions } : review);
   } catch (err) {
     if (err instanceof ReviewValidationError) {
       // Both attempts contradicted the derived facts — never serve or cache it.

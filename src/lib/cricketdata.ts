@@ -240,3 +240,19 @@ export function clearCricketCache(): void {
   _matchInfo.clear();
   _matchSquad.clear();
 }
+
+/** Full scorecard (batting/bowling cards) — 1 hit, cached 24h (immutable once ended). */
+export interface CricScorecardBatter { batsman?: { name?: string }; r?: number; b?: number; ['dismissal-text']?: string }
+export interface CricScorecardBowler { bowler?: { name?: string }; o?: number; r?: number; w?: number }
+export interface CricScorecardInning { inning?: string; batting?: CricScorecardBatter[]; bowling?: CricScorecardBowler[] }
+const _scorecard = new Map<string, CricScorecardInning[] | null>();
+export async function cricMatchScorecard(id: string): Promise<CricScorecardInning[] | null> {
+  if (_scorecard.has(id)) return _scorecard.get(id)!;
+  const cached = fileCacheGet<CricScorecardInning[]>(`scorecard-${id}`, 24 * 3600_000);
+  if (cached) { _scorecard.set(id, cached); return cached; }
+  const j = await call('match_scorecard', `id=${encodeURIComponent(id)}`);
+  const data = ((j?.data as any)?.scorecard as CricScorecardInning[]) ?? null;
+  _scorecard.set(id, data);
+  if (j && data) fileCacheSet(`scorecard-${id}`, data);
+  return data;
+}

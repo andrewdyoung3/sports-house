@@ -2398,3 +2398,37 @@ export async function fetchOpenF1Weekend(
     return undefined;
   }
 }
+
+
+/**
+ * Soccer goal timeline from ESPN summary keyEvents (minutes + scorer + team) —
+ * the event-anchoring data real match reports lead with (2026-09-16 audit:
+ * pros led with the 7'/47' brace; our reviews were aggregate-only).
+ */
+export async function fetchSoccerGoalTimeline(
+  slug: string,
+  eventId: string | undefined,
+): Promise<string[] | undefined> {
+  if (!eventId) return undefined;
+  try {
+    const res = await fetchTimeout(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/summary?event=${eventId}`,
+      { next: { revalidate: 3600 }, timeoutMs: 8000 },
+    );
+    if (!res.ok) return undefined;
+    const data = await res.json() as any;
+    const lines: string[] = [];
+    for (const e of (data.keyEvents ?? []) as any[]) {
+      const t = (e.type?.text ?? '') as string;
+      if (!/^(goal|penalty - scored|own goal)$/i.test(t)) continue;
+      const clock = e.clock?.displayValue ?? '';
+      const who   = e.participants?.[0]?.athlete?.displayName ?? '';
+      const team  = e.team?.displayName ?? '';
+      if (!who || !team) continue;
+      lines.push(`${clock} ${who} (${team})${/own goal/i.test(t) ? ' — own goal' : /penalty/i.test(t) ? ' — penalty' : ''}`);
+    }
+    return lines.length > 0 ? lines : undefined;
+  } catch {
+    return undefined;
+  }
+}

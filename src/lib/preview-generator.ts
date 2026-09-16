@@ -415,7 +415,7 @@ export function validateRegisterCrutches(output: AIPreview, prompt: string): str
   void prompt;
   const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
     .filter(Boolean).join('  ');
-  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b/gi;
+  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\bconfirms? (?:their|its|his|her) (?:status|resilience|credentials|readiness)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of text.matchAll(crutchRe)) {
@@ -554,7 +554,7 @@ export function validateCricketRegister(output: AIPreview, prompt: string): stri
     violations.push(`footy-register term "${m[0]}" in a cricket preview — use cricket vocabulary (top order, powerplay, death overs, spin through the middle, new-ball spells) instead`);
   }
   if (!/VENUE PROFILE/.test(prompt)) {
-    const pitchRe = /\b(?:flat|green|turning|spinning|slow|two-paced|road of a) (?:wicket|deck|pitch|track)\b|\bwicket (?:favouring|that favours)\b/gi;
+    const pitchRe = /\b(?:flat|green|turning|spinning|slow|two-paced|road of a) (?:wicket|deck|pitch|track)\b|\bwicket (?:favouring|that favours)\b|\b(?:turn|seam|swing|bounce) (?:that )?(?:often |typically |usually )?(?:develops|on offer|available)\b|\bsurface that (?:offers|suits|favours|turns)\b|\bpitch (?:is )?expected to (?:favour|suit|offer)\b/gi;
     for (const m of text.matchAll(pitchRe)) {
       const hit = m[0].toLowerCase();
       if (seen.has(hit)) continue;

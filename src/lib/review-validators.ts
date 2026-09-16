@@ -24,6 +24,7 @@ import {
   validateAbsenceNarration,
   validateSportRegister,
   validateRegisterCrutches,
+  validateCricketRegister,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -100,6 +101,30 @@ export function validateReviewOpener(review: AIReview, dataBlock: string): strin
   return [];
 }
 
+/**
+ * Summary/verdict overlap guard (2026-09-16 editorial audit): the review's two
+ * prose fields have disjoint jobs — summary = WHY it happened, verdict = the
+ * forward implication. Heavy shared phrasing means the verdict is a re-summary.
+ */
+export function validateReviewOverlap(review: AIReview, dataBlock: string): string[] {
+  void dataBlock;
+  const grams = (t: string): Set<string> => {
+    const w = (t ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const g = new Set<string>();
+    for (let i = 0; i + 3 < w.length; i++) g.add(w.slice(i, i + 4).join(' '));
+    return g;
+  };
+  const a = grams(review.summary ?? ''), b = grams(review.verdict ?? '');
+  if (a.size < 8 || b.size < 8) return [];
+  let shared = 0;
+  for (const g of a) if (b.has(g)) shared++;
+  const ratio = shared / Math.min(a.size, b.size);
+  if (ratio > 0.22) {
+    return [`summary and verdict substantially repeat each other (${Math.round(ratio * 100)}% shared phrasing) — the verdict must add the forward implication, not restate the summary`];
+  }
+  return [];
+}
+
 /** Full review validation pass. Empty array = clean, safe to cache and serve. */
 export function validateReviewOutput(review: AIReview, dataBlock: string): string[] {
   const shaped = asPreviewShape(review);
@@ -113,6 +138,8 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateAbsenceNarration(shaped, dataBlock),
     ...validateSportRegister(shaped, dataBlock),
     ...validateRegisterCrutches(shaped, dataBlock),
+    ...validateCricketRegister(shaped, dataBlock),
+    ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
     ...validateReviewOpener(review, dataBlock),
