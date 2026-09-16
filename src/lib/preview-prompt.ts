@@ -2050,7 +2050,9 @@ export function buildDataBlock(
     const hasNews  = teamNews.length > 0 || oppNews.length > 0;
     const hasTips  = !!context.tips;
     const hasOdds  = !!context.marketOdds;
-    if (hasNews || hasTips || hasOdds) {
+    const press    = context.guardianPress;
+    const hasPress = !!press && (press.team.length > 0 || press.opponent.length > 0);
+    if (hasNews || hasTips || hasOdds || hasPress) {
       lines.push('FROM THE MEDIA (attributed editorial source material — present these as reporting or opinion with attribution, NEVER as your own factual claim; paraphrase, do not fabricate quotes):');
       if (hasNews) {
         lines.push('  RECENT HEADLINES (may be speculative or outdated):');
@@ -2064,6 +2066,16 @@ export function buildDataBlock(
           const attr = n.source ? ` [${n.source}]` : '';
           lines.push(`    ${opponentName}: "${sanitizeFeedText(n.headline)}"${desc}${attr}`);
         });
+      }
+      if (hasPress) {
+        lines.push('  PRESS ANALYSIS (The Guardian — attributed editorial; paraphrase with attribution, never quote verbatim):');
+        for (const [name, notes] of [[teamName, press!.team], [opponentName, press!.opponent]] as const) {
+          for (const n of notes) {
+            const byline = n.byline ? ` (${sanitizeFeedText(n.byline)})` : '';
+            const body = [n.standfirst, n.excerpt].filter(Boolean).map(s => sanitizeFeedText(s!)).join(' ').slice(0, 360);
+            lines.push(`    ${name} — "${sanitizeFeedText(n.headline)}"${byline}${body ? `: ${body}` : ''}`);
+          }
+        }
       }
       if (hasTips) {
         const t = context.tips!;

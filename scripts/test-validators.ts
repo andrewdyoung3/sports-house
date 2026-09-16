@@ -630,6 +630,25 @@ expect('invented F1 driver in spotlight is rejected',
     validateNumeralBinding(preview({ context: 'Their 12th straight home win.' }), AFL_NUM_PROMPT).length > 0);
 }
 
+// ─── validatePlayerNames — venue-noun head words are places, not people ────────
+
+{
+  const LINEUP_PROMPT = [
+    'FIXTURE: Arsenal vs Brighton & Hove Albion',
+    'VENUE: American Express Community Stadium — BRIGHTON & HOVE ALBION HOME GROUND',
+    'MOST RECENT STARTING LINEUP (from each side\'s last completed game — a likely-selection guide, NOT a confirmed teamsheet for this fixture):',
+    '  Arsenal: David Raya, Declan Rice',
+    '',
+    '',
+  ].join('\n');
+
+  console.log('validatePlayerNames venue-head fix:');
+  expect('the live refusal: colloquial "Amex Stadium" passes',
+    validatePlayerNames(preview({ context: 'Brighton are strong at the Amex Stadium.' }), LINEUP_PROMPT).length === 0);
+  expect('"Marcus Rashford" still flagged (not in lineup data)',
+    validatePlayerNames(preview({ playerSpotlight: 'Marcus Rashford will start.' }), LINEUP_PROMPT).length > 0);
+}
+
 // ─── validateVenueFormClaims — venue reputation needs VENUE RECORD data ─────────
 
 {

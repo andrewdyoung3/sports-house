@@ -985,6 +985,11 @@ const PLAYER_NAME_SAFE_WORDS = new Set([
  *   Fixed: 'group' added to PLAYER_NAME_SAFE_WORDS; single-letter tokens treated as
  *   non-evidence; driver/constructor names now seeded via collectPlayerWhitelist.
  */
+/** Venue nouns as a candidate's final word mark it as a place, not a person. */
+const VENUE_HEAD_WORDS = new Set([
+  'stadium', 'arena', 'park', 'oval', 'ground', 'field', 'dome', 'gardens',
+]);
+
 export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
 
@@ -1052,6 +1057,10 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
     // "Group D's", stray initials) are structural tokens, never surnames — treat
     // them as non-evidence so possessive group labels don't trip the validator.
     if (words.every(w => excluded.has(w) || w.length < 2)) continue;
+    // A candidate whose HEAD (last) word is a venue noun is a place, never a
+    // person — catches colloquial venue forms the VENUE line can't pre-seed
+    // ("Amex Stadium" vs "American Express Community Stadium"; live refusal).
+    if (VENUE_HEAD_WORDS.has(words[words.length - 1])) continue;
     if (teamName.toLowerCase().includes(lower) || opponentName.toLowerCase().includes(lower)) continue;
     if (competition.toLowerCase().includes(lower)) continue;
     if (whitelist.has(lower)) continue;

@@ -171,6 +171,15 @@ export interface TipSummary {
   modelNames?: string[];
 }
 
+/** One attributed press-analysis article (Guardian Open Platform). */
+export interface PressNote {
+  headline: string;
+  byline?: string;
+  standfirst?: string;
+  excerpt?: string;
+  published?: string;
+}
+
 /** A team's completed-game record at one venue this season. */
 export interface VenueRecord {
   venue: string;
@@ -237,6 +246,8 @@ export interface PreviewContext {
   leagueTable?: LeagueTableRow[];
   teamNews?: NewsHeadline[];
   opponentNews?: NewsHeadline[];
+  /** Guardian Open Platform press analysis (keyed full-text layer). */
+  guardianPress?: { team: PressNote[]; opponent: PressNote[] };
   tips?: TipSummary;
   /**
    * Each side's recent results (most recent first), sourced from ESPN's

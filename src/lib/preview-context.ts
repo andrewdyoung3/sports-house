@@ -22,6 +22,7 @@ import {
 } from './preview-fetchers';
 import { fetchVenueWeather, OUTDOOR_LEAGUES } from './weather';
 import { fetchRssTeamNews } from './rss-news';
+import { fetchGuardianAnalysis } from './guardian';
 import type {
   PreviewContext,
   UpcomingGame,
@@ -212,6 +213,12 @@ export async function buildPreviewContext(
     if (rss.team.length > 0)     ctx.teamNews     = merge(ctx.teamNews, rss.team);
     if (rss.opponent.length > 0) ctx.opponentNews = merge(ctx.opponentNews, rss.opponent);
   } catch { /* RSS is enrichment only */ }
+
+  // Guardian press analysis (keyed full-text layer) — skipped without a key.
+  try {
+    const press = await fetchGuardianAnalysis(teamName, fixture.opponent);
+    if (press.team.length > 0 || press.opponent.length > 0) ctx.guardianPress = press;
+  } catch { /* press is enrichment only */ }
 
   return ctx;
 }
