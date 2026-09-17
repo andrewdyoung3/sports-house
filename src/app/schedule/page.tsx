@@ -917,6 +917,23 @@ export default function SchedulePage() {
   // Whole-league follows (device-local; see user-prefs). Their fixtures merge
   // into the "All" schedule view alongside followed-team games.
   const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
+  // Filter panes (My teams / Competitions) collapse to a single header line to
+  // reduce clutter — expanded by default, per-device persistence.
+  const [teamsPaneOpen, setTeamsPaneOpen] = useState(true);
+  const [compsPaneOpen, setCompsPaneOpen] = useState(true);
+  useEffect(() => {
+    try {
+      setTeamsPaneOpen(localStorage.getItem('sports-house:pane-teams') !== 'closed');
+      setCompsPaneOpen(localStorage.getItem('sports-house:pane-comps') !== 'closed');
+    } catch { /* default open */ }
+  }, []);
+  const togglePane = useCallback((storageKey: string, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
+    setter(prev => {
+      try { localStorage.setItem(storageKey, prev ? 'closed' : 'open'); } catch { /* device-local only */ }
+      return !prev;
+    });
+  }, []);
+
   // F1 practice sessions are hidden by default (race weekends are 5-6 rows of
   // noise otherwise); opt-in persists per device.
   const [showF1Practice, setShowF1Practice] = useState(false);
@@ -1430,9 +1447,25 @@ export default function SchedulePage() {
           {!activeLoading && (
             <div className="sh-filters sh-card">
 
-              {/* My teams */}
+              {/* My teams — collapsible pane; the header carries the active
+                  selection when collapsed so context never disappears. */}
               <div>
-                <div className="sh-chips">
+                <button
+                  type="button"
+                  className="sh-pane-head"
+                  aria-expanded={teamsPaneOpen}
+                  onClick={() => togglePane('sports-house:pane-teams', setTeamsPaneOpen)}
+                >
+                  <span>
+                    My teams
+                    {!teamsPaneOpen && !isLeagueMode && activeTeamId !== 'all' && (
+                      <em> · {teams.find(t => t.id === activeTeamId)?.abbreviation ?? ''}</em>
+                    )}
+                  </span>
+                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (teamsPaneOpen ? ' is-open' : '')} />
+                </button>
+                {teamsPaneOpen && (
+                <div className="sh-chips sh-fade-in">
                   <TeamFilterPill
                     label="All"
                     active={!isLeagueMode && activeTeamId === 'all'}
@@ -1451,13 +1484,29 @@ export default function SchedulePage() {
                     />
                   ))}
                 </div>
+                )}
               </div>
 
               <div className="sh-filter-divider" />
 
-              {/* Browse competition (pills) */}
+              {/* Browse competition — collapsible pane, same contract. */}
               <div>
-                <div className="sh-chips">
+                <button
+                  type="button"
+                  className="sh-pane-head"
+                  aria-expanded={compsPaneOpen}
+                  onClick={() => togglePane('sports-house:pane-comps', setCompsPaneOpen)}
+                >
+                  <span>
+                    Competitions
+                    {!compsPaneOpen && activeLeagueId && (
+                      <em> · {LEAGUE_BADGE[activeLeagueId]?.label ?? activeLeagueId.toUpperCase()}</em>
+                    )}
+                  </span>
+                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (compsPaneOpen ? ' is-open' : '')} />
+                </button>
+                {compsPaneOpen && (
+                <div className="sh-chips sh-fade-in">
                   {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
                     <LeagueFilterPill
                       key={league.id}
@@ -1472,6 +1521,7 @@ export default function SchedulePage() {
                     />
                   ))}
                 </div>
+                )}
               </div>
 
               <div className="sh-filter-divider" />
