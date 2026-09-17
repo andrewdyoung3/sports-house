@@ -416,10 +416,10 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
 
   // ── AI race preview fetch — re-generates when qualifying grid becomes available ──
   useEffect(() => {
+    // Every session row fetches: the weekend-mirror system stores the round's
+    // preview under EVERY session id, so practice rows serve it too.
+    // roundKey remains the localStorage cache key (one cache per weekend).
     const sessionType = game.competition ?? 'Race';
-    if (!['Race', 'Qualifying', 'Sprint', 'Sprint Qualifying'].includes(sessionType)) return;
-
-    // Shared cache key across all sessions in the same round
     const roundKey = game.id.replace(/-(race|qualifying|sprint.*|fp\d|sprintq)$/i, '');
     const cacheKey = `ai-preview-f1-v2:${roundKey}`;
 
@@ -489,7 +489,10 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
-              gameId:       roundKey,
+              // The FULL session id — previews are stored under every session
+              // id via fixture.mirrorGameIds; the old round-level key (f1-15)
+              // matched no row and left the panel on "being prepared" forever.
+              gameId:       game.id,
               league:       'f1',
               teamName:     team.name,
               opponentName: game.opponent,
