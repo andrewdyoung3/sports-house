@@ -35,7 +35,7 @@ export default function Error({ error, reset }: ErrorProps) {
           </button>
           <Link
             href="/"
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--accent)] text-sm font-semibold text-[var(--on-accent)] hover:brightness-110 transition-all"
           >
             <Home className="h-4 w-4" />
             Go home

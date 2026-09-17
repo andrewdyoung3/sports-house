@@ -10,12 +10,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   loading?: boolean;
 }
 
+// Token-driven (see :root fallbacks in globals.css): primary follows the page
+// accent — brand violet by default, the focal team's colour under .sh-theme
+// pages that set --accent — so buttons belong to whatever context they sit in.
 const variantClasses: Record<Variant, string> = {
-  primary:   'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-900/40',
-  secondary: 'bg-white/8 hover:bg-white/12 text-white/90 shadow-sm',
-  ghost:     'hover:bg-white/8 text-white/60 hover:text-white',
-  outline:   'border border-white/20 hover:border-white/40 text-white/70 hover:text-white hover:bg-white/8',
-  danger:    'bg-red-700 hover:bg-red-600 text-white shadow-sm',
+  primary:   'text-[var(--on-accent)] bg-[var(--accent)] hover:brightness-110 shadow-lg shadow-black/30',
+  secondary: 'bg-[var(--surface-2)] hover:bg-white/12 text-white/90 shadow-sm',
+  ghost:     'hover:bg-[var(--surface-2)] text-white/60 hover:text-white',
+  outline:   'border border-[var(--border-strong)] hover:border-white/40 text-white/70 hover:text-white hover:bg-[var(--surface)]',
+  danger:    'bg-[var(--loss)] hover:brightness-110 text-white shadow-sm',
 };
 
 const sizeClasses: Record<Size, string> = {
@@ -30,8 +33,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center font-medium transition-all duration-150',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950',
+        'inline-flex items-center justify-center font-semibold transition-all duration-150',
+        // Keyboard focus comes from the global :focus-visible ring (globals.css).
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variantClasses[variant],
         sizeClasses[size],

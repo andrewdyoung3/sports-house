@@ -278,15 +278,15 @@ function CompactForm({ results }: { results: GameResult[] }) {
             </span>
             {/* Hover tooltip */}
             <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
-              <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap shadow-xl">
-                <p className="text-zinc-200 font-bold leading-none mb-0.5">{r.opponent}</p>
+              <div className="rounded-lg px-2.5 py-1.5 text-[10px] whitespace-nowrap shadow-xl" style={{ background: '#141218', border: '1px solid var(--border-strong)' }}>
+                <p className="font-bold leading-none mb-0.5" style={{ color: 'var(--text)' }}>{r.opponent}</p>
                 <p className={cn('font-black leading-none', scoreCls)}>{scoreStr}</p>
-                <p className="text-zinc-500 mt-0.5 leading-none">
+                <p className="mt-0.5 leading-none" style={{ color: 'var(--text-3)' }}>
                   {r.isHome ? 'Home' : 'Away'}
                   {r.competition ? ` · ${r.competition}` : ''}
                 </p>
               </div>
-              <div className="w-2 h-2 bg-zinc-900 border-r border-b border-zinc-700 rotate-45 mx-auto -mt-1" />
+              <div className="w-2 h-2 rotate-45 mx-auto -mt-1" style={{ background: '#141218', borderRight: '1px solid var(--border-strong)', borderBottom: '1px solid var(--border-strong)' }} />
             </div>
           </div>
         );

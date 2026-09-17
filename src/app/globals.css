@@ -41,6 +41,37 @@
   :root {
     color-scheme: dark;
     --bg-left-color: rgba(96, 26, 44, 0.44);
+
+    /* ── Root token fallbacks ─────────────────────────────────────────────
+       The .sh-theme block below overrides these wherever it is mounted (and
+       pages set per-team --accent inline). Defining fallbacks at :root lets
+       SHARED components (Button, Input, EmptyState, modals) consume the same
+       tokens on every page — this is what retires the hardcoded indigo/zinc
+       palette that made non-schedule pages feel like a different product. */
+    --accent:        #9b6bff;
+    --accent-2:      #c79bff;
+    --accent-soft:   color-mix(in oklab, var(--accent) 16%, transparent);
+    --on-accent:     #ffffff;
+    --surface:       rgba(255,255,255,.045);
+    --surface-2:     rgba(255,255,255,.075);
+    --border:        rgba(255,255,255,.10);
+    --border-strong: rgba(255,255,255,.18);
+    --text:          #f4f2fa;
+    --text-2:        #bcb6cd;
+    --text-3:        #9b96b0;
+    --win:           #46cd80;
+    --loss:          #e05c72;
+    --radius:        16px;
+    --radius-lg:     22px;
+  }
+
+  /* ── Keyboard focus, app-wide ─────────────────────────────────────────────
+     One visible, accent-coloured focus ring for every interactive element.
+     :focus-visible only — mouse/touch interaction stays clean. */
+  :is(a, button, [role='button'], input, select, textarea, summary):focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent) 70%, white);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   html {
@@ -128,7 +159,9 @@
 
   /* ── Gradient text ──────────────────────────────────────────────────────── */
   .gradient-warm {
-    background: linear-gradient(135deg, #a855f7 0%, #ec4899 50%, #f97316 100%);
+    /* Two-tone brand gradient (accent family) — the old purple→pink→orange
+       tri-stop read as generic; restraint over spectacle. */
+    background: linear-gradient(135deg, #c79bff 0%, #9b6bff 60%, #7d4fe0 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -498,7 +531,7 @@
   padding: 18px; animation: shFadeIn 0.18s ease-out;
 }
 .sh-bracket-modal {
-  background: #16121f; border: 1px solid rgba(255,255,255,0.14); border-radius: 16px;
+  background: #121016; border: 1px solid var(--border-strong); border-radius: 16px;
   box-shadow: 0 24px 80px rgba(0,0,0,0.6); max-width: min(96vw, 980px); max-height: 88vh;
   display: flex; flex-direction: column; overflow: hidden;
 }

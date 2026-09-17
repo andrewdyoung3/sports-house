@@ -20,9 +20,12 @@ interface EmptyStateProps {
  */
 export function EmptyState({ icon: Icon, title, body, bodyClassName = 'text-white/55' }: EmptyStateProps) {
   return (
-    <div className="max-w-lg mx-auto px-4 py-32 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-indigo-900/40 border border-indigo-700/30 flex items-center justify-center mx-auto mb-6">
-        <Icon className="h-8 w-8 text-indigo-400" />
+    <div className="sh-theme max-w-lg mx-auto px-4 py-32 text-center">
+      <div
+        className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
+        style={{ background: 'var(--accent-soft)', border: '1px solid color-mix(in oklab, var(--accent) 35%, transparent)' }}
+      >
+        <Icon className="h-8 w-8" style={{ color: 'var(--accent-2)' }} />
       </div>
       <h1 className="text-2xl font-black text-white mb-3">{title}</h1>
       <p className={`${bodyClassName} mb-8 leading-relaxed`}>

@@ -20,8 +20,8 @@ interface Feature {
 const FEATURES: Feature[] = [
   {
     icon: Calendar,
-    color: 'text-indigo-400',
-    bg: 'bg-indigo-900/30',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
     title: 'Never Miss a Game',
     description:
       'Upcoming fixtures for all your teams in one feed — start times in your timezone, venue details, and broadcast info front and centre.',
@@ -93,15 +93,15 @@ export default function LandingPage() {
       <section className="hero-gradient relative overflow-hidden">
         {/* Decorative blobs */}
         <div className="absolute inset-0 pointer-events-none" aria-hidden>
-          <div className="absolute top-20 right-[15%] w-72 h-72 rounded-full bg-indigo-600/10 blur-3xl" />
+          <div className="absolute top-20 right-[15%] w-72 h-72 rounded-full bg-[rgba(155,107,255,0.10)] blur-3xl" />
           <div className="absolute bottom-10 left-[5%] w-56 h-56 rounded-full bg-cyan-600/8 blur-3xl" />
         </div>
 
         <div className="relative max-w-4xl mx-auto px-4 py-28 sm:py-40 text-center">
           {/* Pill label */}
           <div className="inline-flex items-center gap-2 bg-white/6 border border-white/14 backdrop-blur-sm rounded-full px-3.5 py-1.5 mb-8">
-            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-            <span className="text-xs font-semibold text-indigo-300 tracking-wide">SportHouse</span>
+            <Sparkles className="h-3.5 w-3.5 text-[var(--accent-2)]" />
+            <span className="text-xs font-semibold text-[var(--accent-2)] tracking-wide">SportHouse</span>
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.05] mb-6">
@@ -160,7 +160,7 @@ export default function LandingPage() {
               <h3 className="text-base font-bold text-white mb-2">{title}</h3>
               <p className="text-sm text-white/55 leading-relaxed flex-1">{description}</p>
               {href && cta && (
-                <Link href={href} className="mt-4 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors self-start">
+                <Link href={href} className="mt-4 text-xs font-semibold text-[var(--accent-2)] hover:text-white transition-colors self-start">
                   {cta} →
                 </Link>
               )}

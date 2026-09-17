@@ -795,9 +795,14 @@ function LeagueFilterPill({
         // stays valid HTML; stopPropagation keeps follow separate from browse.
         <span
           role="button"
+          tabIndex={0}
+          aria-pressed={followed}
           aria-label={followed ? 'Unfollow this competition' : 'Follow this competition'}
           title={followed ? 'Unfollow competition' : 'Follow competition — its fixtures join your schedule'}
           onClick={e => { e.stopPropagation(); onToggleFollow(); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onToggleFollow(); }
+          }}
           className={'sh-league-follow' + (followed ? ' is-on' : '')}
         >
           {followed ? '★' : '☆'}
@@ -1388,7 +1393,7 @@ export default function SchedulePage() {
       {/* ── Header ── */}
       <div className="mb-6">
         <h1 className="text-2xl font-black text-white/90 flex items-center gap-2 mb-1">
-          <List className="h-6 w-6 text-indigo-400" />
+          <List className="h-6 w-6" style={{ color: 'var(--accent-2)' }} />
           {isLeagueMode
             ? `${BROWSABLE_LEAGUES.find(l => l.id === activeLeagueId)?.fullName ?? 'League'} — All Fixtures`
             : 'Your Schedule'}

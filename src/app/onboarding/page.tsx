@@ -63,7 +63,10 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen">
+    // sh-theme: same token set + Hanken type as the rest of the app — onboarding
+    // previously rendered in root Inter with hardcoded indigo, reading as a
+    // different product from the schedule it hands off to.
+    <div className="sh-theme min-h-screen">
       <div className="max-w-6xl mx-auto px-4 pt-6 pb-32">
 
         {/* Heading */}
@@ -83,8 +86,8 @@ export default function OnboardingPage() {
                 className={[
                   'flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-all',
                   isActive
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/40'
-                    : 'bg-white/8 text-white/50 hover:bg-white/12 hover:text-white',
+                    ? 'text-[var(--on-accent)] bg-[var(--accent)] shadow-md shadow-black/30'
+                    : 'bg-[var(--surface-2)] text-white/50 hover:bg-white/12 hover:text-white',
                 ].join(' ')}
               >
                 <SportBall league={league.id} size={14} />

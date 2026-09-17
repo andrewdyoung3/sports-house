@@ -317,7 +317,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
           {allBroadcast.map(ch => {
             const url = WATCH_URLS[ch];
             const cls = game.streaming.includes(ch)
-              ? 'bg-indigo-900/40 text-indigo-300 border-indigo-800/50'
+              ? 'bg-[var(--accent-soft)] text-[var(--accent-2)] border-[color-mix(in_oklab,var(--accent)_35%,transparent)]'
               : 'bg-white/6 text-white/60 border-white/10';
             return url ? (
               <a key={ch} href={url} target="_blank" rel="noopener noreferrer" tabIndex={0}>
