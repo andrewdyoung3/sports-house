@@ -829,6 +829,10 @@ export async function fetchF1Fixtures(lookbackDays = 0): Promise<UpcomingGame[]>
       const isCompleted = sessionMs < now;
 
       fixtures.push({
+        // mirrorGameIds is stamped for the whole round below — an F1 preview is
+        // a WEEKEND preview, so whichever session generates covers every
+        // session row of that round (same one-generation-many-ids pattern as
+        // State of Origin).
         id:              `f1-${race.round}-${session.key}`,
         teamId:          'f1-championship',
         opponent:        raceName,
@@ -846,6 +850,18 @@ export async function fetchF1Fixtures(lookbackDays = 0): Promise<UpcomingGame[]>
         completed:       isCompleted || undefined,
       });
     }
+  }
+
+  // Stamp weekend mirrors: every session of a round shares one preview, so a
+  // generation for any session upserts under all of that round's session ids.
+  const byRound = new Map<string, string[]>();
+  for (const f of fixtures) {
+    const round = f.id.split('-')[1];
+    byRound.set(round, [...(byRound.get(round) ?? []), f.id]);
+  }
+  for (const f of fixtures) {
+    const siblings = (byRound.get(f.id.split('-')[1]) ?? []).filter(id => id !== f.id);
+    if (siblings.length > 0) f.mirrorGameIds = siblings;
   }
 
   return fixtures.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());

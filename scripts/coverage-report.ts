@@ -104,8 +104,11 @@ async function main() {
     const allFixtures = leagueFixtures.get(league) ?? [];
 
     for (const teamId of teamIds) {
+      // F1 drivers/constructors (f1_*) resolve to the championship generation
+      // identity — every F1 fixture carries teamId 'f1-championship'.
+      const genId = teamId.startsWith('f1_') ? 'f1-championship' : teamId;
       const teamFixtures = allFixtures.filter(
-        f => (f.teamId === teamId || f.opponentId === teamId) && !f.completed,
+        f => (f.teamId === genId || f.opponentId === genId) && !f.completed,
       );
 
       // Next fixture within lookahead

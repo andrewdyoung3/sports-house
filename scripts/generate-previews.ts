@@ -98,7 +98,12 @@ async function main() {
     }
 
     const followedIds = await getDistinctFollowedTeamIds();
-    const hasF1Fans   = Array.from(followedIds).some(id => id.startsWith('f1-'));
+    // F1 followable entities are drivers/constructors with `f1_*` ids, but every
+    // F1 fixture carries the synthetic teamId `f1-championship` — following ANY
+    // F1 entity means the championship fixtures are wanted. The identity
+    // translation below (f1_* → f1-championship) is the same pattern as SOO rep
+    // teams: display ids differ from the generation identity.
+    const hasF1Fans   = Array.from(followedIds).some(id => id.startsWith('f1'));
     const failOpen    = followedIds.size === 0;
 
     if (failOpen) {
@@ -124,10 +129,13 @@ async function main() {
     const lookaheadMs = LOOKAHEAD_DAYS * 86400_000;
 
     // In failOpen mode, iterate over all home-team IDs (every fixture has one).
-    // In normal mode, iterate over followed team IDs (includes both sides).
+    // In normal mode, iterate over followed team IDs (includes both sides),
+    // translating each followed F1 driver/constructor to the championship
+    // generation identity (fixtures never carry f1_* ids).
     const allTeamIds: string[] = failOpen
       ? Array.from(new Set(allFixtures.map(f => f.teamId)))
-      : Array.from(followedIds);
+      : Array.from(new Set(Array.from(followedIds).map(
+          id => id.startsWith('f1_') ? 'f1-championship' : id)));
 
     const processedGameIds = new Set<string>();
 
