@@ -28,6 +28,7 @@ import {
   validateDayCounts,
   validateNumeralBinding,
   validateVenueFormClaims,
+  validateDoubleChance,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -652,6 +653,31 @@ expect('invented F1 driver in spotlight is rejected',
     r('Hawthorn earned this home final by winning their Qualifying Final.').length === 0);
   expect('double-chance week guard still lifts the rule',
     r('The loser is eliminated.', QF).length === 0);
+}
+
+// ─── validateDoubleChance — structural, week-one-only framing ───────────────────
+
+{
+  const QF_WEEK = 'FINALS PATH:\n  • NEITHER side can be eliminated in this game: the Qualifying Final loser drops to a home Semi-Final next week (the double chance).\n';
+  const POST_QF = 'FINALS PATH:\n  • Hawthorn lost their Qualifying Final; this Semi-Final IS the second life that came with their top-four finish.\n';
+  const NO_DC   = 'FINALS PATH:\n  • knockout final\n';
+  const dc = (t: string, p: string) => validateDoubleChance(preview({ context: t }), p);
+
+  console.log('validateDoubleChance:');
+  expect('qualifying week: present-tense double chance passes',
+    dc('Geelong have the double chance this week — defeat is survivable.', QF_WEEK).length === 0);
+  expect('post-week-one: "double chance is now spent" rejected',
+    dc('Brisbane\'s double chance is now spent.', POST_QF).length > 0);
+  expect('post-week-one: "hold the double chance" rejected',
+    dc('The Roosters still hold their double chance.', POST_QF).length > 0);
+  expect('post-week-one: "double chance is on the line" rejected',
+    dc('A semi-final where their double chance is on the line.', POST_QF).length > 0);
+  expect('post-week-one: past structural framing passes',
+    dc('Hawthorn lost their qualifying final and survived week one via the top-four second life.', POST_QF).length === 0);
+  expect('no double-chance data: any mention rejected',
+    dc('They can lean on the double chance.', NO_DC).length > 0);
+  expect('no mention at all: silent',
+    dc('A tight, defensive final awaits.', NO_DC).length === 0);
 }
 
 // ─── validatePlayerNames — venue-noun head words are places, not people ────────

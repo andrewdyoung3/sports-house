@@ -29,6 +29,7 @@ import {
   validateDayCounts,
   validateNumeralBinding,
   validateVenueFormClaims,
+  validateDoubleChance,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -147,6 +148,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateDayCounts(shaped, dataBlock),
     ...validateNumeralBinding(shaped, dataBlock),
     ...validateVenueFormClaims(shaped, dataBlock),
+    ...validateDoubleChance(shaped, dataBlock),
     ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

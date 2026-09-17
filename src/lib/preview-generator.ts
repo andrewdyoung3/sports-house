@@ -965,6 +965,47 @@ export function validateVenueFormClaims(output: AIPreview, prompt: string): stri
   return violations;
 }
 
+/**
+ * Double-chance framing (user-flagged): the AFL/NRL double chance is a
+ * STRUCTURAL property of qualifying-final week — top-four sides that lose
+ * week one drop to a home semi instead of exiting. It is not a card a team
+ * holds, plays, or spends at will. Outside week one (no "NEITHER side can be
+ * eliminated" fact in the prompt), any possession/consumption framing is
+ * rejected; and any mention at all requires the data block to have raised it.
+ */
+export function validateDoubleChance(output: AIPreview, prompt: string): string[] {
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const termRe = /(?:double[- ]chance|second[- ]chance|second life)/i;
+  if (!termRe.test(factual)) return [];
+
+  const violations: string[] = [];
+  if (!/double chance|second life/i.test(prompt)) {
+    violations.push('double-chance claim — the data block raises no double chance for this fixture; do not import bracket mechanics from training memory');
+    return violations;
+  }
+  const isQualifyingWeek = /NEITHER side can be eliminated/.test(prompt);
+  if (isQualifyingWeek) return [];
+
+  // Post-week-one: the second life is a past structural event. Card-metaphor
+  // verbs and stake framings around the term are factually wrong.
+  const cardRe = new RegExp(
+    '(?:' +
+      '(?:holds?|holding|held|plays?|playing|played|spends?|spending|spent|uses?|using|used|burns?|burned|retains?|keeps?)\\s+(?:\\w+\\s+){0,3}(?:double[- ]chance|second[- ]chance|second life)' +
+      '|(?:double[- ]chance|second[- ]chance|second life)[^.]{0,40}(?:is (?:now )?(?:spent|used|gone|on the line|at stake)|on the line|at stake|in hand|intact|available|remains?|still (?:alive|there)|to (?:play|use|burn|spend))' +
+    ')', 'gi');
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(cardRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`double-chance framing "${m[0]}" — the second life exists only in qualifying-final week; after week one refer to it only as a past structural event (lost the qualifying final, survived week one via the top-four second life), never as something held, spent, or at stake`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -1164,6 +1205,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateDayCounts(v, prompt),
     ...validateNumeralBinding(v, prompt),
     ...validateVenueFormClaims(v, prompt),
+    ...validateDoubleChance(v, prompt),
   ];
 }
 

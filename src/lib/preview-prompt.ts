@@ -2171,7 +2171,7 @@ export function buildDataBlock(
   if (finalsPathFactsInv.length > 0) {
     lines.push('');
     lines.push('OPENER RULE (enforced by automated checks): the FIRST sentence of the context field must begin with a team name, a consequence, or a tension — NEVER with "This is", "It\'s", or the round name. Weave the round name in mid-sentence at most once. When a THE ANGLE section is present, angle 1 IS that tension — open with it.');
-    lines.push('CONSEQUENCE RULE (enforced by automated checks): NEVER state the default knockout consequence — that the winner advances, the loser is eliminated, a berth is at stake, or that sides must win to stay alive. That is the definition of the round; the reader knows. Spend those words on HOW the game will be decided. Only consequences that DIFFER from the default belong in the text (a double chance spent or intact, a wildcard survivor, hosting earned by upset).');
+    lines.push('CONSEQUENCE RULE (enforced by automated checks): NEVER state the default knockout consequence — that the winner advances, the loser is eliminated, a berth is at stake, or that sides must win to stay alive. That is the definition of the round; the reader knows. Spend those words on HOW the game will be decided. Only consequences that DIFFER from the default belong in the text (a top-four side\'s week-one second life, a wildcard survivor, hosting earned by upset). DOUBLE CHANCE: it exists ONLY in qualifying-final week — after week one it is a past structural event (they lost the qualifying final and survived via the top-four second life); NEVER describe a team as holding, playing, spending or risking a double chance outside that week.');
   }
 
   return lines.join('\n');

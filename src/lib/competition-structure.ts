@@ -254,8 +254,13 @@ export function buildFinalsPathFacts(
 
   if (round.name === 'Semi-Final') {
     if (knownHost && hostSeedConsistent) {
-      facts.push(`Hosting: ${home} host because they LOST a Qualifying Final and hold the double chance — semi-final hosting comes from the bracket, not from being the higher seed.`);
-      if (homeSeed !== undefined) facts.push(`${home} (${ord(homeSeed)}) lost their Qualifying Final — this Semi-Final is their double chance, now being used.`);
+      // Double-chance language is deliberately STRUCTURAL and past-anchored: the
+      // second life exists only in qualifying-final week; by the semi it has
+      // already been consumed (losing the QF WAS the use). "Holds/spends the
+      // double chance" card-metaphor phrasing here leaked straight into
+      // generated prose (user-flagged) — the model mirrors fact wording.
+      facts.push(`Hosting: ${home} host because they LOST a Qualifying Final — a top-four finish carries one second life, taken at home. Semi-final hosting comes from the bracket, not from being the higher seed.`);
+      if (homeSeed !== undefined) facts.push(`${home} (${ord(homeSeed)}) lost their Qualifying Final; this Semi-Final IS the second life that came with their top-four finish. From here every game is knockout — there is no further safety net, and the double chance cannot be "held" or "used" again.`);
       if (awaySeed !== undefined && awaySeed >= 5) facts.push(`${away} (${ord(awaySeed)}) won an Elimination Final to reach this Semi-Final${viaWildcard(awaySeed) ? ', having already survived the Wildcard Round' : ''}.`);
     }
     facts.push('The winner advances to an away Preliminary Final.');
@@ -267,7 +272,7 @@ export function buildFinalsPathFacts(
       facts.push(`Hosting: ${home} earned this home Preliminary Final by WINNING their Qualifying Final (and had last week off) — hosting here is earned in the bracket and does NOT follow ladder position.`);
       if (awaySeed !== undefined) {
         facts.push(awaySeed <= 4
-          ? `${away} (${ord(awaySeed)}) LOST their Qualifying Final, then survived a home Semi-Final — their double chance is spent.`
+          ? `${away} (${ord(awaySeed)}) LOST their Qualifying Final and needed the second life that comes with a top-four finish to survive week one, then won a home Semi-Final. That safety net existed ONLY in week one — do not describe them as holding, playing or spending a double chance now.`
           : `${away} (${ord(awaySeed)}) have taken the long road: an Elimination Final win, then a Semi-Final win${viaWildcard(awaySeed) ? ', after coming through the Wildcard Round' : ''}.`);
       }
     }
