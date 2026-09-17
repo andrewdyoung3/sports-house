@@ -239,13 +239,13 @@ function ResultRow({
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
         {teamLogoUrl && (
-          <img src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+          <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
             style={{ right: '88px', opacity: 0.10 }}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
         )}
         {leagueLogoUrl && (
-          <img src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
+          <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center"
             style={{
               right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
@@ -322,14 +322,14 @@ function ResultRow({
       {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
       <div className="sh-fix-wm" aria-hidden="true">
         {teamLogoUrl
-          ? <img src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           : team.shortName.toUpperCase()
         }
       </div>
 
       {/* League/competition logo watermark — absolute, unaffected by the flex layout */}
       {leagueLogoUrl && (
-        <img
+        <img loading="lazy" decoding="async"
           src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
           className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]"
           style={{
@@ -601,7 +601,7 @@ function TeamFilterPill({
       style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
     >
       {logoUrl && (
-        <img src={logoUrl} alt="" width={15} height={15} className="w-[15px] h-[15px] object-contain shrink-0"
+        <img loading="lazy" decoding="async" src={logoUrl} alt="" width={15} height={15} className="w-[15px] h-[15px] object-contain shrink-0"
           style={logoFilter ? { filter: logoFilter } : undefined}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       )}

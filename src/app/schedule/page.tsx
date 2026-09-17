@@ -11,7 +11,7 @@ import { outOfSeasonMessage } from '@/lib/season-info';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
-import { contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal, dedupeChannels } from '@/lib/utils';
+import { cn, contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal, dedupeChannels } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -142,7 +142,7 @@ interface BadgeMeta {
   color: string;
   /** Border colour. */
   border: string;
-  /** Kept for the watermark <img> in ScheduleRow — not shown in the badge. */
+  /** Kept for the watermark <img loading="lazy" decoding="async"> in ScheduleRow — not shown in the badge. */
   logoUrl?: string;
   /** Opacity for the watermark logo — defaults to 0.18 if omitted. */
   logoOpacity?: number;
@@ -430,14 +430,14 @@ function ScheduleRow({
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
         <div className="sh-fix-wm" aria-hidden="true">
           {teamLogoUrl
-            ? <img src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             : team.shortName.toUpperCase()
           }
         </div>
 
         {/* Competition logo watermark */}
         {leagueLogoUrl && (
-          <img
+          <img loading="lazy" decoding="async"
             src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]"
             style={{
@@ -545,7 +545,7 @@ function ScheduleRow({
            CSS height + w-auto still govern the displayed size, and the UA-mapped
            aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
       {teamLogoUrl && (
-        <img
+        <img loading="lazy" decoding="async"
           src={teamLogoUrl}
           alt=""
           aria-hidden="true"
@@ -557,7 +557,7 @@ function ScheduleRow({
         />
       )}
       {leagueLogoUrl && (
-        <img
+        <img loading="lazy" decoding="async"
           src={leagueLogoUrl}
           alt=""
           aria-hidden="true"
@@ -754,7 +754,7 @@ function TeamFilterPill({
       style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
     >
       {logoUrl && (
-        <img
+        <img loading="lazy" decoding="async"
           src={logoUrl}
           alt=""
           width={15}
@@ -1563,7 +1563,7 @@ export default function SchedulePage() {
                       return (
                         <div
                           key={game.id}
-                          className="rounded-2xl"
+                          className={cn('rounded-2xl', !isExpanded && 'sh-row-cv')}
                           style={{
                             transition: 'box-shadow 0.4s ease-out',
                             boxShadow: clickedDateKey === dateKey

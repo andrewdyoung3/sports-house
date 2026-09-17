@@ -123,7 +123,7 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
   const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby-league/3/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
-    { cache: 'no-store' },
+    { next: { revalidate: 120 } },
   );
   if (!res.ok) return [];
 
@@ -335,11 +335,16 @@ export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         urls.push(`https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?limit=50`);
       }
 
-      for (const url of urls) {
+      // Month URLs fetched in parallel — serially this was the app's slowest
+      // path (5 comps × N months against ESPN, ~2s even warm before caching).
+      const monthResults = await Promise.allSettled(urls.map(async url => {
+        const res = await fetchTimeout(url, { next: { revalidate: 120 } });
+        return res.ok ? res.json() : null;
+      }));
+      for (const mr of monthResults) {
         try {
-          const res = await fetchTimeout(url, { cache: 'no-store' });
-          if (!res.ok) continue;
-          const data = await res.json();
+          const data = mr.status === 'fulfilled' ? mr.value : null;
+          if (!data) continue;
           for (const e of (data.events ?? []) as any[]) {
             if (!eventMap.has(e.id)) eventMap.set(e.id, e);
           }
@@ -467,7 +472,7 @@ export async function fetchSRUFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
   const res = await fetchESPNScoreboard(
     `https://site.api.espn.com/apis/site/v2/sports/rugby/242041/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
-    { cache: 'no-store' },
+    { next: { revalidate: 120 } },
   );
   if (!res.ok) return [];
 
@@ -569,7 +574,7 @@ export async function fetchRINTFixtures(lookbackDays = 0): Promise<UpcomingGame[
     RINT_COMP_IDS.map(async (compId) => {
       const res = await fetchESPNScoreboard(
         `https://site.api.espn.com/apis/site/v2/sports/rugby/${compId}/scoreboard?dates=${fmt(start)}-${fmt(end)}&limit=200`,
-        { cache: 'no-store' },
+        { next: { revalidate: 120 } },
       );
       if (!res.ok) return [] as UpcomingGame[];
       const data  = await res.json();
@@ -698,7 +703,7 @@ export async function fetchNBAFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
   await Promise.allSettled(
     urls.map(url =>
-      fetchESPNScoreboard(url, { cache: 'no-store' })
+      fetchESPNScoreboard(url, { next: { revalidate: 120 } })
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data) return;
