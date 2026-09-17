@@ -912,6 +912,18 @@ export default function SchedulePage() {
   // Whole-league follows (device-local; see user-prefs). Their fixtures merge
   // into the "All" schedule view alongside followed-team games.
   const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
+  // F1 practice sessions are hidden by default (race weekends are 5-6 rows of
+  // noise otherwise); opt-in persists per device.
+  const [showF1Practice, setShowF1Practice] = useState(false);
+  useEffect(() => {
+    try { setShowF1Practice(localStorage.getItem('sports-house:f1-practice') === 'show'); } catch { /* default hide */ }
+  }, []);
+  const toggleF1Practice = useCallback(() => {
+    setShowF1Practice(prev => {
+      try { localStorage.setItem('sports-house:f1-practice', prev ? 'hide' : 'show'); } catch { /* device-local only */ }
+      return !prev;
+    });
+  }, []);
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
   const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
   const standingsCacheRef     = useRef<Map<string, StandingRow[] | null>>(new Map());
@@ -1193,11 +1205,14 @@ export default function SchedulePage() {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
+      // F1 practice sessions are opt-in (session.label 'Practice 1/2/3';
+      // qualifying, sprints and races always show).
+      if (!showF1Practice && g.team.league === 'f1' && /^Practice/.test(g.competition ?? '')) return false;
       return true;
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues, showF1Practice]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -1485,6 +1500,18 @@ export default function SchedulePage() {
                         muted
                       />
                     ))}
+                  </div>
+                )}
+                {/* F1 practice opt-in — only when F1 content is on screen */}
+                {(activeLeagueId === 'f1' ||
+                  (!isLeagueMode && (allGames.some(g => g.team.league === 'f1') || followedLeagues.includes('f1')))) && (
+                  <div className="sh-segmented">
+                    <FilterPill
+                      label={showF1Practice ? 'Practice: shown' : 'Practice: hidden'}
+                      active={showF1Practice}
+                      onClick={toggleF1Practice}
+                      muted
+                    />
                   </div>
                 )}
               </div>
