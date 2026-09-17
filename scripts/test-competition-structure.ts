@@ -338,7 +338,7 @@ console.log('\n── EPL: table, no finals ────────────
   const prelim = buildFinalsPathFacts('afl', '2026-09-18', 'Sydney Swans', 'Fremantle', 2, 1, true);
   has('prelim: higher seed correctly named (Fremantle, 1st)', prelim, 'Fremantle (1st) is the higher seed');
   has('prelim: hosting explained by QF win, not ladder', prelim, 'WINNING their Qualifying Final');
-  has('prelim: away 1st seed path = QF loss + semi survival', prelim, 'LOST their Qualifying Final, then survived');
+  has('prelim: away 1st seed path = QF loss + semi survival', prelim, 'LOST their Qualifying Final and needed the second life');
   has('prelim: consequence = GF or out', prelim, 'winner advances to the Grand Final');
 
   // Semi: 3rd hosts 7th (wildcard-range seed) — double chance + long-road path.
