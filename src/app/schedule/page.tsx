@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref, setF1SessionPref } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
@@ -919,13 +919,13 @@ export default function SchedulePage() {
   const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
   // Filter panes (My teams / Competitions) collapse to a single header line to
   // reduce clutter — expanded by default, per-device persistence.
-  const [teamsPaneOpen, setTeamsPaneOpen] = useState(true);
-  const [compsPaneOpen, setCompsPaneOpen] = useState(true);
+  const [teamsPaneOpen, setTeamsPaneOpen] = useState(false);
+  const [compsPaneOpen, setCompsPaneOpen] = useState(false);
   useEffect(() => {
     try {
-      setTeamsPaneOpen(localStorage.getItem('sports-house:pane-teams') !== 'closed');
-      setCompsPaneOpen(localStorage.getItem('sports-house:pane-comps') !== 'closed');
-    } catch { /* default open */ }
+      setTeamsPaneOpen(localStorage.getItem('sports-house:pane-teams') === 'open');
+      setCompsPaneOpen(localStorage.getItem('sports-house:pane-comps') === 'open');
+    } catch { /* default closed */ }
   }, []);
   const togglePane = useCallback((storageKey: string, setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     setter(prev => {
@@ -939,15 +939,8 @@ export default function SchedulePage() {
   // here whenever F1 content is on screen.
   const [f1Sessions, setF1Sessions] = useState<'races' | 'all'>('races');
   useEffect(() => { setF1Sessions(getF1SessionPref()); }, [prefsVersion]);
-  const toggleF1Sessions = useCallback(() => {
-    setF1Sessions(prev => {
-      const next = prev === 'races' ? 'all' : 'races';
-      setF1SessionPref(next);
-      return next;
-    });
-  }, []);
-  const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
-  const [gameRangeFilter, setGameRangeFilter] = useState<'all' | 'this_round'>('all');
+  // (home/away, This Round and the schedule-bar F1 toggle were removed 2026-09-17
+  //  to declutter — the F1 session scope is still set at follow time in onboarding.)
   const standingsCacheRef     = useRef<Map<string, StandingRow[] | null>>(new Map());
   const [standingsCacheVersion, setStandingsCacheVersion] = useState(0);
 
@@ -1225,8 +1218,6 @@ export default function SchedulePage() {
     }
     return source.filter(g => {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
-      if (homeAwayFilter === 'home' && !g.isHome) return false;
-      if (homeAwayFilter === 'away' &&  g.isHome) return false;
       // F1 defaults to races + sprints only; 'all' adds qualifying + practice.
       // ('Sprint Qualifying' is qualifying-tier; plain 'Sprint' is a race.)
       if (f1Sessions !== 'all' && g.team.league === 'f1'
@@ -1235,25 +1226,13 @@ export default function SchedulePage() {
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues, f1Sessions]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, leagueCacheVersion, followedLeagues, f1Sessions]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
-  const displayedGames = useMemo<ScheduleEntry[]>(() => {
-    if (gameRangeFilter !== 'this_round' || filteredGames.length === 0) {
-      return filteredGames;
-    }
-    const roundStart = new Date(filteredGames[0].date);
-    const roundEnd   = new Date(roundStart.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const seen = new Set<string>();
-    return filteredGames.filter(g => {
-      if (new Date(g.date) >= roundEnd) return false;
-      const key = `${g.team.id}:${g.competition ?? g.team.league}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [filteredGames, gameRangeFilter]);
+  // The This-Round window filter was removed with its toggle (2026-09-17);
+  // the full filtered list is what displays.
+  const displayedGames = filteredGames;
 
   // Hero game: in league mode, prefer a followed team's next fixture.
   // Uses baseFollowedTeamIds (not the augmented set) so expanding a card never
@@ -1522,55 +1501,6 @@ export default function SchedulePage() {
                     />
                   ))}
                 </div>
-                )}
-              </div>
-
-              <div className="sh-filter-divider" />
-
-              {/* View toggles — TWO independent single-select segmented groups (refine #3):
-                  range (This Round / All games) and, in team mode, home/away. Same state
-                  + handlers; each value is now an explicit button rather than one toggle. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="sh-segmented">
-                  <FilterPill
-                    label="This Round"
-                    active={gameRangeFilter === 'this_round'}
-                    onClick={() => setGameRangeFilter('this_round')}
-                    muted
-                  />
-                  <FilterPill
-                    label="All games"
-                    active={gameRangeFilter === 'all'}
-                    onClick={() => setGameRangeFilter('all')}
-                    muted
-                  />
-                </div>
-                {!isLeagueMode && (
-                  <div className="sh-segmented">
-                    {(['all', 'home', 'away'] as const).map(opt => (
-                      <FilterPill
-                        key={opt}
-                        label={opt === 'all' ? 'All' : opt.charAt(0).toUpperCase() + opt.slice(1)}
-                        active={homeAwayFilter === opt}
-                        onClick={() => setHomeAwayFilter(opt)}
-                        muted
-                      />
-                    ))}
-                  </div>
-                )}
-                {/* F1 session scope — only when F1 content is on screen.
-                    Default 'races' shows races + sprints; the checkbox adds
-                    qualifying + practice. */}
-                {(activeLeagueId === 'f1' ||
-                  (!isLeagueMode && (allGames.some(g => g.team.league === 'f1') || followedLeagues.includes('f1')))) && (
-                  <label className="sh-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={f1Sessions === 'all'}
-                      onChange={toggleF1Sessions}
-                    />
-                    <span>F1: include qualifying &amp; practice</span>
-                  </label>
                 )}
               </div>
 
