@@ -72,9 +72,9 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
   'Conference League': { bg: '#001a10', color: '#00c87a', label: 'UECL',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', logoOpacity: 0.56, logoBlend: 'screen' },
   'FA Cup':           { bg: '#1a0005', color: '#ff2244', label: 'FA Cup',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png', logoOpacity: 0.47, logoBlend: 'screen' },
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png', logoOpacity: 0.24, logoBlend: 'screen', logoHeight: '78%' },
   'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.43, logoBlend: 'screen' },
+    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.22, logoBlend: 'screen', logoHeight: '78%' },
   'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
     logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%' },
 };
@@ -244,7 +244,7 @@ function ResultRow({
       >
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
-        {teamLogoUrl && teamLogoUrl !== leagueLogoUrl && (
+        {false && teamLogoUrl && ( /* F1 glass row: league badge only — team mark always duplicated it */
           <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
             style={{ right: '88px', opacity: 0.10 }}
@@ -327,7 +327,7 @@ function ResultRow({
     >
       {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
       <div className="sh-fix-wm" aria-hidden="true">
-        {/* F1 rows: championship logo IS the league logo — don't double it. */}
+        {/* (F1 never reaches this path — the glass row above returns first.) */}
         {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
           ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           : team.shortName.toUpperCase()

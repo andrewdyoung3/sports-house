@@ -261,14 +261,14 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     label: 'FA Cup',
     bg: '#1a0005', color: '#ff2244', border: 'rgba(255,34,68,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',
-    logoOpacity: 0.47, logoBlend: 'screen',
+    logoOpacity: 0.24, logoBlend: 'screen', logoHeight: '78%',
   },
   'EFL Cup': {
     // EFL Cup / Carabao Cup: official green palette, "EFL" abbreviation
     label: 'EFL Cup',
     bg: '#0d1f00', color: '#78be20', border: 'rgba(120,190,32,0.38)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',
-    logoOpacity: 0.43, logoBlend: 'screen',
+    logoOpacity: 0.22, logoBlend: 'screen', logoHeight: '78%',
   },
   'State of Origin': {
     // SOO: maroon/gold — official Ampol State of Origin series logo
@@ -437,9 +437,11 @@ function ScheduleRow({
       >
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
         <div className="sh-fix-wm" aria-hidden="true">
-          {/* F1 rows: the "team" is the championship entity whose logo IS the
-              competition logo — rendering both doubled the same mark. */}
-          {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
+          {/* F1 rows NEVER render a team watermark — whatever the perspective
+              entity (championship or a followed driver), the right-side F1
+              badge + GP-name headline carry the identity; a second mark reads
+              as a duplicate. */}
+          {teamLogoUrl && !isF1 && teamLogoUrl !== leagueLogoUrl
             ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             : team.shortName.toUpperCase()
           }
