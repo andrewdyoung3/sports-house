@@ -622,7 +622,10 @@
 .sh-fix-teams .sh-comptag { margin-left: 6px; }
 .sh-fix-time { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .sh-fix-kick { font-family: var(--font-head); font-weight: 800; font-size: 21px; color: var(--text); letter-spacing: -0.3px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.sh-fix-sub { position: relative; z-index: 1; display: flex; gap: 20px; margin-top: 10px; }
+.sh-fix-sub { position: relative; z-index: 1; display: flex; gap: 14px; margin-top: 10px; align-items: center; flex-wrap: wrap; row-gap: 6px; }
+/* Identity strip in the meta row — the paired crests that moved down from the
+   headline deck (2026-09-18 clarity pass: deck 1 is names + time only). */
+.sh-fix-crests { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
 
 /* ── Fixture card — TEAM-coloured (Phase B · Step 2) ──
    Ported from the design's `.theme-blend .sh-fix*` rules with --comp → --accent, so the

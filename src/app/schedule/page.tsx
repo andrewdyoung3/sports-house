@@ -391,7 +391,7 @@ function ScheduleRow({
     const compColor  = compMeta?.color ?? 'var(--text-2)';
     const cricketColor = game.cricketFormat === 'test' ? '#e2a84b' : game.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
     const cricketLabel = game.cricketFormat === 'test' ? 'Test' : game.cricketFormat?.toUpperCase();
-    const nameSize   = isCompact ? { fontSize: '14px' } : undefined;
+    const nameSize   = isCompact ? { fontSize: '16px' } : { fontSize: '21px' };
     const posStyle   = { fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: 'var(--text-3)' } as React.CSSProperties;
 
     return (
@@ -435,11 +435,6 @@ function ScheduleRow({
           />
         )}
 
-        {/* Feature badge: left column (direct flex item on the article) */}
-        <span className="sh-fix-badge-f">
-          <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={56} logoFilter={teamLogoFilter} />
-        </span>
-
         {/* Text column: main row + sub row, so the sub aligns under names */}
         <div className="sh-fix-text">
           <div className="sh-fix-main">
@@ -452,20 +447,9 @@ function ScheduleRow({
                 <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
                 {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
                 <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
-                {/* Opponent badge: 40px circle (bumped from 32 for clearer hierarchy) */}
-                <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={40} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
                 <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
                 {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
               </span>
-              {team.league !== 'cricket_int' && (
-                <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
-              )}
-              {isCricket && game.cricketFormat && (
-                <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>
-              )}
-              {isFollowed && (
-                <span className="sh-comptag" style={{ '--c': team.primaryColor } as React.CSSProperties}>★ Following</span>
-              )}
             </div>
 
             <div className="sh-fix-time">
@@ -482,6 +466,19 @@ function ScheduleRow({
           </div>
 
           <div className="sh-fix-sub">
+            <span className="sh-fix-crests">
+              <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={26} logoFilter={teamLogoFilter} />
+              <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={26} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
+            </span>
+            {team.league !== 'cricket_int' && (
+              <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
+            )}
+            {isCricket && game.cricketFormat && (
+              <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>
+            )}
+            {isFollowed && (
+              <span className="sh-comptag" style={{ '--c': team.primaryColor } as React.CSSProperties}>★ Following</span>
+            )}
             {game.venue && (
               <span className="sh-meta-item"><MapPin size={14} /><span className="truncate" style={{ maxWidth: '220px' }}>{game.venue}</span></span>
             )}
