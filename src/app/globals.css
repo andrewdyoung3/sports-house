@@ -651,8 +651,8 @@
 /* Card watermark — logo image inside the .sh-fix-wm wrapper. The wrapper's absolute
    positioning is inherited; the img just needs sizing and opacity. */
 .sh-theme .sh-fix-wm > img {
-  height: 94px; width: auto; max-width: 150px;
-  object-fit: contain; opacity: 0.17; display: block;
+  height: var(--wm-team-h, 94px); width: auto; max-width: var(--wm-team-mw, 150px);
+  object-fit: contain; opacity: var(--wm-team-o, 0.17); display: block;
 }
 .sh-theme .sh-fix:hover {
   box-shadow:
@@ -779,7 +779,7 @@
   /* Scale down the text watermark so it doesn't loom over the stacked content */
   .sh-fix-wm { font-size: 72px; letter-spacing: -3px; }
   /* Logo watermark inside the wrapper: a little smaller and more transparent */
-  .sh-theme .sh-fix-wm > img { height: 60px; opacity: 0.13; }
+  .sh-theme .sh-fix-wm { --wm-team-h: 60px; --wm-team-o: 0.13; }
 
   /* Hero — allow the two team clusters to wrap when they don't fit one line.
      The away-team block + "@" fit together on line 1; the home-team block wraps

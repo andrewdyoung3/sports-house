@@ -7,6 +7,7 @@ import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { getFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
+import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
 import { TEAMS, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -65,40 +66,23 @@ interface ResultBadgeMeta {
 }
 
 const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
-  'Champions League': { bg: '#071432', color: '#dce8ff', label: 'UCL',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png', logoOpacity: 0.68, logoBlend: 'screen' },
-  'Europa League':    { bg: '#200e00', color: '#f57320', label: 'UEL',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', logoOpacity: 0.56, logoBlend: 'screen' },
-  'Conference League': { bg: '#001a10', color: '#00c87a', label: 'UECL',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', logoOpacity: 0.56, logoBlend: 'screen' },
-  'FA Cup':           { bg: '#1a0005', color: '#ff2244', label: 'FA Cup',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png', logoOpacity: 0.24, logoBlend: 'screen', logoHeight: '78%' },
-  'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png', logoOpacity: 0.22, logoBlend: 'screen', logoHeight: '78%' },
-  'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', logoOpacity: 0.18, logoHeight: '98%' },
+  'Champions League': { bg: '#071432', color: '#dce8ff', label: 'UCL', },
+  'Europa League':    { bg: '#200e00', color: '#f57320', label: 'UEL', },
+  'Conference League': { bg: '#001a10', color: '#00c87a', label: 'UECL', },
+  'FA Cup':           { bg: '#1a0005', color: '#ff2244', label: 'FA Cup', },
+  'EFL Cup':          { bg: '#0d1f00', color: '#78be20', label: 'EFL Cup', },
+  'State of Origin':  { bg: '#1a0000', color: '#F5A623', label: 'SOO', },
 };
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
-  afl:         { bg: '#001d3d', color: '#f4ac20',  label: 'AFL',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', logoOpacity: 0.16 },
-  nrl:         { bg: '#002955', color: '#ffffff',  label: 'NRL',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png', logoOpacity: 0.27, logoHeight: '98%' },
-  epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)' },
-  super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR',
-    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', logoOpacity: 0.18, logoHeight: '110%' },
-  rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test',
-    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png',
-    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%' },
-  f1:          { bg: '#1a0000', color: '#E8002D',  label: 'F1',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png', logoOpacity: 0.15 },
-  bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL',
-    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png',
-    logoOpacity: 0.18, logoHeight: '105%' },
-  cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT',
-    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png',
-    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%' },
+  afl:         { bg: '#001d3d', color: '#f4ac20',  label: 'AFL', },
+  nrl:         { bg: '#002955', color: '#ffffff',  label: 'NRL', },
+  epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL', },
+  super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR', },
+  rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test', logoHeight: '78%' },
+  f1:          { bg: '#1a0000', color: '#E8002D',  label: 'F1', },
+  bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL', },
+  cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT', logoHeight: '78%' },
 };
 
 // Step 8 — emits .sh-comptag, matching the schedule's FixtureBadge vocabulary.
@@ -208,12 +192,13 @@ function ResultRow({
 
   // League / competition watermark metadata (kept for visual layering inside .sh-fix)
   const baseComp = result.competition?.startsWith('State of Origin') ? 'State of Origin' : result.competition;
-  const leagueMeta        = (baseComp ? COMPETITION_BADGE[baseComp] : undefined) ?? LEAGUE_BADGE[team.league];
-  const leagueLogoUrl     = leagueMeta?.logoUrl;
-  const leagueLogoOpacity = leagueMeta?.logoOpacity ?? 0.18;
-  const leagueLogoBlend   = leagueMeta?.logoBlend;
-  const leagueLogoFilter  = leagueMeta?.logoFilter;
-  const leagueLogoHeight  = leagueMeta?.logoHeight;
+  const wm = competitionWatermark(baseComp, team.league);
+  const leagueLogoUrl     = wm?.url;
+  const leagueLogoOpacity = wm?.opacity ?? 0.18;
+  const leagueLogoBlend   = wm?.blend;
+  const leagueLogoFilter  = wm?.filter;
+  const leagueLogoHeight  = wm?.height;
+  const leagueLogoMaxWidth = wm?.maxWidth;
   // Logo center: translateX(50%) makes `right: 49px` the CENTER anchor for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
 
@@ -326,7 +311,7 @@ function ResultRow({
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
       {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
-      <div className="sh-fix-wm" aria-hidden="true">
+      <div className="sh-fix-wm" aria-hidden="true" style={teamWatermarkVars(team.id) as React.CSSProperties}>
         {/* (F1 never reaches this path — the glass row above returns first.) */}
         {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
           ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />

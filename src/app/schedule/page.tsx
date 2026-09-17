@@ -8,6 +8,7 @@ import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-re
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
+import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -162,45 +163,33 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     // AFL: navy + gold — no symbol, "AFL" reads cleanly on its own
     label: 'AFL',
     bg: '#001d3d', color: '#f4ac20', border: 'rgba(244,172,32,0.30)',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png',
-    logoOpacity: 0.16,
   },
   nrl: {
     // NRL: ◆ (diamond from the NRL shield mark) in brand red on navy
     symbol: '◆\uFE0E', symbolColor: '#e21b23',
     label: 'NRL',
     bg: '#002955', color: '#ffffff', border: 'rgba(226,27,35,0.40)',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png',
-    logoOpacity: 0.27, logoHeight: '98%',
   },
   epl: {
     // Premier League: ♛ (queen chess piece = stylised lion) in PL gold on official purple
     symbol: '♛\uFE0E', symbolColor: '#e8a200',
     label: 'Premier League', abbr: 'EPL',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
-    logoOpacity: 0.15, logoFilter: 'brightness(0) invert(1)',
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
     label: 'Super Rugby', abbr: 'SUPER',
     bg: '#0b2a6b', color: '#7eb8ff', border: 'rgba(126,184,255,0.28)',
-    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png',
-    logoOpacity: 0.18, logoHeight: '110%',
   },
   rugby_int: {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
     symbol: '✦\uFE0E', symbolColor: '#8899bb',
-    label: 'Test Rugby', abbr: 'TEST',
-    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png',
-    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%',
+    label: 'Test Rugby', abbr: 'TEST', logoHeight: '78%',
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
   },
   nba: {
     // NBA: dark navy + brand red, basketball emoji from league icon
     symbol: '🏀', label: 'NBA',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png',
-    logoOpacity: 0.15,
     bg: '#051828', color: '#c8102e', border: 'rgba(200,16,46,0.35)',
   },
   nhl: {
@@ -212,19 +201,13 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     // F1: official scarlet on near-black, checkered flag symbol
     symbol: '🏁', label: 'F1',
     bg: '#1a0000', color: '#E8002D', border: 'rgba(232,0,45,0.40)',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',
-    logoOpacity: 0.15,
   },
   bbl: {
     symbol: '🏏', label: 'BBL',
-    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png',
-    logoOpacity: 0.18, logoHeight: '105%',
     bg: '#001428', color: '#d917a5', border: '#d917a550',
   },
   cricket_int: {
-    symbol: '🏏', label: 'Cricket',
-    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png',
-    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%',
+    symbol: '🏏', label: 'Cricket', logoHeight: '78%',
     bg: '#0a1a00', color: '#78be20', border: '#78be2050',
   },
 };
@@ -236,46 +219,34 @@ const COMPETITION_BADGE: Record<string, BadgeMeta> = {
     symbol: '★\uFE0E', symbolColor: '#ffd700',
     label: 'Champions League', abbr: 'UCL',
     bg: '#071432', color: '#dce8ff', border: 'rgba(255,215,0,0.30)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',
-    logoOpacity: 0.68, logoBlend: 'screen',
   },
   'Europa League': {
     // UEL: ◎ (bullseye / UEL circular motif) in brand orange on dark ground
     symbol: '◎\uFE0E', symbolColor: '#f57320',
     label: 'Europa League', abbr: 'UEL',
     bg: '#200e00', color: '#f57320', border: 'rgba(245,115,32,0.38)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png',
-    logoOpacity: 0.56, logoBlend: 'screen',
   },
   'Conference League': {
     // UECL: ◉ (inner circle = target / conference identity) in brand teal
     symbol: '◉\uFE0E', symbolColor: '#00c87a',
     label: 'Conference League', abbr: 'UECL',
     bg: '#001a10', color: '#00c87a', border: 'rgba(0,200,122,0.32)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png',
-    logoOpacity: 0.56, logoBlend: 'screen',
   },
   'FA Cup': {
     // FA Cup: Three Lions abstracted as ◆ ◆ ◆ is complex — use ✦ on FA red
     symbol: '✦\uFE0E', symbolColor: '#ffffff',
     label: 'FA Cup',
     bg: '#1a0005', color: '#ff2244', border: 'rgba(255,34,68,0.38)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',
-    logoOpacity: 0.24, logoBlend: 'screen', logoHeight: '78%',
   },
   'EFL Cup': {
     // EFL Cup / Carabao Cup: official green palette, "EFL" abbreviation
     label: 'EFL Cup',
     bg: '#0d1f00', color: '#78be20', border: 'rgba(120,190,32,0.38)',
-    logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',
-    logoOpacity: 0.22, logoBlend: 'screen', logoHeight: '78%',
   },
   'State of Origin': {
     // SOO: maroon/gold — official Ampol State of Origin series logo
     label: 'SOO',
     bg: '#1a0000', color: '#F5A623', border: 'rgba(245,166,35,0.35)',
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png',
-    logoOpacity: 0.18, logoHeight: '98%',
   },
 };
 
@@ -363,14 +334,15 @@ function ScheduleRow({
 
   const teamLogoUrl    = TEAM_LOGOS[team.id];
   const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
-  const leagueMeta     = (baseComp ? COMPETITION_BADGE[baseComp] : undefined)
-    ?? LEAGUE_BADGE[team.league];
-  const leagueLogoUrl      = leagueMeta?.logoUrl;
-  const leagueLogoOpacity  = leagueMeta?.logoOpacity ?? 0.18;
-  const leagueLogoBlend    = leagueMeta?.logoBlend;
-  const leagueLogoFilter   = leagueMeta?.logoFilter;
-  const leagueLogoHeight   = leagueMeta?.logoHeight;
-  const leagueLogoMaxWidth = leagueMeta?.logoMaxWidth;
+  // All watermark art + tuning comes from src/lib/watermarks.ts — the single
+  // source both pages share (badge maps keep only colours/labels).
+  const wm = competitionWatermark(baseComp, team.league);
+  const leagueLogoUrl      = wm?.url;
+  const leagueLogoOpacity  = wm?.opacity ?? 0.18;
+  const leagueLogoBlend    = wm?.blend;
+  const leagueLogoFilter   = wm?.filter;
+  const leagueLogoHeight   = wm?.height;
+  const leagueLogoMaxWidth = wm?.maxWidth;
   // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
   // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
@@ -436,7 +408,7 @@ function ScheduleRow({
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
-        <div className="sh-fix-wm" aria-hidden="true">
+        <div className="sh-fix-wm" aria-hidden="true" style={teamWatermarkVars(team.id) as React.CSSProperties}>
           {/* F1 rows NEVER render a team watermark — whatever the perspective
               entity (championship or a followed driver), the right-side F1
               badge + GP-name headline carry the identity; a second mark reads
@@ -1427,7 +1399,7 @@ export default function SchedulePage() {
             <div key={`hero-${listTransitionKey}`} className="sh-fade-in">
               {heroGame.team.league === 'f1'
                 ? <NextGameHero   game={heroGame} userTz={userTz} />
-                : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={LEAGUE_BADGE[heroGame.team.league]?.logoUrl} onExpandChange={setHeroExpanded} />}
+                : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={competitionWatermark(undefined, heroGame.team.league)?.url} onExpandChange={setHeroExpanded} />}
             </div>
           )}
 
