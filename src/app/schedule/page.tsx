@@ -163,7 +163,7 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'AFL',
     bg: '#001d3d', color: '#f4ac20', border: 'rgba(244,172,32,0.30)',
     logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png',
-    logoOpacity: 0.10,
+    logoOpacity: 0.16,
   },
   nrl: {
     // NRL: ◆ (diamond from the NRL shield mark) in brand red on navy
@@ -179,7 +179,7 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     label: 'Premier League', abbr: 'EPL',
     bg: '#38003c', color: '#ffffff', border: 'rgba(255,255,255,0.18)',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png',
-    logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)',
+    logoOpacity: 0.15, logoFilter: 'brightness(0) invert(1)',
   },
   super_rugby: {
     // Super Rugby Pacific: "SR" abbreviated, electric blue palette
@@ -192,11 +192,15 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
     // International Test rugby: ✦ (four-point star, World Rugby style) on dark slate
     symbol: '✦\uFE0E', symbolColor: '#8899bb',
     label: 'Test Rugby', abbr: 'TEST',
+    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png',
+    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%',
     bg: '#0f1a2e', color: '#a0b4cc', border: 'rgba(160,180,204,0.22)',
   },
   nba: {
     // NBA: dark navy + brand red, basketball emoji from league icon
     symbol: '🏀', label: 'NBA',
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png',
+    logoOpacity: 0.15,
     bg: '#051828', color: '#c8102e', border: 'rgba(200,16,46,0.35)',
   },
   nhl: {
@@ -213,10 +217,14 @@ const LEAGUE_BADGE: Record<string, BadgeMeta> = {
   },
   bbl: {
     symbol: '🏏', label: 'BBL',
+    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png',
+    logoOpacity: 0.18, logoHeight: '105%',
     bg: '#001428', color: '#d917a5', border: '#d917a550',
   },
   cricket_int: {
     symbol: '🏏', label: 'Cricket',
+    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png',
+    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%',
     bg: '#0a1a00', color: '#78be20', border: '#78be2050',
   },
 };
@@ -429,7 +437,9 @@ function ScheduleRow({
       >
         {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
         <div className="sh-fix-wm" aria-hidden="true">
-          {teamLogoUrl
+          {/* F1 rows: the "team" is the championship entity whose logo IS the
+              competition logo — rendering both doubled the same mark. */}
+          {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
             ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             : team.shortName.toUpperCase()
           }

@@ -331,15 +331,15 @@ export const TEAM_LOGOS: Record<string, string> = {
   'bbl-thunder':    `${ESPN}/cricket/500/509674.png`,
 
   // ── Formula 1 (constructor logos) ──────────────────────────────────────────
-  'f1-team-redbull':     'https://a.espncdn.com/i/teamlogos/f1/500/red_bull.png',
-  'f1-team-ferrari':     'https://a.espncdn.com/i/teamlogos/f1/500/ferrari.png',
-  'f1-team-mercedes':    'https://a.espncdn.com/i/teamlogos/f1/500/mercedes.png',
-  'f1-team-mclaren':     'https://a.espncdn.com/i/teamlogos/f1/500/mclaren.png',
-  'f1-team-astonmartin': 'https://a.espncdn.com/i/teamlogos/f1/500/aston_martin.png',
-  'f1-team-alpine':      'https://a.espncdn.com/i/teamlogos/f1/500/alpine.png',
-  'f1-team-williams':    'https://a.espncdn.com/i/teamlogos/f1/500/williams.png',
-  'f1-team-racingbulls': 'https://a.espncdn.com/i/teamlogos/f1/500/racing_bulls.png',
-  'f1-team-haas':        'https://a.espncdn.com/i/teamlogos/f1/500/haas.png',
-  'f1-team-sauber':      'https://a.espncdn.com/i/teamlogos/f1/500/sauber.png',
+  'f1-team-redbull':     'https://media.formula1.com/content/dam/fom-website/teams/2025/red-bull-racing-logo.png',
+  'f1-team-ferrari':     'https://media.formula1.com/content/dam/fom-website/teams/2025/ferrari-logo.png',
+  'f1-team-mercedes':    'https://media.formula1.com/content/dam/fom-website/teams/2025/mercedes-logo.png',
+  'f1-team-mclaren':     'https://media.formula1.com/content/dam/fom-website/teams/2025/mclaren-logo.png',
+  'f1-team-astonmartin': 'https://media.formula1.com/content/dam/fom-website/teams/2025/aston-martin-logo.png',
+  'f1-team-alpine':      'https://media.formula1.com/content/dam/fom-website/teams/2025/alpine-logo.png',
+  'f1-team-williams':    'https://media.formula1.com/content/dam/fom-website/teams/2025/williams-logo.png',
+  'f1-team-racingbulls': 'https://media.formula1.com/content/dam/fom-website/teams/2025/racing-bulls-logo.png',
+  'f1-team-haas':        'https://media.formula1.com/content/dam/fom-website/teams/2025/haas-logo.png',
+  'f1-team-sauber':      'https://media.formula1.com/content/dam/fom-website/teams/2025/kick-sauber-logo.png',
 
 };

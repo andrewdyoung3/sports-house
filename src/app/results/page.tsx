@@ -81,18 +81,24 @@ const COMPETITION_BADGE: Record<string, ResultBadgeMeta> = {
 
 const LEAGUE_BADGE: Record<string, ResultBadgeMeta> = {
   afl:         { bg: '#001d3d', color: '#f4ac20',  label: 'AFL',
-    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', logoOpacity: 0.10 },
+    logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', logoOpacity: 0.16 },
   nrl:         { bg: '#002955', color: '#ffffff',  label: 'NRL',
     logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png', logoOpacity: 0.27, logoHeight: '98%' },
   epl:         { bg: '#38003c', color: '#ffffff',  label: 'PL',
     logoUrl: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', logoOpacity: 0.11, logoFilter: 'brightness(0) invert(1)' },
   super_rugby: { bg: '#0b2a6b', color: '#7eb8ff',  label: 'SR',
     logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', logoOpacity: 0.18, logoHeight: '110%' },
-  rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test' },
+  rugby_int:   { bg: '#0f1a2e', color: '#a0b4cc',  label: 'Test',
+    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png',
+    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%' },
   f1:          { bg: '#1a0000', color: '#E8002D',  label: 'F1',
     logoUrl: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png', logoOpacity: 0.15 },
-  bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL' },
-  cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT' },
+  bbl:         { bg: '#001428', color: '#d917a5',  label: 'BBL',
+    logoUrl: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png',
+    logoOpacity: 0.18, logoHeight: '105%' },
+  cricket_int: { bg: '#0a1a00', color: '#78be20',  label: 'INT',
+    logoUrl: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png',
+    logoOpacity: 0.13, logoFilter: 'brightness(0) invert(1)', logoHeight: '78%' },
 };
 
 // Step 8 — emits .sh-comptag, matching the schedule's FixtureBadge vocabulary.
@@ -238,7 +244,7 @@ function ResultRow({
       >
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
-        {teamLogoUrl && (
+        {teamLogoUrl && teamLogoUrl !== leagueLogoUrl && (
           <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
             style={{ right: '88px', opacity: 0.10 }}
@@ -321,7 +327,8 @@ function ResultRow({
     >
       {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
       <div className="sh-fix-wm" aria-hidden="true">
-        {teamLogoUrl
+        {/* F1 rows: championship logo IS the league logo — don't double it. */}
+        {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
           ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           : team.shortName.toUpperCase()
         }
