@@ -179,7 +179,10 @@ function BracketSVG({
         return (
           <g key={i}>
             <rect x={s.x} y={s.y} width={BOX_W} height={BOX_H} rx={9}
-              fill={live ? 'var(--bkt-box-live, rgba(255,255,255,0.09))' : 'var(--bkt-box, rgba(255,255,255,0.045))'}
+              // Opaque plates (translucent fills let connector elbows show THROUGH
+              // the cards on skip-a-column paths — user-flagged). Colours are the
+              // old alpha fills precomposited onto the modal background.
+              fill={live ? 'var(--bkt-box-live, #272231)' : 'var(--bkt-box, #1e1a24)'}
               stroke={live ? accent : 'var(--bkt-box-border, rgba(255,255,255,0.14))'}
               strokeWidth={live ? 2 : 1} />
             {g ? (

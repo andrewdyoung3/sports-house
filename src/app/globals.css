@@ -1041,7 +1041,7 @@
   /* bracket art */
   --bkt-ink: #191325; --bkt-ink-2: rgba(25,19,37,0.75); --bkt-ink-3: rgba(25,19,37,0.55);
   --bkt-ink-faint: rgba(25,19,37,0.35); --bkt-line: rgba(25,19,37,0.25);
-  --bkt-box: rgba(25,19,37,0.04); --bkt-box-live: rgba(25,19,37,0.07); --bkt-box-border: rgba(25,19,37,0.16);
+  --bkt-box: #ebe7f1; --bkt-box-live: #e2dcea; --bkt-box-border: rgba(25,19,37,0.16);
   --modal-bg: #f4f1f8;
 }
 html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
