@@ -475,10 +475,10 @@
 .sh-league-follow:hover { opacity: 1; transform: scale(1.15); }
 .sh-league-follow.is-on { opacity: 1; color: #f5c518; }
 
-/* Long fixture lists: skip layout/paint for offscreen rows. The intrinsic
-   size keeps the scrollbar stable (~row height); rows render as they scroll
-   into view. Big paint win once whole-league follows push lists past ~50 rows. */
-.sh-row-cv { content-visibility: auto; contain-intrinsic-size: auto 74px; }
+/* NOTE: content-visibility:auto on schedule rows was tried (2026-09-17) and
+   REVERTED — rows have variable heights, so the estimated intrinsic size made
+   scroll anchoring jump when rows re-measured on expand/scroll. Do not re-add
+   without fixed-height rows or a virtualizer. */
 
 /* ── Finals bracket (button + SVG popup, finals fixtures only) ── */
 .sh-bracket { margin-bottom: 16px; }

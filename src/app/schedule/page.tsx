@@ -1563,7 +1563,7 @@ export default function SchedulePage() {
                       return (
                         <div
                           key={game.id}
-                          className={cn('rounded-2xl', !isExpanded && 'sh-row-cv')}
+                          className="rounded-2xl"
                           style={{
                             transition: 'box-shadow 0.4s ease-out',
                             boxShadow: clickedDateKey === dateKey
