@@ -62,7 +62,7 @@ export function GameCard({ game, teamColor, teamShortName, compLabel, userTz }: 
             <span
               key={ch}
               className="sh-comptag"
-              style={{ '--c': 'rgba(255,255,255,0.4)' } as React.CSSProperties}
+              style={{ '--c': 'var(--text-3)' } as React.CSSProperties}
             >
               {ch}
             </span>

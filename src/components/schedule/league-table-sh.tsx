@@ -45,7 +45,7 @@ export function LeagueTableSh({ league, rows, followedTeamIds, compColor, compSh
     <div className="sh-card sh-standings">
       <div className="sh-card-head">
         {compShort && (
-          <span className="sh-comptag" style={{ '--c': compColor ?? 'rgba(255,255,255,0.7)' } as React.CSSProperties}>
+          <span className="sh-comptag" style={{ '--c': compColor ?? 'var(--text-2)' } as React.CSSProperties}>
             {compShort}
           </span>
         )}

@@ -388,7 +388,7 @@ function ScheduleRow({
   if (!isF1) {
     const compMeta   = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[team.league] ?? null);
     const compShort  = compMeta?.abbr ?? compMeta?.label ?? (game.competition ?? team.league.toUpperCase()); // prefer the short code so the pill never wraps
-    const compColor  = compMeta?.color ?? 'rgba(255,255,255,0.7)';
+    const compColor  = compMeta?.color ?? 'var(--text-2)';
     const cricketColor = game.cricketFormat === 'test' ? '#e2a84b' : game.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
     const cricketLabel = game.cricketFormat === 'test' ? 'Test' : game.cricketFormat?.toUpperCase();
     const nameSize   = isCompact ? { fontSize: '14px' } : undefined;

@@ -1128,3 +1128,17 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
 [data-theme='light'] .bg-black\/30 { background-color: rgba(255,255,255,0.72); }
 [data-theme='light'] .bg-black\/40 { background-color: rgba(255,255,255,0.78); }
 [data-theme='light'] .bg-black\/60 { background-color: rgba(255,255,255,0.85); }
+
+/* ── Light-mode contrast repairs (user review) ─────────────────────────────
+   .sh-comptag colours (--c) were chosen against the dark canvas — EPL/NRL use
+   pure white, and several sources fall back to white-alpha, which is
+   white-on-white in light mode. Rather than re-tune every pill colour, light
+   mode mixes ANY --c 55% toward ink: white becomes a readable slate, bright
+   brand hues become their dark-legible variants, and dark hues barely move.
+   Same treatment for the gold follow-star and F1 grid row plates. */
+[data-theme='light'] .sh-comptag {
+  color: color-mix(in oklab, var(--c) 45%, #191325);
+  background: color-mix(in oklab, var(--c) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 40%, rgba(25,19,37,0.25));
+}
+[data-theme='light'] .sh-league-follow.is-on { color: #8a6d00; }

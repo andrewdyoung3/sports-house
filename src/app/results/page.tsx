@@ -90,7 +90,7 @@ function ResultBadge({ league, competition }: { league: string; competition?: st
   const baseComp = competition?.startsWith('State of Origin') ? 'State of Origin' : competition;
   const meta  = baseComp ? (COMPETITION_BADGE[baseComp] ?? null) : (LEAGUE_BADGE[league] ?? null);
   const label = meta?.label ?? (competition ?? league.toUpperCase());
-  const color = meta?.color ?? 'rgba(255,255,255,0.40)';
+  const color = meta?.color ?? 'var(--text-3)';
   return (
     <span className="sh-comptag" style={{ '--c': color } as React.CSSProperties}>{label}</span>
   );

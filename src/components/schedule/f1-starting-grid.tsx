@@ -102,8 +102,8 @@ export function F1StartingGrid({
                     background: followed
                       ? `${color}1A`
                       : hovered
-                        ? 'rgba(255,255,255,0.05)'
-                        : 'rgba(255,255,255,0.025)',
+                        ? 'var(--surface, rgba(255,255,255,0.05))'
+                        : 'var(--grid-row-alt, rgba(255,255,255,0.025))',
                     borderLeft: `2.5px solid ${color}`,
                   }}
                   onMouseEnter={() => setHoveredPos(entry.position)}
