@@ -1251,6 +1251,12 @@ function buildF1DataBlock(context: PreviewContext): string {
     lines.push('');
   }
 
+  // Circuit statistics are NOT in the data (no lap counts, lengths, corner
+  // counts, or speeds from any source) — without this line the model reaches
+  // for them from training memory and the numeral binder rejects the preview
+  // (live refusal: an unsourced "400" on the Baku straight).
+  lines.push('NO CIRCUIT STATISTICS ARE PROVIDED: do not cite lap counts, circuit length, corner counts or numbers, straight lengths, or speed figures — none are in the data. Characterise the circuit qualitatively only (street circuit, long straights, low grip) via the circuit name.');
+  lines.push('');
   lines.push(`Generate the race preview using only the data provided above. Do not invent statistics, driver names not mentioned, or historical records not given.`);
   return lines.join('\n');
 }
