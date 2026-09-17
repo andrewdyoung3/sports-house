@@ -610,7 +610,10 @@
 .sh-fix:hover { border-color: var(--border-strong); }
 .sh-fix.is-open { background: var(--surface-2); }
 .sh-fix-wm {
-  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  /* Team-crest lane sits LEFT of the league-mark lane (league mark centers
+     ~49px from the right edge and spans roughly the last 100px) — the two
+     watermarks overlapped when both lived at the right edge (user-flagged). */
+  position: absolute; right: 112px; top: 50%; transform: translateY(-50%);
   font-family: var(--font-head); font-weight: 900; font-size: 92px;
   letter-spacing: -4px; line-height: .8; white-space: nowrap;
   color: var(--wm-color-fix, rgba(255,255,255,.028)); pointer-events: none; user-select: none; z-index: 0;
@@ -780,7 +783,7 @@
   /* Smaller kickoff time so the time row is compact */
   .sh-fix-kick { font-size: 17px; }
   /* Scale down the text watermark so it doesn't loom over the stacked content */
-  .sh-fix-wm { font-size: 72px; letter-spacing: -3px; }
+  .sh-fix-wm { font-size: 72px; letter-spacing: -3px; right: 78px; }
   /* Logo watermark inside the wrapper: a little smaller and more transparent */
   .sh-theme .sh-fix-wm { --wm-team-h: 60px; --wm-team-o: 0.13; }
 

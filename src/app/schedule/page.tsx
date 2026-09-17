@@ -391,7 +391,7 @@ function ScheduleRow({
     const compColor  = compMeta?.color ?? 'var(--text-2)';
     const cricketColor = game.cricketFormat === 'test' ? '#e2a84b' : game.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
     const cricketLabel = game.cricketFormat === 'test' ? 'Test' : game.cricketFormat?.toUpperCase();
-    const nameSize   = isCompact ? { fontSize: '16px' } : { fontSize: '21px' };
+    const nameSize   = { fontSize: '21px' } as React.CSSProperties; // uniform — user prefers the large size everywhere
     const posStyle   = { fontFamily: 'var(--font-mono)', fontSize: '11px', fontWeight: 600, color: 'var(--text-3)' } as React.CSSProperties;
 
     return (
@@ -442,11 +442,18 @@ function ScheduleRow({
                 (two teams + separator) is an inner nowrap unit that never breaks. Positions
                 ride with their team inside the nowrap unit (wrapping them away would orphan
                 "(3rd)"); the comp/cricket/following pills wrap before the matchup ever does. */}
-            <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
+            <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px', columnGap: '10px' }}>
+              {/* Home + away are separate nowrap units so long pairings wrap
+                  at the separator instead of shrinking the type. Crests sit
+                  left of each name (user request) at 24px. */}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
+                <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={24} logoFilter={teamLogoFilter} />
                 <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
                 {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
                 <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
+                <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={24} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
                 <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
                 {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
               </span>
@@ -466,10 +473,6 @@ function ScheduleRow({
           </div>
 
           <div className="sh-fix-sub">
-            <span className="sh-fix-crests">
-              <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={26} logoFilter={teamLogoFilter} />
-              <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={26} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
-            </span>
             {team.league !== 'cricket_int' && (
               <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
             )}
