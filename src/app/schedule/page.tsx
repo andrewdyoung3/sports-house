@@ -1537,7 +1537,7 @@ export default function SchedulePage() {
               )}
             </div>
           ) : (
-            <div key={listTransitionKey} className="sh-fade-in space-y-8">
+            <div key={listTransitionKey} className="sh-fade-in sh-no-anchor space-y-8">
               {groupedByDate.map(({ dateKey, representativeDate, games }) => (
                 <section key={dateKey} id={`date-section-${dateKey}`}>
                   <div className="flex items-center gap-3 mb-3">

@@ -513,6 +513,12 @@
    scroll anchoring jump when rows re-measured on expand/scroll. Do not re-add
    without fixed-height rows or a virtualizer. */
 
+/* Expanding a row mounts a tall panel mid-list; if the browser's scroll anchor
+   is a node BELOW the insertion, default scroll anchoring rides the viewport
+   down by the panel's height ("expand jumped me to the bottom"). Disabling
+   anchoring inside the list keeps the clicked row exactly where it was. */
+.sh-no-anchor, .sh-no-anchor * { overflow-anchor: none; }
+
 /* ── Finals bracket (button + SVG popup, finals fixtures only) ── */
 .sh-bracket { margin-bottom: 16px; }
 .sh-bracket-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
