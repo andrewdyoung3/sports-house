@@ -14,7 +14,7 @@ const BUILT_LEAGUE_IDS = new Set([
 ]);
 const BUILT_LEAGUES = LEAGUES.filter(l => BUILT_LEAGUE_IDS.has(l.id));
 import { SportBall } from '@/components/schedule/sport-ball';
-import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref, setF1SessionPref } from '@/lib/user-prefs';
 import { TeamSelectorCard } from '@/components/onboarding/team-selector-card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,8 @@ export default function OnboardingPage() {
   const [selected, setSelected]       = useState<Team[]>([]);
   // Whole-league follows — persisted immediately on toggle (device-local v1).
   const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
+  // F1 session scope, asked at follow time: races only (default) or all sessions.
+  const [f1All, setF1All] = useState(false);
   const prefsVersion = usePrefsVersion();
 
   // Pre-populate with any teams already saved so additions don't wipe existing
@@ -39,6 +41,7 @@ export default function OnboardingPage() {
     const existing = getFollowedTeams();
     if (existing.length > 0) setSelected(existing);
     setFollowedLeagues(getFollowedLeagues());
+    setF1All(getF1SessionPref() === 'all');
   }, [prefsVersion]);
 
   const filteredTeams = useMemo(
@@ -118,6 +121,20 @@ export default function OnboardingPage() {
             </button>
           );
         })()}
+
+        {/* F1 session scope — asked the moment F1 is followed (league banner on,
+            or any driver/constructor selected). Races only by default. */}
+        {activeSport === 'f1' &&
+          (followedLeagues.includes('f1') || selected.some(t => t.league === 'f1')) && (
+          <label className="sh-checkbox mb-4 -mt-1">
+            <input
+              type="checkbox"
+              checked={f1All}
+              onChange={e => { setF1All(e.target.checked); setF1SessionPref(e.target.checked ? 'all' : 'races'); }}
+            />
+            <span>Also follow qualifying &amp; practice sessions (races and sprints only by default)</span>
+          </label>
+        )}
 
         {/* Search */}
         <div className="mb-5 max-w-md">

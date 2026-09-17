@@ -147,6 +147,37 @@ export function getFollowedLeagues(): string[] {
   }
 }
 
+// ─── F1 session preference ───────────────────────────────────────────────────
+// 'races' (default): races + sprints only. 'all': qualifying + practice too.
+// Replaces the older boolean practice toggle; its 'show' value migrates to 'all'.
+
+const F1_SESSIONS_KEY = 'sports-house:f1-sessions';
+const LEGACY_F1_PRACTICE_KEY = 'sports-house:f1-practice';
+
+export type F1SessionPref = 'races' | 'all';
+
+export function getF1SessionPref(): F1SessionPref {
+  if (typeof window === 'undefined') return 'races';
+  try {
+    const v = localStorage.getItem(F1_SESSIONS_KEY);
+    if (v === 'all' || v === 'races') return v;
+    // Legacy migration: the old practice opt-in implied wanting everything.
+    if (localStorage.getItem(LEGACY_F1_PRACTICE_KEY) === 'show') {
+      localStorage.setItem(F1_SESSIONS_KEY, 'all');
+      return 'all';
+    }
+  } catch { /* default */ }
+  return 'races';
+}
+
+export function setF1SessionPref(pref: F1SessionPref): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(F1_SESSIONS_KEY, pref);
+    window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
+  } catch { /* device-local only */ }
+}
+
 /** Toggle a whole-league follow and return the updated id list. */
 export function toggleFollowedLeague(leagueId: string): string[] {
   const current = getFollowedLeagues();

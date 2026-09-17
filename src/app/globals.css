@@ -508,6 +508,27 @@
 .sh-league-follow:hover { opacity: 1; transform: scale(1.15); }
 .sh-league-follow.is-on { opacity: 1; color: #f5c518; }
 
+/* ── Checkbox control (F1 session scope etc.) ── */
+.sh-checkbox {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text-2); user-select: none;
+}
+.sh-checkbox:hover { color: var(--text); }
+.sh-checkbox input[type='checkbox'] {
+  appearance: none; width: 15px; height: 15px; margin: 0; flex-shrink: 0;
+  border: 1.5px solid var(--border-strong); border-radius: 4px;
+  background: var(--surface); cursor: pointer; position: relative;
+  transition: background .15s, border-color .15s;
+}
+.sh-checkbox input[type='checkbox']:checked {
+  background: var(--accent); border-color: var(--accent);
+}
+.sh-checkbox input[type='checkbox']:checked::after {
+  content: ''; position: absolute; left: 4px; top: 1px;
+  width: 5px; height: 9px; border: solid var(--on-accent);
+  border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+
 /* ── Collapsible filter panes (My teams / Competitions) ── */
 .sh-pane-head {
   display: flex; align-items: center; justify-content: space-between; width: 100%;

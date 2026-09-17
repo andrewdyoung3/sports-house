@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref, setF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
@@ -934,16 +934,16 @@ export default function SchedulePage() {
     });
   }, []);
 
-  // F1 practice sessions are hidden by default (race weekends are 5-6 rows of
-  // noise otherwise); opt-in persists per device.
-  const [showF1Practice, setShowF1Practice] = useState(false);
-  useEffect(() => {
-    try { setShowF1Practice(localStorage.getItem('sports-house:f1-practice') === 'show'); } catch { /* default hide */ }
-  }, []);
-  const toggleF1Practice = useCallback(() => {
-    setShowF1Practice(prev => {
-      try { localStorage.setItem('sports-house:f1-practice', prev ? 'hide' : 'show'); } catch { /* device-local only */ }
-      return !prev;
+  // F1 session preference: 'races' (default — races + sprints only) or 'all'
+  // (qualifying + practice too). Set at follow time in onboarding; adjustable
+  // here whenever F1 content is on screen.
+  const [f1Sessions, setF1Sessions] = useState<'races' | 'all'>('races');
+  useEffect(() => { setF1Sessions(getF1SessionPref()); }, [prefsVersion]);
+  const toggleF1Sessions = useCallback(() => {
+    setF1Sessions(prev => {
+      const next = prev === 'races' ? 'all' : 'races';
+      setF1SessionPref(next);
+      return next;
     });
   }, []);
   const [homeAwayFilter,  setHomeAwayFilter]  = useState<'all' | 'home' | 'away'>('all');
@@ -1227,14 +1227,15 @@ export default function SchedulePage() {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       if (homeAwayFilter === 'home' && !g.isHome) return false;
       if (homeAwayFilter === 'away' &&  g.isHome) return false;
-      // F1 practice sessions are opt-in (session.label 'Practice 1/2/3';
-      // qualifying, sprints and races always show).
-      if (!showF1Practice && g.team.league === 'f1' && /^Practice/.test(g.competition ?? '')) return false;
+      // F1 defaults to races + sprints only; 'all' adds qualifying + practice.
+      // ('Sprint Qualifying' is qualifying-tier; plain 'Sprint' is a race.)
+      if (f1Sessions !== 'all' && g.team.league === 'f1'
+          && /^(Practice|Qualifying|Sprint Qualifying)/.test(g.competition ?? '')) return false;
       return true;
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues, showF1Practice]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, homeAwayFilter, leagueCacheVersion, followedLeagues, f1Sessions]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
@@ -1557,17 +1558,19 @@ export default function SchedulePage() {
                     ))}
                   </div>
                 )}
-                {/* F1 practice opt-in — only when F1 content is on screen */}
+                {/* F1 session scope — only when F1 content is on screen.
+                    Default 'races' shows races + sprints; the checkbox adds
+                    qualifying + practice. */}
                 {(activeLeagueId === 'f1' ||
                   (!isLeagueMode && (allGames.some(g => g.team.league === 'f1') || followedLeagues.includes('f1')))) && (
-                  <div className="sh-segmented">
-                    <FilterPill
-                      label={showF1Practice ? 'Practice: shown' : 'Practice: hidden'}
-                      active={showF1Practice}
-                      onClick={toggleF1Practice}
-                      muted
+                  <label className="sh-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={f1Sessions === 'all'}
+                      onChange={toggleF1Sessions}
                     />
-                  </div>
+                    <span>F1: include qualifying &amp; practice</span>
+                  </label>
                 )}
               </div>
 
