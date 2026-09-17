@@ -152,7 +152,7 @@ function BracketSVG({
       {/* Round headers */}
       {rounds.map((r, ri) => (
         <text key={r.name} x={PAD / 2 + ri * COL_W + BOX_W / 2} y={16}
-          textAnchor="middle" fill="rgba(255,255,255,0.5)"
+          textAnchor="middle" fill="var(--bkt-ink-3, rgba(255,255,255,0.5))"
           fontSize="9.5" fontWeight="800" letterSpacing="1.2">
           {shortLabel(r).toUpperCase()}
         </text>
@@ -164,7 +164,7 @@ function BracketSVG({
         const mx = x1 + (x2 - x1) / 2;
         return (
           <path key={i} d={`M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`}
-            fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.5" />
+            fill="none" stroke="var(--bkt-line, rgba(255,255,255,0.22))" strokeWidth="1.5" />
         );
       })}
       {/* Match boxes */}
@@ -175,12 +175,12 @@ function BracketSVG({
         const homeWin = !!g && g.complete && played && g.homeScore! > g.awayScore!;
         const awayWin = !!g && g.complete && played && g.awayScore! > g.homeScore!;
         const rowFill = (win: boolean, lose: boolean) =>
-          win ? '#ffffff' : lose ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.78)';
+          win ? 'var(--bkt-ink, #ffffff)' : lose ? 'var(--bkt-ink-faint, rgba(255,255,255,0.38))' : 'var(--bkt-ink-2, rgba(255,255,255,0.78))';
         return (
           <g key={i}>
             <rect x={s.x} y={s.y} width={BOX_W} height={BOX_H} rx={9}
-              fill={live ? 'rgba(255,255,255,0.09)' : 'rgba(255,255,255,0.045)'}
-              stroke={live ? accent : 'rgba(255,255,255,0.14)'}
+              fill={live ? 'var(--bkt-box-live, rgba(255,255,255,0.09))' : 'var(--bkt-box, rgba(255,255,255,0.045))'}
+              stroke={live ? accent : 'var(--bkt-box-border, rgba(255,255,255,0.14))'}
               strokeWidth={live ? 2 : 1} />
             {g ? (
               <>
@@ -197,7 +197,7 @@ function BracketSVG({
                   {played ? g.awayScore : ''}
                 </text>
                 {!g.complete && !played && (
-                  <text x={s.x + BOX_W - 10} y={s.y + 19} fontSize="8.5" textAnchor="end" fill="rgba(255,255,255,0.35)">
+                  <text x={s.x + BOX_W - 10} y={s.y + 19} fontSize="8.5" textAnchor="end" fill="var(--bkt-ink-faint, rgba(255,255,255,0.35))">
                     {new Date(g.date).toLocaleDateString(undefined, { weekday: 'short' })}
                   </text>
                 )}
@@ -206,7 +206,7 @@ function BracketSVG({
                 )}
               </>
             ) : (
-              <text x={s.x + BOX_W / 2} y={s.y + BOX_H / 2 + 3} fontSize="9.5" textAnchor="middle" fill="rgba(255,255,255,0.28)" fontStyle="italic">
+              <text x={s.x + BOX_W / 2} y={s.y + BOX_H / 2 + 3} fontSize="9.5" textAnchor="middle" fill="var(--bkt-ink-faint, rgba(255,255,255,0.28))" fontStyle="italic">
                 to be decided
               </text>
             )}

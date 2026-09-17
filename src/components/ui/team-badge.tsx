@@ -76,7 +76,7 @@ export function TeamBadge({
             alt={abbreviation}
             width={size}
             height={size}
-            className={photoMode ? 'object-cover w-full h-full' : 'object-contain p-[15%]'}
+            className={`${photoMode ? 'object-cover w-full h-full' : 'object-contain p-[15%]'}${logoFilter ? ' sh-logo-filtered' : ''}`}
             style={logoFilter ? { filter: logoFilter } : undefined}
             onError={() => setImgError(true)}
             unoptimized

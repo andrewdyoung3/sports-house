@@ -26,9 +26,11 @@ const jetbrains = JetBrains_Mono({
   display: 'swap',
 });
 
-// SportHouse is a DELIBERATELY dark-only product (obsidian base, per-team
-// accent light). theme-color matches the canvas so mobile browser chrome
-// blends instead of banding white above the app.
+// Dark is the DEFAULT product identity (obsidian base, per-team accent light);
+// light mode is an opt-in via the navbar toggle (data-theme='light', restored
+// pre-paint by the head script below). theme-color matches the dark canvas —
+// Next viewport config is static, so light-mode users see a dark status bar
+// band on mobile; acceptable for an opt-in theme.
 export const viewport = {
   themeColor: '#080809',
 };
@@ -49,7 +51,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Pre-paint theme restore — light mode is opt-in; applying the stored
+            choice before hydration prevents a dark flash for light-mode users. */}
+        <script dangerouslySetInnerHTML={{ __html:
+          "try{if(localStorage.getItem('sports-house:theme')==='light')document.documentElement.setAttribute('data-theme','light')}catch(e){}",
+        }} />
+      </head>
       <body className={`${inter.variable} ${hanken.variable} ${jetbrains.variable} font-sans antialiased`}>
         {/*
          * Fixed atmospheric bokeh layer — sits behind all content.

@@ -5,6 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { List, Trophy, Settings, Calendar } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AccountMenu } from '@/components/auth/account-menu';
+import { Sun, Moon } from 'lucide-react';
+import { useState, useEffect } from 'react';
 
 const NAV_LINKS = [
   { href: '/schedule', label: 'Schedule', icon: List },
@@ -73,6 +75,7 @@ export function Navbar() {
 
         {/* Right — My Teams + account control */}
         <div className="flex items-center gap-2 justify-self-end">
+          <ThemeToggle />
           <Link href="/onboarding" aria-label="My Teams" className="sh-nav-myteams">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:block">My Teams</span>
@@ -81,5 +84,32 @@ export function Navbar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+
+// ── Theme toggle — light mode is opt-in; choice persists per device ──────────
+function ThemeToggle() {
+  const [light, setLight] = useState(false);
+  useEffect(() => {
+    setLight(document.documentElement.getAttribute('data-theme') === 'light');
+  }, []);
+  const toggle = () => {
+    const next = !light;
+    setLight(next);
+    if (next) document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('sports-house:theme', next ? 'light' : 'dark'); } catch { /* device-local */ }
+  };
+  return (
+    <button
+      onClick={toggle}
+      aria-label={light ? 'Switch to dark mode' : 'Switch to light mode'}
+      title={light ? 'Dark mode' : 'Light mode'}
+      className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-white/10"
+      style={{ color: 'var(--text-3)' }}
+    >
+      {light ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+    </button>
   );
 }
