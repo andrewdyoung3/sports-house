@@ -26,6 +26,13 @@ const jetbrains = JetBrains_Mono({
   display: 'swap',
 });
 
+// SportHouse is a DELIBERATELY dark-only product (obsidian base, per-team
+// accent light). theme-color matches the canvas so mobile browser chrome
+// blends instead of banding white above the app.
+export const viewport = {
+  themeColor: '#080809',
+};
+
 export const metadata: Metadata = {
   title: {
     default: 'SportHouse',

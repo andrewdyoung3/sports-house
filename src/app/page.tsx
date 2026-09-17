@@ -30,40 +30,40 @@ const FEATURES: Feature[] = [
   },
   {
     icon: Tv,
-    color: 'text-sky-400',
-    bg: 'bg-sky-900/30',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
     title: 'Where to Watch',
     description:
       'TV channels and streaming platforms for every fixture — so you always know where to tune in before the game starts.',
   },
   {
     icon: Trophy,
-    color: 'text-amber-400',
-    bg: 'bg-amber-900/30',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
     title: 'Recent Form',
     description:
       'Last five results at a glance. See the win/loss run, scores, and home/away splits heading into each fixture.',
   },
   {
     icon: Sparkles,
-    color: 'text-violet-400',
-    bg: 'bg-violet-900/30',
-    title: 'Match Context',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
+    title: 'AI Match Previews',
     description:
-      'Expand any upcoming fixture for key team news, form, and changes that could influence the result.',
+      'A data-grounded preview for every fixture — form, finals stakes, team news, and the story of the game, written from verified facts.',
   },
   {
     icon: Newspaper,
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-900/30',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
     title: 'Latest News',
     description:
       'Breaking news, injury updates, and post-match analysis — summarised so you get the key points without the noise.',
   },
   {
     icon: Zap,
-    color: 'text-red-400',
-    bg: 'bg-red-900/30',
+    color: 'text-[var(--accent-2)]',
+    bg: 'bg-[var(--accent-soft)]',
     title: 'Multi-Sport',
     description:
       'AFL, NRL, EPL, Super Rugby, F1, cricket, and more — all under one roof. Add or remove teams at any time from the Teams menu.',
@@ -88,7 +88,7 @@ const LEAGUES = [
 
 export default function LandingPage() {
   return (
-    <div className="flex flex-col">
+    <div className="sh-theme flex flex-col">
       {/* ── Hero ── */}
       <section className="hero-gradient relative overflow-hidden">
         {/* Decorative blobs */}
@@ -105,11 +105,9 @@ export default function LandingPage() {
           </div>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-white tracking-tight leading-[1.05] mb-6">
-            Your teams. In one place.
+            Every team you follow.
             <br />
-            <span className="bg-gradient-to-r from-violet-400 via-fuchsia-400 to-orange-400 bg-clip-text text-transparent">
-              That&apos;s SportHouse.
-            </span>
+            <span className="gradient-warm">One schedule.</span>
           </h1>
 
           <p className="text-lg sm:text-xl text-white/55 max-w-2xl mx-auto leading-relaxed mb-10">
@@ -141,10 +139,10 @@ export default function LandingPage() {
       <section className="max-w-6xl mx-auto px-4 py-24">
         <div className="text-center mb-14">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-3">
-            Every whistle in one feed. Absolutely SportHouse.
+            Built around your teams
           </h2>
           <p className="text-white/55 max-w-xl mx-auto">
-            A clean, personalised view of what matters — when games are on, where to watch, and how your teams are playing.
+            Fixtures, form, broadcast details and match previews — assembled for the teams and competitions you actually follow.
           </p>
         </div>
 
@@ -152,7 +150,7 @@ export default function LandingPage() {
           {FEATURES.map(({ icon: Icon, color, bg, title, description, href, cta }) => (
             <div
               key={title}
-              className="glass rounded-3xl p-6 hover:border-white/20 transition-colors flex flex-col float-hover"
+              className="glass rounded-[var(--radius-lg)] p-6 hover:border-white/20 transition-colors flex flex-col float-hover"
             >
               <div className={`inline-flex items-center justify-center w-10 h-10 rounded-xl ${bg} mb-4`}>
                 <Icon className={`h-5 w-5 ${color}`} />
@@ -173,10 +171,10 @@ export default function LandingPage() {
       <section className="border-t border-white/8 bg-white/3">
         <div className="max-w-3xl mx-auto px-4 py-24 text-center">
           <h2 className="text-3xl sm:text-4xl font-black text-white mb-4">
-            Grab life by the ball
+            Ready in seconds
           </h2>
           <p className="text-white/55 mb-8 text-lg">
-            Pick your teams and your personalised fixture list is ready in seconds. No account required.
+            Pick your teams and your personalised schedule is live immediately. No account required.
           </p>
           <Link href="/onboarding">
             <Button size="lg" className="gap-2">
@@ -191,6 +189,11 @@ export default function LandingPage() {
       <footer className="border-t border-white/8 bg-black/25">
         <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-white/30">
           <p>© {new Date().getFullYear()} SportHouse. Built for fans.</p>
+          <nav className="flex items-center gap-5" aria-label="Footer">
+            <Link href="/schedule" className="hover:text-white/60 transition-colors">Schedule</Link>
+            <Link href="/results" className="hover:text-white/60 transition-colors">Results</Link>
+            <Link href="/onboarding" className="hover:text-white/60 transition-colors">Teams</Link>
+          </nav>
           <p>Fixtures &amp; schedules for entertainment purposes only.</p>
         </div>
       </footer>

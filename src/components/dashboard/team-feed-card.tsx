@@ -4,7 +4,7 @@
 // use .sh-detail-head (accent icon + label); game tiles use .sh-tile-grid.
 
 import { useState, useEffect } from 'react';
-import { Calendar, Newspaper, Trophy } from 'lucide-react';
+import { Calendar, Newspaper, Trophy, X } from 'lucide-react';
 import Link from 'next/link';
 
 import { Card, CardHeader, CardBody, CardSection } from '@/components/ui/card';
@@ -115,12 +115,12 @@ export function TeamFeedCard({ team, onUnfollow }: TeamFeedCardProps) {
             </div>
             <button
               onClick={() => onUnfollow(team.id)}
-              className="text-xs transition-colors px-1 py-1 rounded-lg hover:bg-white/[0.06]"
+              className="flex items-center justify-center w-8 h-8 rounded-lg transition-colors hover:bg-white/[0.06] hover:text-white/80"
               style={{ color: 'var(--text-3)' }}
               title={`Unfollow ${team.name}`}
               aria-label={`Unfollow ${team.name}`}
             >
-              ✕
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
