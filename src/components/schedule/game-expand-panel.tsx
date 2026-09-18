@@ -10,6 +10,7 @@ import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components/schedule/finals-bracket';
+import { COMP_RULES } from '@/lib/competition-rules';
 import { cn, ordinal } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
@@ -188,8 +189,15 @@ const AI_PREVIEW_DAYS = 14;
  * Final-standing ordinals are only cited when played > 0 — pre-season
  * standings rows are alphabetical placeholders.
  */
-function preSeasonBlurb(ctx: PreviewContext | null, teamName: string, opponentName: string): string | null {
+function preSeasonBlurb(ctx: PreviewContext | null, teamName: string, opponentName: string, league?: string, teamId?: string, opponentId?: string): string | null {
   if (!ctx) return null;
+  // Reigning champion (curated in COMP_RULES) leads the blurb when one of
+  // these teams holds the title — "closed last season 3-2" buries a
+  // championship (user-flagged on the Knicks' first title since 1973).
+  const champ = league ? COMP_RULES[league]?.reigningChampion : undefined;
+  const champLead = champ && (champ.teamId === teamId || champ.teamId === opponentId)
+    ? `${champ.teamId === teamId ? teamName : opponentName} open the season as reigning champions — ${champ.note ?? `${champ.name} won last season's title`}. `
+    : '';
   const sentence = (name: string, form: PreviewContext['teamRecentForm'], standing: PreviewContext['teamStanding']): string | null => {
     if (!form || form.length === 0) return null;
     const w = form.filter(f => f.isWin).length;
@@ -200,8 +208,8 @@ function preSeasonBlurb(ctx: PreviewContext | null, teamName: string, opponentNa
   };
   const a = sentence(teamName, ctx.teamRecentForm, ctx.teamStanding);
   const b = sentence(opponentName, ctx.opponentRecentForm, ctx.opponentStanding);
-  if (!a && !b) return null;
-  return [a, b].filter(Boolean).join('. ') + '.';
+  if (!a && !b && !champLead) return null;
+  return champLead + ([a, b].filter(Boolean).join('. ') + (a || b ? '.' : ''));
 }
 
 // ── Standings row ─────────────────────────────────────────────────────────────
@@ -1227,7 +1235,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
         <div>
           <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
           {(() => {
-            const blurb = preSeasonBlurb(context, team.shortName, game.opponent);
+            const blurb = preSeasonBlurb(context, team.shortName, game.opponent, team.league, team.id, game.opponentId ?? undefined);
             const headline = context?.teamNews?.[0];
             return (
               <>

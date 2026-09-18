@@ -59,6 +59,12 @@ export interface CompRules {
   maxPpg?: number;
   /** Teams that REACH finals — the qualification line (AFL 10, NRL 8, SRU 6). */
   finalsTeams?: number;
+  /**
+   * Reigning champion — a curated season-constant fact (like finalsSchedule
+   * windows): surfaced in pre-season blurbs and the PRE-SEASON prompt block.
+   * Only set with a verifiable source; update once per season.
+   */
+  reigningChampion?: { name: string; teamId?: string; note?: string; season: string; source: string };
   /** AFL: top-N go DIRECT to finals; (N+1 … finalsTeams) play a wildcard round. */
   directFinalsTeams?: number;
   /** EPL: relegation begins at this position (18 → 18th/19th/20th go down). */
@@ -160,6 +166,20 @@ export const COMP_RULES: Record<string, CompRules> = {
   },
 
   // ── CRICKET (config confirmed; ladder computation still deferred) ─────────
+  nba: {
+    archetype: 'ladder-finals',
+    totalRounds: 82,
+    // 2026 NBA Finals: New York beat San Antonio, clinching Game 5 94-90 on
+    // 2026-06-14 (ESPN scoreboard archive, dates=202606 — notes: "NBA Finals -
+    // Game 5"). First Knicks title since 1973 (real-world drought arithmetic).
+    reigningChampion: {
+      name: 'New York Knicks', teamId: 'nba-knicks',
+      note: 'beat San Antonio in the 2026 Finals — their first championship since 1973',
+      season: '2026-27', source: 'ESPN scoreboard archive 2026-06',
+    },
+    season: '2026-27',
+    source: 'NBA 82-game season (unchanged); champion from ESPN Finals results',
+  },
   bbl: {
     archetype: 'cricket',
     // BBL|15 (2025-26): 40-match home-and-away season, 10 games per club, 2 pts

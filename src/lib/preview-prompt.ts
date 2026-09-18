@@ -1749,6 +1749,11 @@ export function buildDataBlock(
   if (enabled('standings')) {
     if (preSeason) {
       lines.push('PRE-SEASON: the new season has NOT started — no standings exist yet (any table rows are placeholder ordering). Do NOT cite ladder, table or standings positions for either team. Frame any form as last season\'s closing run.');
+      const champ = COMP_RULES[league]?.reigningChampion;
+      if (champ) {
+        const involved = champ.teamId && (champ.teamId === teamId || champ.teamId === opponentId);
+        lines.push(`REIGNING CHAMPIONS: ${champ.name} ${champ.note ?? "won last season's title"}.${involved ? ' One of THESE teams is the champion — that is the season-opening story; lead with it.' : ''}`);
+      }
       lines.push('');
     } else {
     // Cup/European competition group/league-phase standings (highest relevance)
