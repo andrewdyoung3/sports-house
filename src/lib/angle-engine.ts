@@ -81,9 +81,13 @@ export function deriveAngles(i: AngleInput): RankedAngle[] {
   }
 
   // 2. REST-VS-RUN: layoff differential from form dates (≥6-day gap difference).
+  //    Suppressed when BOTH sides are >21 days out — that's an off-season or
+  //    rep-window break for everyone, not a freshness edge (the NBA opener
+  //    generated "a substantial break of 172 days": sourced, but not a story).
   const tRest = daysBetween(i.fixtureDateISO, i.teamForm?.[0]?.date);
   const oRest = daysBetween(i.fixtureDateISO, i.opponentForm?.[0]?.date);
-  if (tRest !== undefined && oRest !== undefined && Math.abs(tRest - oRest) >= 6) {
+  if (tRest !== undefined && oRest !== undefined && Math.abs(tRest - oRest) >= 6
+      && Math.min(tRest, oRest) <= 21) {
     const [fresh, freshD, busy, busyD] = tRest > oRest ? [t, tRest, o, oRest] : [o, oRest, t, tRest];
     out.push({ kind: 'rest-vs-run', score: 90, line: `${fresh} have had ${freshD} days between games; ${busy} back up after ${busyD} — freshness against momentum.` });
   }

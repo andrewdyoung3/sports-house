@@ -45,6 +45,7 @@ console.log('rest-vs-run');
   check('fresh side named first', a.find(x => x.kind === 'rest-vs-run')!.line.startsWith('Alpha'));
 }
 check('small differential silent', !kinds({ ...base, fixtureDateISO: '2026-09-18T09:00Z', teamForm: [g(true, '2026-09-11')], opponentForm: [g(true, '2026-09-13')] }).includes('rest-vs-run'));
+check('off-season gap silent (both sides >21d — season opener)', !kinds({ ...base, fixtureDateISO: '2026-10-03T09:00Z', teamForm: [g(true, '2026-04-14')], opponentForm: [g(true, '2026-05-03')] }).includes('rest-vs-run'));
 
 console.log('h2h dominance');
 const h2h = (seq: ('W' | 'L' | 'D')[]) => seq.map((r, k) => ({ date: `2026-0${k + 1}-01`, teamScore: 1, opponentScore: 1, result: r }));
