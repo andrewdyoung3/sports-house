@@ -142,12 +142,12 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl, onExpandChange }: 
 
         <div className="sh-hero-match">
           <span className="sh-hero-team">
-            <TeamBadge {...away.props} size={40} />
+            <TeamBadge {...away.props} size={60} />
             <span className="sh-hero-team-name">{away.name}</span>
           </span>
           <span className="sh-hero-at">@</span>
           <span className="sh-hero-team">
-            <TeamBadge {...home.props} size={40} />
+            <TeamBadge {...home.props} size={60} />
             <span className="sh-hero-team-name">{home.name}</span>
           </span>
         </div>
