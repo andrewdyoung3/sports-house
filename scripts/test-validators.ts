@@ -29,6 +29,7 @@ import {
   validateNumeralBinding,
   validateVenueFormClaims,
   validateDoubleChance,
+  validateSeriesClaims,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -653,6 +654,23 @@ expect('invented F1 driver in spotlight is rejected',
     r('Hawthorn earned this home final by winning their Qualifying Final.').length === 0);
   expect('double-chance week guard still lifts the rule',
     r('The loser is eliminated.', QF).length === 0);
+}
+
+// ─── validateSeriesClaims — series narratives need SERIES data ─────────────────
+
+{
+  const NO_SERIES = 'FIXTURE: Toronto Raptors vs Miami Heat\nCOMPETITION: NBA Canada Games 2026\n';
+  const WITH_SERIES = NO_SERIES + 'SERIES SCORE (official, before this game): TOR leads series 2-0\n';
+  const sc = (t: string, p: string) => validateSeriesClaims(preview({ context: t }), p);
+  console.log('validateSeriesClaims:');
+  expect('live catch: fabricated "Game 3… leading 2–0" series narrative rejected',
+    sc('Game 3 of the semi-final series, with the Raptors leading 2–0.', NO_SERIES).length > 0);
+  expect('"sweep the series" rejected without data',
+    sc('Toronto can sweep the series tonight.', NO_SERIES).length > 0);
+  expect('same claims pass WITH a SERIES SCORE line',
+    sc('The Raptors lead the series 2–0 entering Game 3.', WITH_SERIES).length === 0);
+  expect('non-series prose passes',
+    sc('A preseason meeting to sharpen rotations.', NO_SERIES).length === 0);
 }
 
 // ─── Pre-season guards (NBA opener class) ──────────────────────────────────────

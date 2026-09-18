@@ -30,6 +30,7 @@ import {
   validateNumeralBinding,
   validateVenueFormClaims,
   validateDoubleChance,
+  validateSeriesClaims,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -149,6 +150,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateNumeralBinding(shaped, dataBlock),
     ...validateVenueFormClaims(shaped, dataBlock),
     ...validateDoubleChance(shaped, dataBlock),
+    ...validateSeriesClaims(shaped, dataBlock),
     ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

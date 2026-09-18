@@ -1031,6 +1031,33 @@ export function validateDoubleChance(output: AIPreview, prompt: string): string[
   return violations;
 }
 
+/**
+ * Series-claim binding — the numeral binder exempts numbers <=5, which let a
+ * FULLY fabricated playoff-series narrative through on the NBA preseason
+ * opener ("Game 3… leading 2-0 after Games 1 and 2… semi-final series" with
+ * nothing but a competition label in the block). Any series framing — game
+ * numbers, series leads/scores, sweeps, best-of — requires the data block to
+ * carry a SERIES SCORE / SERIES STATE line (cricket, SOO and playoff fixtures
+ * emit them; everything else gets none and may not invent one).
+ */
+export function validateSeriesClaims(output: AIPreview, prompt: string): string[] {
+  if (/SERIES (?:SCORE|STATE)/.test(prompt)) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const seriesRe = /\b(?:game\s+(?:one|two|three|four|five|six|seven|\d)\b[^.]{0,50}\bseries|series\b[^.]{0,40}\b(?:lead|leads|leading|trail|trails|trailing|tied|level|\d\s*[–-]\s*\d)|(?:leads?|leading|trails?|trailing)\b[^.]{0,25}\bseries|\d\s*[–-]\s*\d\s+(?:series|lead)\b|\bsweep(?:ing|ed)?\s+the\s+series|\bbest-of-(?:three|five|seven|\d))\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(seriesRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`invented series claim "${m[0].slice(0, 60)}" — the data block carries no SERIES SCORE/STATE for this fixture; do not construct a series narrative`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -1231,6 +1258,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateNumeralBinding(v, prompt),
     ...validateVenueFormClaims(v, prompt),
     ...validateDoubleChance(v, prompt),
+    ...validateSeriesClaims(v, prompt),
   ];
 }
 
