@@ -634,7 +634,7 @@ expect('invented F1 driver in spotlight is rejected',
 // ─── validateFinalsRedundancy — widened default-consequence class ───────────────
 
 {
-  const KO = 'FINALS PATH (authoritative on hosting, seeding, and consequences):\n  • knockout\n';
+  const KO = 'SPORT: Australian Rules Football (AFL).\nFINALS PATH (authoritative on hosting, seeding, and consequences):\n  • knockout\n';
   const QF = KO + '  • NEITHER side can be eliminated this week (double chance)\n';
   const r = (t: string, p = KO) => validateFinalsRedundancy(preview({ context: t }), p);
 
@@ -659,8 +659,8 @@ expect('invented F1 driver in spotlight is rejected',
 
 {
   const QF_WEEK = 'FINALS PATH:\n  • NEITHER side can be eliminated in this game: the Qualifying Final loser drops to a home Semi-Final next week (the double chance).\n';
-  const POST_QF = 'FINALS PATH:\n  • Hawthorn lost their Qualifying Final; this Semi-Final IS the second life that came with their top-four finish.\n';
-  const NO_DC   = 'FINALS PATH:\n  • knockout final\n';
+  const POST_QF = 'SPORT: Australian Rules Football (AFL).\nFINALS PATH:\n  • Hawthorn lost their Qualifying Final; this Semi-Final IS the second life that came with their top-four finish.\n';
+  const NO_DC   = 'SPORT: Australian Rules Football (AFL).\nFINALS PATH:\n  • knockout final\n';
   const dc = (t: string, p: string) => validateDoubleChance(preview({ context: t }), p);
 
   console.log('validateDoubleChance:');
@@ -678,6 +678,9 @@ expect('invented F1 driver in spotlight is rejected',
     dc('They can lean on the double chance.', NO_DC).length > 0);
   expect('no mention at all: silent',
     dc('A tight, defensive final awaits.', NO_DC).length === 0);
+  expect('NBA "second-chance points" is legitimate vocabulary (sport-scoped)',
+    validateDoubleChance(preview({ context: 'They feast on second-chance points.' }),
+      'SPORT: NBA Basketball.\nFIXTURE: Knicks vs 76ers\n').length === 0);
 }
 
 // ─── validatePlayerNames — venue-noun head words are places, not people ────────

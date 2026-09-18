@@ -547,6 +547,7 @@ export function validateAbsenceCounts(output: AIPreview, prompt: string): string
  */
 const SPORT_OF_PROMPT: Array<[RegExp, string]> = [
   [/^SPORT: Australian Rules Football/m, 'afl'],
+  [/^SPORT: NBA Basketball/m, 'nba'],
   [/^SPORT: NRL Rugby League/m, 'nrl'],
   [/^SPORT: English Premier League/m, 'epl'],
   [/^SPORT: Super Rugby/m, 'super_rugby'],
@@ -905,6 +906,7 @@ const SPORT_NUM_LEXICON: Record<string, number[]> = {
   super_rugby: [22, 10, 80, 15],     // the 22, 10m line, 80 minutes, 15 players
   rugby_int:   [22, 10, 80, 15],
   epl:         [90, 18],             // 90 minutes; 18-yard box
+  nba:         [48, 24, 12, 82],     // 48 min, 24s clock, 12-min quarters, 82 games
   cricket_int: [6, 50, 100, 22],     // sixes; fifty/hundred milestones; 22 yards
   bbl:         [6, 50, 100, 22],
 };
@@ -974,6 +976,13 @@ export function validateVenueFormClaims(output: AIPreview, prompt: string): stri
  * rejected; and any mention at all requires the data block to have raised it.
  */
 export function validateDoubleChance(output: AIPreview, prompt: string): string[] {
+  // Bracket-sport scope: the double chance is AFL/NRL final-eight mechanics.
+  // Other sports use these words legitimately — NBA "second-chance points"
+  // (offensive rebounds) tripped the global version on the first-ever NBA
+  // generation. Detect the sport from the prompt; only police afl/nrl.
+  let sport: string | null = null;
+  for (const [re, sp] of SPORT_OF_PROMPT) { if (re.test(prompt)) { sport = sp; break; } }
+  if (sport !== 'afl' && sport !== 'nrl') return [];
   const factual = [
     output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
     ...(output.keyInsights ?? []),
