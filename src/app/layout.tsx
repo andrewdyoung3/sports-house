@@ -66,7 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
          * camera-bokeh sparkle; thin rings suggest 3-D geometry.
          * All elements are pointer-events-none and aria-hidden.
          */}
-        <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden select-none" aria-hidden>
+        <div className="sh-bokeh fixed inset-0 z-0 pointer-events-none overflow-hidden select-none" aria-hidden>
           {/* Large drifting orbs — obsidian-rose left, charcoal-plum right */}
           <div style={{ position:'absolute', top:'5%',  left:'8%',  width:'500px', height:'500px', borderRadius:'50%', background:'radial-gradient(circle, rgba(108,28,50,0.10) 0%, transparent 70%)', filter:'blur(80px)', animation:'drift 20s ease-in-out infinite' }} />
           <div style={{ position:'absolute', top:'50%', right:'6%', width:'420px', height:'420px', borderRadius:'50%', background:'radial-gradient(circle, rgba(50,14,78,0.10) 0%, transparent 70%)',  filter:'blur(70px)', animation:'drift 14s ease-in-out infinite reverse' }} />

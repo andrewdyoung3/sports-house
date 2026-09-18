@@ -1059,6 +1059,10 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
     radial-gradient(ellipse 90% 40% at 50% -6%, rgba(150,100,200,0.12) 0%, transparent 55%);
 }
 [data-theme='light'] ::-webkit-scrollbar-thumb { background: rgba(25,19,37,0.18); }
+/* Background detailing (bokeh orbs/dots/rings) is dark-canvas atmosphere — the
+   sharp violet dots read as specks on light. Hidden entirely in light mode;
+   restore later by removing this rule or designing light-tuned detailing. */
+[data-theme='light'] .sh-bokeh { display: none; }
 [data-theme='light'] .glass, [data-theme='light'] .glass-strong, [data-theme='light'] .glass-hero {
   background: rgba(255,255,255,0.62); border-color: rgba(25,19,37,0.10);
 }
