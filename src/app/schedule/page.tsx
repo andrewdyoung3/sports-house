@@ -1183,15 +1183,40 @@ export default function SchedulePage() {
     const cachedLeagueGames = activeLeagueId ? (leagueCacheRef.current.get(activeLeagueId) ?? []) : [];
     let source = isLeagueMode ? cachedLeagueGames : allGames;
     // "All" view: merge followed WHOLE-LEAGUE fixtures in with followed-team
-    // games. Fixture ids are per-game (not per-perspective), so the id-dedupe
-    // keeps the followed team's own entry and drops the league duplicate.
+    // games. Dedupe is by a perspective-INDEPENDENT matchup key (sorted team
+    // pair + day) — id equality across the two sources is not guaranteed, and
+    // relying on it let a canonical league copy shadow the followed-team copy.
     if (!isLeagueMode && activeTeamId === 'all' && followedLeagues.length > 0) {
-      const seen = new Set(allGames.map(g => g.id));
+      const pairKey = (g: ScheduleEntry) =>
+        [g.team.id, g.opponentId ?? g.opponent].sort().join('|') + '·' + g.date.slice(0, 10);
+      const seen = new Set(allGames.map(pairKey));
       const extra: ScheduleEntry[] = [];
       for (const lg of followedLeagues) {
         for (const g of leagueCacheRef.current.get(lg) ?? []) {
-          if (seen.has(g.id)) continue;
-          seen.add(g.id);
+          const k = pairKey(g);
+          if (seen.has(k)) continue;
+          seen.add(k);
+          // League fixtures arrive in canonical HOME-team perspective. When the
+          // away side is a followed team (and the home side isn't), flip the
+          // entry so home/away and "vs/@" read from the followed team — the
+          // user-flagged Arsenal @ Brighton rendering as Brighton's home game.
+          if (g.opponentId && baseFollowedTeamIds.has(g.opponentId) && !baseFollowedTeamIds.has(g.team.id)) {
+            const followedTeam = TEAMS.find(t => t.id === g.opponentId);
+            if (followedTeam) {
+              extra.push({
+                ...g,
+                teamId: followedTeam.id,
+                team: followedTeam,
+                isHome: !g.isHome,
+                opponent: g.team.name,
+                opponentAbbr: g.team.abbreviation,
+                opponentId: g.team.id,
+                opponentColor: g.team.primaryColor,
+                opponentLogoUrl: TEAM_LOGOS[g.team.id],
+              });
+              continue;
+            }
+          }
           extra.push(g);
         }
       }
@@ -1210,7 +1235,7 @@ export default function SchedulePage() {
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, leagueCacheVersion, followedLeagues, f1Sessions]);
+  }, [isLeagueMode, activeLeagueId, allGames, activeTeamId, leagueCacheVersion, followedLeagues, f1Sessions, baseFollowedTeamIds]);
 
   // "This Round": 7 days from the first upcoming game in the current filtered set.
   // One game per (team, competition) pair — prevents cup + league double-ups.
