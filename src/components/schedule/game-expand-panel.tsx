@@ -181,6 +181,29 @@ function savePreviewCache(gameId: string, entry: PreviewCache): void {
  *  Too far out and form, injuries, and selection are all unknowns. */
 const AI_PREVIEW_DAYS = 14;
 
+/**
+ * Deterministic pre-season blurb for games beyond the AI window: composed
+ * purely from fetched context (last-season closing form + last result, and
+ * the opponent's run), so it needs no LLM and can never contradict the data.
+ * Final-standing ordinals are only cited when played > 0 — pre-season
+ * standings rows are alphabetical placeholders.
+ */
+function preSeasonBlurb(ctx: PreviewContext | null, teamName: string, opponentName: string): string | null {
+  if (!ctx) return null;
+  const sentence = (name: string, form: PreviewContext['teamRecentForm'], standing: PreviewContext['teamStanding']): string | null => {
+    if (!form || form.length === 0) return null;
+    const w = form.filter(f => f.isWin).length;
+    const last = form[0];
+    const verb = last.isDraw ? 'drew with' : last.isWin ? 'beat' : 'lost to';
+    const finish = standing && standing.played > 0 ? `, finishing ${ordinal(standing.position)}` : '';
+    return `${name} closed last season ${w}–${form.length - w} across their final ${form.length}${finish} — most recently ${verb} ${last.opponent} ${last.teamScore}–${last.opponentScore}`;
+  };
+  const a = sentence(teamName, ctx.teamRecentForm, ctx.teamStanding);
+  const b = sentence(opponentName, ctx.opponentRecentForm, ctx.opponentStanding);
+  if (!a && !b) return null;
+  return [a, b].filter(Boolean).join('. ') + '.';
+}
+
 // ── Standings row ─────────────────────────────────────────────────────────────
 
 function StandingRow({
@@ -1193,6 +1216,36 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {/* ── AI loading card — replaces Match Preview + Quick Take skeletons ── */}
       {aiLoading && aiEnabled && (
         <AILoadingCard color={team.primaryColor} />
+      )}
+
+      {/* ── Beyond the AI window (real-data league, game >14d out): a
+             DETERMINISTIC last-season blurb from the context payload (form,
+             final standing, off-season headline — no LLM, can't be wrong)
+             plus when the full preview arrives. Replaces the silent empty
+             state that made the NBA opener read as "NBA isn't built". ── */}
+      {!aiEnabled && REAL_DATA_LEAGUES.has(team.league) && (
+        <div>
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
+          {(() => {
+            const blurb = preSeasonBlurb(context, team.shortName, game.opponent);
+            const headline = context?.teamNews?.[0];
+            return (
+              <>
+                {blurb && <p className="sh-detail-body" style={{ fontSize: '13px' }}>{blurb}</p>}
+                {headline && (
+                  <p className="text-[12px] leading-relaxed mt-1.5" style={{ color: 'var(--text-2)' }}>
+                    Off-season reading: “{headline.headline}”{headline.source ? ` — ${headline.source}` : ''}
+                  </p>
+                )}
+                <p className="text-[12px] italic leading-relaxed mt-1.5" style={{ color: 'var(--text-3)' }}>
+                  The full preview is prepared in the two weeks before game day — expect it from{' '}
+                  {new Date(new Date(game.date).getTime() - AI_PREVIEW_DAYS * 86400_000)
+                    .toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.
+                </p>
+              </>
+            );
+          })()}
+        </div>
       )}
 
       {/* ── Match Preview (AI only — never shown for leagues / dates without AI support) ── */}
