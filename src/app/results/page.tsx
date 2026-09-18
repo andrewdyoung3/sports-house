@@ -237,7 +237,7 @@ function ResultRow({
         )}
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center"
+            className={"absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center" + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
               right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
               ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),

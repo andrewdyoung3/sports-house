@@ -1148,3 +1148,10 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 40%, rgba(25,19,37,0.25));
 }
 [data-theme='light'] .sh-league-follow.is-on { color: #8a6d00; }
+/* Monochrome watermark marks (EPL lion, rugby/cricket icons): white-forced on
+   the dark canvas, ink-forced on light — the inline-filter version was
+   white-on-white in light mode. */
+.sh-wm-mono { filter: brightness(0) invert(1); }
+[data-theme='light'] .sh-wm-mono { filter: brightness(0); }
+/* Per-team crest light treatment (e.g. the white/gold Wallabies art). */
+[data-theme='light'] .sh-theme .sh-fix-wm > img { filter: var(--wm-team-lf, none); }
