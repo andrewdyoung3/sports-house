@@ -42,7 +42,7 @@ export function GameCard({ game, teamColor, teamShortName, compLabel, userTz }: 
       {/* Teams row */}
       <div className="sh-tile-teams">
         <span className="sh-tile-name">{teamShortName}</span>
-        <span className="sh-tile-sep">{game.isHome ? 'vs' : '@'}</span>
+        <span className="sh-tile-sep">{game.isHome ? 'vs' : 'at'}</span>
         <span className="sh-tile-name">{game.opponentAbbr}</span>
       </div>
 

@@ -437,7 +437,10 @@
 .sh-hero-match { display: flex; align-items: center; gap: 18px; margin-bottom: 14px; flex-wrap: wrap; }
 .sh-hero-team { display: inline-flex; align-items: center; gap: 14px; min-width: 0; }
 .sh-hero-team-name { font-family: var(--font-head); font-weight: 800; font-size: clamp(32px, 4.3vw, 54px); line-height: 1.02; letter-spacing: -1.3px; color: var(--text); }
-.sh-hero-at { font-size: clamp(16px, 1.7vw, 24px); color: var(--text-3); font-weight: 600; }
+.sh-hero-at {
+  font-size: clamp(15px, 1.5vw, 21px); color: var(--text-2); font-weight: 700;
+  letter-spacing: 0.6px; align-self: center;
+}
 .sh-hero-datetime { font-size: 17px; color: var(--text-2); margin-bottom: 14px; }
 .sh-hero-datetime strong { color: var(--text); font-weight: 700; }
 .sh-hero-meta { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
@@ -621,7 +624,10 @@
 .sh-fix-main { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .sh-fix-teams { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
 .sh-fix-name { font-family: var(--font-head); font-weight: 700; font-size: 19px; letter-spacing: -0.3px; color: var(--text); white-space: nowrap; }
-.sh-fix-sep { color: var(--text-3); font-size: 14px; font-weight: 600; margin: 0 1px; }
+.sh-fix-sep {
+  color: var(--text-2); font-size: 13px; font-weight: 700; margin: 0 2px;
+  text-transform: lowercase; letter-spacing: 0.5px;
+}
 .sh-fix-teams .sh-comptag { margin-left: 6px; }
 .sh-fix-time { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .sh-fix-kick { font-family: var(--font-head); font-weight: 800; font-size: 21px; color: var(--text); letter-spacing: -0.3px; font-variant-numeric: tabular-nums; white-space: nowrap; }

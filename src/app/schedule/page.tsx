@@ -452,7 +452,7 @@ function ScheduleRow({
                 {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
-                <span className="sh-fix-sep">{game.isHome ? 'vs' : '@'}</span>
+                <span className="sh-fix-sep">{game.isHome ? 'vs' : 'at'}</span>
                 <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={24} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
                 <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
                 {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
@@ -598,7 +598,7 @@ function ScheduleRow({
                 <span className="text-[13px] font-bold text-white/35 leading-none">({ordinal(teamPosition)})</span>
               )}
               <span className="text-[14px] font-medium text-white/30">
-                {game.isHome ? 'vs' : '@'}
+                {game.isHome ? 'vs' : 'at'}
               </span>
               <TeamBadge
                 logoUrl={game.opponentLogoUrl}
