@@ -440,6 +440,10 @@
 .sh-hero-at {
   font-size: clamp(15px, 1.5vw, 21px); color: var(--text-2); font-weight: 700;
   letter-spacing: 0.6px; align-self: center;
+  /* Optical baseline alignment: "at" is all x-height, so centring it against
+     cap-height team names leaves it floating high. Drop it by ~half the
+     cap/x-height difference, in em so it scales with the clamped size. */
+  position: relative; top: 0.22em;
 }
 .sh-hero-datetime { font-size: 17px; color: var(--text-2); margin-bottom: 14px; }
 .sh-hero-datetime strong { color: var(--text); font-weight: 700; }
@@ -627,6 +631,8 @@
 .sh-fix-sep {
   color: var(--text-2); font-size: 13px; font-weight: 700; margin: 0 2px;
   text-transform: lowercase; letter-spacing: 0.5px;
+  /* Same optical baseline drop as .sh-hero-at, scaled to the row's type. */
+  position: relative; top: 0.14em;
 }
 .sh-fix-teams .sh-comptag { margin-left: 6px; }
 .sh-fix-time { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }

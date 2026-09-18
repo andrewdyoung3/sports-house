@@ -251,7 +251,7 @@ function ResultRow({
         <div className="flex-1 min-w-0 relative z-10">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[17px] font-semibold text-white/70 leading-none">{team.shortName}</span>
-            <span className="text-[13px] font-bold tracking-wide" style={{ color: 'var(--text-2)' }}>{result.isHome ? 'vs' : 'at'}</span>
+            <span className="text-[13px] font-bold tracking-wide relative top-[0.12em]" style={{ color: 'var(--text-2)' }}>{result.isHome ? 'vs' : 'at'}</span>
             <TeamBadge logoUrl={result.opponentLogoUrl} abbreviation={result.opponentAbbr} primaryColor="#6B7280" size={30} className="rounded-md" logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']} />
             <span className="text-[17px] font-semibold text-white/70 leading-none">{result.opponent}</span>
             <ResultBadge league={team.league} competition={result.competition} />

@@ -272,7 +272,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
                 <span className="text-[22px] font-black tracking-tight text-white/85 leading-none">
                   {team.shortName}
                 </span>
-                <span className="text-sm font-bold tracking-wide" style={{ color: 'var(--text-2)' }}>{game.isHome ? 'vs' : 'at'}</span>
+                <span className="text-sm font-bold tracking-wide relative top-[0.12em]" style={{ color: 'var(--text-2)' }}>{game.isHome ? 'vs' : 'at'}</span>
                 <div style={{ filter: `drop-shadow(0 0 8px ${game.opponentColor}50)` }}>
                   <TeamBadge
                     logoUrl={game.opponentLogoUrl}
