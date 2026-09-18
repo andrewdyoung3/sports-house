@@ -655,6 +655,21 @@ expect('invented F1 driver in spotlight is rejected',
     r('The loser is eliminated.', QF).length === 0);
 }
 
+// ─── Pre-season guards (NBA opener class) ──────────────────────────────────────
+
+{
+  const PRE = 'SPORT: NBA Basketball.\nPRE-SEASON: the new season has NOT started — no standings exist yet (any table rows are placeholder ordering). Do NOT cite ladder, table or standings positions for either team.\n';
+  console.log('pre-season guards:');
+  expect('live catch: "sit seventh" rejected pre-season',
+    validateLadderPosition(preview({ context: 'Miami sit seventh in the East.' }), PRE).length > 0);
+  expect('non-positional prose passes pre-season',
+    validateLadderPosition(preview({ context: 'Miami closed last season strongly.' }), PRE).length === 0);
+  expect('"ladder" banned in NBA register',
+    validateSportRegister(preview({ context: 'They top the ladder.' }), 'SPORT: NBA Basketball.\n').length > 0);
+  expect('"ladder" fine in AFL register',
+    validateSportRegister(preview({ context: 'They top the ladder.' }), 'SPORT: Australian Rules Football (AFL).\n').length === 0);
+}
+
 // ─── validateDoubleChance — structural, week-one-only framing ───────────────────
 
 {

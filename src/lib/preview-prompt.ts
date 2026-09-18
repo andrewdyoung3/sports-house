@@ -1639,7 +1639,15 @@ export function buildDataBlock(
   // reassembly (footer collapses to empty, the tail sticks to matchFacts).
   // So the conditions are computed from context alone, and the emission sites
   // below reuse these values verbatim.
-  const seasonStateKnown = !isOffLeague && !!totalRounds && played !== undefined;
+  // PRE-SEASON: standings rows exist but nobody has played — placeholder
+  // ordering, not positions (the NBA opener narrated "seventh in the East"
+  // from an alphabetical table). Suppresses all standings/derived-position
+  // content and reframes form as last season's closing run.
+  const preSeason = (context.teamStanding || context.opponentStanding)
+    ? ((context.teamStanding?.played ?? 0) === 0 && (context.opponentStanding?.played ?? 0) === 0)
+    : false;
+
+  const seasonStateKnown = !isOffLeague && !!totalRounds && played !== undefined && !preSeason;
   const isFinalsPhaseInv = seasonStateKnown
     && (finalsRoundForDate(league, context.fixtureDate) !== null || played >= totalRounds);
   const firstThirdPolicyInv = seasonStateKnown && !isFinalsPhaseInv
@@ -1739,6 +1747,10 @@ export function buildDataBlock(
   }
 
   if (enabled('standings')) {
+    if (preSeason) {
+      lines.push('PRE-SEASON: the new season has NOT started — no standings exist yet (any table rows are placeholder ordering). Do NOT cite ladder, table or standings positions for either team. Frame any form as last season\'s closing run.');
+      lines.push('');
+    } else {
     // Cup/European competition group/league-phase standings (highest relevance)
     const cs = context.competitionStage;
     if (cs?.isGroupPhase && (cs.teamStanding || cs.opponentStanding)) {
@@ -1846,6 +1858,7 @@ export function buildDataBlock(
         lines.push('');
       }
     }
+    } // end !preSeason
   }
 
   // Recent form prefers the context fields (populated from ESPN's lastFiveGames /
@@ -1867,7 +1880,9 @@ export function buildDataBlock(
       const isMixedCompForm = isOffLeague || league === 'epl';
       const formHeading = isF1
         ? 'RECENT FORM — Race Results (most recent first):'
-        : isMixedCompForm
+        : preSeason
+          ? "LAST SEASON'S CLOSING FORM (the final games of last season, most recent first — this is NOT current-season form):"
+          : isMixedCompForm
           ? 'RECENT FORM — all competitions (last 5 fixtures, most recent first):'
           : 'RECENT FORM (last 5 fixtures, most recent first):';
       lines.push(formHeading);

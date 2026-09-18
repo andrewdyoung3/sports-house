@@ -256,6 +256,19 @@ const ordSuffix = (n: number): string => {
  *   separate leading sentence, before the zone text, so the two cannot be conflated.
  */
 export function validateLadderPosition(output: AIPreview, prompt: string): string[] {
+  // PRE-SEASON: no standings exist — any positional claim is fabricated from
+  // placeholder rows or training memory (live catch: "seventh in the East"
+  // in the NBA opener, sourced from a played-0 alphabetical table).
+  if (/^PRE-SEASON: the new season has NOT started/m.test(prompt)) {
+    const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
+      .filter(Boolean).join('  ');
+    const posRe = /\b(?:\d{1,2}(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)\s+(?:in|on|of)\s+the\s+(?:east|west|ladder|table|standings|league|conference)\b|\bsit(?:s|ting)?\s+(?:\d{1,2}(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi;
+    const v: string[] = [];
+    for (const m of text.matchAll(posRe)) {
+      v.push(`pre-season position claim "${m[0]}" — the season has not started; no standings exist to cite`);
+    }
+    if (v.length > 0) return v;
+  }
   // 1. Authoritative positions from the LADDER POSITION derived fact.
   const factLine = prompt.match(/LADDER POSITION[^\n]*?:\s*([^\n]+)/);
   if (!factLine) return [];
@@ -560,6 +573,9 @@ const SPORT_BANNED_PHRASES: Array<{ re: RegExp; bannedIn: string[]; why: string 
   { re: /\b(?:one|two|three|four|\d+)[- ]goal (?:difference|margin|lead|win|loss|victory|defeat)\b/gi,
     bannedIn: ['nrl', 'super_rugby', 'rugby_int', 'afl'],
     why: 'margins in this sport are POINTS, not goals — a 48–46 rugby game is a 2-point margin' },
+  { re: /\bladder\b/gi,
+    bannedIn: ['nba', 'epl'],
+    why: 'this sport does not use "ladder" — NBA says "the standings", the EPL says "the Table"' },
 ];
 const SPORT_MARKER_TERMS: Array<{ re: RegExp; sports: string[]; family: string }> = [
   { re: /\binside[- ]50s?\b|\bcentre bounces?\b|\bpremiership quarter\b|\bbehinds\b/gi, sports: ['afl'], family: 'AFL' },
