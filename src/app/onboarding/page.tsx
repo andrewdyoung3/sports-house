@@ -22,6 +22,11 @@ import type { SportKey, Team } from '@/types';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  // ?focus=competitions — arrives from the schedule's "Add competitions" chip;
+  // surfaces a hint so the whole-competition banner is discoverable. Read from
+  // location on mount rather than useSearchParams(), which would force this
+  // statically-prerendered page into a Suspense boundary.
+  const [focusCompetitions, setFocusCompetitions] = useState(false);
 
   const [activeSport, setActiveSport] = useState<SportKey | 'all'>('all');
   const [query, setQuery]             = useState('');
@@ -37,6 +42,12 @@ export default function OnboardingPage() {
   // merge that lands after mount (e.g. signing in from here) shows the union without
   // a reload. A background bump only fires from sync/merge/sign-out — never from the
   // user's own in-progress edits — so this won't clobber a selection mid-edit.
+  useEffect(() => {
+    try {
+      setFocusCompetitions(new URLSearchParams(window.location.search).get('focus') === 'competitions');
+    } catch { /* no-op */ }
+  }, []);
+
   useEffect(() => {
     const existing = getFollowedTeams();
     if (existing.length > 0) setSelected(existing);
@@ -77,6 +88,13 @@ export default function OnboardingPage() {
           <h1 className="text-3xl sm:text-4xl font-black text-white mb-1.5">Which teams do you follow?</h1>
           <p className="text-white/55">Select as many as you like across any sport. You can update this any time.</p>
         </div>
+
+        {focusCompetitions && (
+          <p className="mb-3 text-sm" style={{ color: 'var(--text-2)' }}>
+            Pick a sport below, then use <strong style={{ color: 'var(--text)' }}>Follow the whole competition</strong> to
+            add every fixture in it — or select individual teams as usual.
+          </p>
+        )}
 
         {/* Sport filter tabs */}
         <div className="flex flex-wrap gap-2 mb-4">

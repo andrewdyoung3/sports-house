@@ -536,6 +536,16 @@
   border-width: 0 2px 2px 0; transform: rotate(45deg);
 }
 
+/* Add-more CTA chip inside a filter pane — dashed so it reads as an action
+   rather than a selectable filter. */
+.sh-chip-add {
+  border: 1px dashed var(--border-strong) !important;
+  background: transparent !important;
+  color: var(--text-3) !important;
+  font-weight: 600;
+}
+.sh-chip-add:hover { color: var(--text) !important; border-color: var(--accent) !important; }
+
 /* ── Collapsible filter panes (My teams / Competitions) ── */
 .sh-pane-head {
   display: flex; align-items: center; justify-content: space-between; width: 100%;

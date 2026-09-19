@@ -796,84 +796,6 @@ function LeagueFilterPill({
   );
 }
 
-// ─── Followed-teams sidebar widget ────────────────────────────────────────────
-
-function FollowedTeamsWidget({ teams, onUnfollow }: { teams: Team[]; onUnfollow: (id: string) => void }) {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Close popup on any click outside the widget
-  useEffect(() => {
-    if (!openId) return;
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpenId(null);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [openId]);
-
-  if (teams.length === 0) return null;
-  return (
-    <div ref={containerRef} className="sh-card sh-following">
-      {/* Phase B · Step 3 (2C) — reskinned to .sh-card.sh-following. The per-badge
-          unfollow popup is PRESERVED (an existing interaction the design's display-only
-          badge omits); onboarding access moves to the header .sh-edit-link "Edit". */}
-      <div className="sh-card-head">
-        <span className="sh-card-head-label">Following</span>
-        <Link href="/onboarding" className="sh-edit-link">Edit</Link>
-      </div>
-      <div className="sh-follow-grid">
-        {teams.map(team => (
-          <div key={team.id} className="sh-follow-item relative">
-            {/* Badge — click toggles popup */}
-            <button
-              onClick={() => setOpenId(prev => prev === team.id ? null : team.id)}
-              className="block rounded-xl transition-transform active:scale-95"
-              style={{ filter: `drop-shadow(0 0 8px ${team.primaryColor}44)` }}
-              aria-label={`Options for ${team.shortName}`}
-            >
-              <TeamBadge
-                logoUrl={TEAM_LOGOS[team.id]}
-                abbreviation={team.abbreviation}
-                primaryColor={team.primaryColor}
-                size={42}
-                className="rounded-xl"
-                logoFilter={TEAM_LOGO_FILTERS[team.id]}
-              />
-            </button>
-
-            {/* Popup */}
-            {openId === team.id && (
-              <div
-                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-40 rounded-xl overflow-hidden shadow-xl"
-                style={{ border: `1px solid ${team.primaryColor}44`, minWidth: '110px' }}
-              >
-                {/* Team name header */}
-                <div
-                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wide text-center"
-                  style={{ background: `${team.primaryColor}22`, color: team.primaryColor }}
-                >
-                  {team.shortName}
-                </div>
-                {/* Unfollow button */}
-                <button
-                  onClick={() => { onUnfollow(team.id); setOpenId(null); }}
-                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-semibold text-red-400 hover:bg-red-500/15 transition-colors"
-                  style={{ background: 'rgba(10,10,15,0.95)' }}
-                >
-                  <UserMinus className="h-3 w-3" />
-                  Unfollow
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -1136,19 +1058,8 @@ export default function SchedulePage() {
     return () => { active = false; };
   }, [prefsVersion]);
 
-  const handleUnfollow = useCallback((teamId: string) => {
-    // Prevent removing auto-injected SOO team if user still follows NRL clubs
-    if (teamId === 'nrl-maroons') {
-      const remaining = teams.filter(t => t.id !== 'nrl-maroons');
-      const stillHasNRL = remaining.some(t => t.league === 'nrl' && t.id !== 'nrl-maroons' && t.id !== 'nrl-blues');
-      if (stillHasNRL) return; // keep it auto-included
-    }
-    const updated = teams.filter(t => t.id !== teamId);
-    saveFollowedTeams(updated);
-    setTeams(updated);
-    setAllGames(prev => prev.filter(g => g.team.id !== teamId));
-    if (activeTeamId === teamId) setActiveTeamId('all');
-  }, [teams, activeTeamId]);
+  // (Unfollow lives in /onboarding now — the sidebar Following widget that
+  //  owned this handler was removed 2026-09-19.)
 
   // IDs of teams the user actually follows — stable across card expansions.
   // Used for hero game selection and "following" badges.
@@ -1371,6 +1282,95 @@ export default function SchedulePage() {
   // Out-of-season copy for a league pill whose fixture list came back empty.
   const outOfSeason = isLeagueMode && activeLeagueId ? outOfSeasonMessage(activeLeagueId) : null;
 
+  // Filters card (My teams / Competitions panes) — rendered in the RIGHT
+  // sidebar on desktop (under the calendar) and inline on mobile, so it is
+  // built once here and placed twice below.
+  const filtersPanel = activeLoading ? null : (
+    <div className="sh-filters sh-card">
+
+              {/* My teams — collapsible pane; the header carries the active
+                  selection when collapsed so context never disappears. */}
+              <div>
+                <button
+                  type="button"
+                  className="sh-pane-head"
+                  aria-expanded={teamsPaneOpen}
+                  onClick={() => togglePane('sports-house:pane-teams', setTeamsPaneOpen)}
+                >
+                  <span>
+                    My teams
+                    {!teamsPaneOpen && !isLeagueMode && activeTeamId !== 'all' && (
+                      <em> · {teams.find(t => t.id === activeTeamId)?.abbreviation ?? ''}</em>
+                    )}
+                  </span>
+                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (teamsPaneOpen ? ' is-open' : '')} />
+                </button>
+                {teamsPaneOpen && (
+                <div className="sh-chips sh-fade-in">
+                  <TeamFilterPill
+                    label="All"
+                    active={!isLeagueMode && activeTeamId === 'all'}
+                    onClick={() => { setActiveLeagueId(null); setActiveTeamId('all'); }}
+                  />
+                  {teams.map(team => (
+                    <TeamFilterPill
+                      key={team.id}
+                      label={team.abbreviation}
+                      logoUrl={TEAM_LOGOS[team.id]}
+                      logoFilter={TEAM_LOGO_FILTERS[team.id]}
+                      primaryColor={team.primaryColor}
+                      league={team.league}
+                      active={!isLeagueMode && activeTeamId === team.id}
+                      onClick={() => { setActiveLeagueId(null); setActiveTeamId(team.id); }}
+                    />
+                  ))}
+                  <Link href="/onboarding" className="sh-chip sh-chip-add">+ Add teams</Link>
+                </div>
+                )}
+              </div>
+
+              <div className="sh-filter-divider" />
+
+              {/* Browse competition — collapsible pane, same contract. */}
+              <div>
+                <button
+                  type="button"
+                  className="sh-pane-head"
+                  aria-expanded={compsPaneOpen}
+                  onClick={() => togglePane('sports-house:pane-comps', setCompsPaneOpen)}
+                >
+                  <span>
+                    Competitions
+                    {!compsPaneOpen && activeLeagueId && (
+                      <em> · {LEAGUE_BADGE[activeLeagueId]?.label ?? activeLeagueId.toUpperCase()}</em>
+                    )}
+                  </span>
+                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (compsPaneOpen ? ' is-open' : '')} />
+                </button>
+                {compsPaneOpen && (
+                <div className="sh-chips sh-fade-in">
+                  {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
+                    <LeagueFilterPill
+                      key={league.id}
+                      leagueId={league.id}
+                      active={activeLeagueId === league.id}
+                      followed={followedLeagues.includes(league.id)}
+                      onToggleFollow={() => setFollowedLeagues(toggleFollowedLeague(league.id))}
+                      onClick={() => {
+                        setActiveLeagueId(prev => prev === league.id ? null : league.id);
+                        setActiveTeamId('all');
+                      }}
+                    />
+                  ))}
+                  <Link href="/onboarding?focus=competitions" className="sh-chip sh-chip-add">+ Add competitions</Link>
+                </div>
+                )}
+              </div>
+
+            </div>
+  );
+
+
   // Phase B · Step 2 — page-level focal accent, driven by the SAME focal team the hero
   // uses (heroGame.team). `.sh-theme` only defines CSS custom properties, so adding it to
   // the wrapper is visually inert except for `.sh-*` descendants (currently just the hero).
@@ -1427,94 +1427,9 @@ export default function SchedulePage() {
                 : <NextGameHeroSh game={heroGame} userTz={userTz} leagueLogoUrl={competitionWatermark(undefined, heroGame.team.league)?.url} onExpandChange={setHeroExpanded} />}
             </div>
           )}
-
-          {/* Filters — Phase B · Step 2: reskinned to the design vocabulary
-              (.sh-filters.sh-card / .sh-chips > .sh-chip / .sh-segmented > .sh-seg).
-              The 3-group information architecture is preserved (Decision i: competition
-              stays PILLS, not a select); every handler and state is unchanged. Active
-              chips/segs colour from the inherited page accent (.sh-chip.is-active). */}
-          {!activeLoading && (
-            <div className="sh-filters sh-card">
-
-              {/* My teams — collapsible pane; the header carries the active
-                  selection when collapsed so context never disappears. */}
-              <div>
-                <button
-                  type="button"
-                  className="sh-pane-head"
-                  aria-expanded={teamsPaneOpen}
-                  onClick={() => togglePane('sports-house:pane-teams', setTeamsPaneOpen)}
-                >
-                  <span>
-                    My teams
-                    {!teamsPaneOpen && !isLeagueMode && activeTeamId !== 'all' && (
-                      <em> · {teams.find(t => t.id === activeTeamId)?.abbreviation ?? ''}</em>
-                    )}
-                  </span>
-                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (teamsPaneOpen ? ' is-open' : '')} />
-                </button>
-                {teamsPaneOpen && (
-                <div className="sh-chips sh-fade-in">
-                  <TeamFilterPill
-                    label="All"
-                    active={!isLeagueMode && activeTeamId === 'all'}
-                    onClick={() => { setActiveLeagueId(null); setActiveTeamId('all'); }}
-                  />
-                  {teams.map(team => (
-                    <TeamFilterPill
-                      key={team.id}
-                      label={team.abbreviation}
-                      logoUrl={TEAM_LOGOS[team.id]}
-                      logoFilter={TEAM_LOGO_FILTERS[team.id]}
-                      primaryColor={team.primaryColor}
-                      league={team.league}
-                      active={!isLeagueMode && activeTeamId === team.id}
-                      onClick={() => { setActiveLeagueId(null); setActiveTeamId(team.id); }}
-                    />
-                  ))}
-                </div>
-                )}
-              </div>
-
-              <div className="sh-filter-divider" />
-
-              {/* Browse competition — collapsible pane, same contract. */}
-              <div>
-                <button
-                  type="button"
-                  className="sh-pane-head"
-                  aria-expanded={compsPaneOpen}
-                  onClick={() => togglePane('sports-house:pane-comps', setCompsPaneOpen)}
-                >
-                  <span>
-                    Competitions
-                    {!compsPaneOpen && activeLeagueId && (
-                      <em> · {LEAGUE_BADGE[activeLeagueId]?.label ?? activeLeagueId.toUpperCase()}</em>
-                    )}
-                  </span>
-                  <ChevronDown className={'sh-pane-chev h-3.5 w-3.5' + (compsPaneOpen ? ' is-open' : '')} />
-                </button>
-                {compsPaneOpen && (
-                <div className="sh-chips sh-fade-in">
-                  {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
-                    <LeagueFilterPill
-                      key={league.id}
-                      leagueId={league.id}
-                      active={activeLeagueId === league.id}
-                      followed={followedLeagues.includes(league.id)}
-                      onToggleFollow={() => setFollowedLeagues(toggleFollowedLeague(league.id))}
-                      onClick={() => {
-                        setActiveLeagueId(prev => prev === league.id ? null : league.id);
-                        setActiveTeamId('all');
-                      }}
-                    />
-                  ))}
-                </div>
-                )}
-              </div>
-
-            </div>
-          )}
+          {/* Filters — mobile/tablet placement; desktop renders these in the
+              right sidebar under the calendar (see <aside>). */}
+          <div className="lg:hidden">{filtersPanel}</div>
 
           {/* Schedule content */}
           {activeLoading ? (
@@ -1639,8 +1554,10 @@ export default function SchedulePage() {
             />
           )}
 
-          {/* Followed teams — always show in league mode so user sees who they follow */}
-          <FollowedTeamsWidget teams={teams} onUnfollow={handleUnfollow} />
+          {/* Filters (My teams / Competitions) — desktop home is here, under the
+              calendar. The old "Following" widget was removed: the My-teams pane
+              already lists every followed team. */}
+          {filtersPanel}
 
         </aside>
       </div>
