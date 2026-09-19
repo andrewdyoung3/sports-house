@@ -201,6 +201,8 @@ function ResultRow({
   const leagueLogoMaxWidth = wm?.maxWidth;
   // Logo center: translateX(50%) makes `right: 49px` the CENTER anchor for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
+  // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
+  const leagueLogoRight = wm?.right ?? LOGO_CENTER_RIGHT;
 
   // ── Step 8 — F1 gate: keep the original render for F1 results ─────────────────
   // The two-team .sh-fix path below handles all other leagues (AFL, NRL, EPL, cricket…).
@@ -239,7 +241,7 @@ function ResultRow({
           <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className={"absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center" + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
-              right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
+              right: leagueLogoRight, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
               ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
               ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
             }}
@@ -325,7 +327,7 @@ function ResultRow({
           src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
           className="absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]"
           style={{
-            right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
+            right: leagueLogoRight, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
             ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
             ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
           }}

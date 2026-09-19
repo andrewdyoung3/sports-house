@@ -346,6 +346,8 @@ function ScheduleRow({
   // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
   // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
   const LOGO_CENTER_RIGHT = '49px';
+  // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
+  const leagueLogoRight = wm?.right ?? LOGO_CENTER_RIGHT;
 
   // Three-tier opponent name: (1) raw API string when ≤14 chars; (2) our team.name
   // when shorter than the API string (e.g. "Greater Western Sydney" → "GWS Giants");
@@ -425,7 +427,7 @@ function ScheduleRow({
             src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className={"absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]" + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
-              right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%',
+              right: leagueLogoRight, height: leagueLogoHeight ?? '140%',
               ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}),
               opacity: leagueLogoOpacity,
               ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
@@ -557,7 +559,7 @@ function ScheduleRow({
             // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
             team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
           ].join(' ')}
-          style={{ right: LOGO_CENTER_RIGHT, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
+          style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
