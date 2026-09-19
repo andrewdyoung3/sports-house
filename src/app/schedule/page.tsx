@@ -1076,6 +1076,16 @@ export default function SchedulePage() {
   // Used for hero game selection and "following" badges.
   const baseFollowedTeamIds = useMemo(() => new Set(teams.map(t => t.id)), [teams]);
 
+  // A competition is yours if you follow a TEAM in it OR the competition itself.
+  // These are two separate prefs (saveFollowedTeams / toggleFollowedLeague) and
+  // the UI must always consult both: F1 is followed as a championship far more
+  // often than as a driver, and onboarding already treats the two as equivalent
+  // (`followedLeagues.includes('f1') || selected.some(t => t.league === 'f1')`).
+  const followedLeagueIds = useMemo(
+    () => new Set<string>([...teams.map(t => t.league), ...followedLeagues]),
+    [teams, followedLeagues],
+  );
+
   // Augmented set: also includes the opponent of the currently-expanded game so
   // downstream components (standings highlight, form panels) can style it correctly.
   // Must NOT be used for hero game selection — see heroGame below.
@@ -1276,7 +1286,7 @@ export default function SchedulePage() {
     setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
-  if (!loading && !isLeagueMode && teams.length === 0) return (
+  if (!loading && !isLeagueMode && teams.length === 0 && followedLeagues.length === 0) return (
     <EmptyState
       icon={Calendar}
       title="No schedule yet"
@@ -1374,7 +1384,7 @@ export default function SchedulePage() {
                 </button>
                 {compsPaneOpen && (
                 <div className="sh-chips sh-fade-in">
-                  {BROWSABLE_LEAGUES.filter(l => teams.some(t => t.league === l.id)).map(league => (
+                  {BROWSABLE_LEAGUES.filter(l => followedLeagueIds.has(l.id)).map(league => (
                     <LeagueFilterPill
                       key={league.id}
                       leagueId={league.id}
