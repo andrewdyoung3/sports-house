@@ -1265,7 +1265,7 @@ export function validateDeciderClaims(output: AIPreview, prompt: string): string
   ].join('  ');
   const violations: string[] = [];
   if (/CLUB HONOURS/.test(prompt)) {
-    const rarityRe = /(?<!\b(?:not|hardly|far from|nothing)\s)\b(?:unprecedented|never before|(?:for the )?first(?: [\w-]+){0,3} (?:time )?since\b(?: [\w–-]+){0,4}|first (?:club|team|side) (?:in|to|since)|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
+    const rarityRe = /(?<!\b(?:not|hardly|far from|nothing|isn't|isn’t)\s(?:\w+\s)?['‘"]?)\b(?:unprecedented|never before|(?:for the )?first(?: [\w-]+){0,3} (?:time )?since\b(?: [\w–-]+){0,4}|first (?:club|team|side) (?:in|to|since)|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
     // "first Grand Final since 2013" is the club's own sourced record when the
     // year is in the block — that is exactly the sentence the honours exist for.
     const promptYears = new Set([...prompt.matchAll(/\b(?:19|20)\d{2}\b/g)].map(y => y[0]));

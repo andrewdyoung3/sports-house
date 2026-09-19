@@ -739,6 +739,8 @@ expect('invented F1 driver in spotlight is rejected',
     dc('Brisbane seek an unprecedented third-straight flag.').length > 0);
   expect('negated rarity passes ("not unprecedented for this club" echoes the block)',
     dc('A third straight flag is not unprecedented for this club.').length === 0);
+  expect('negated with adverb + quotes passes ("not truly ‘unprecedented’")',
+    dc('A third straight flag — not truly ‘unprecedented’ for this club.').length === 0);
   expect('"first time since" without a sourced year rejected',
     dc('A flag for the first time since the club\'s early years.').length > 0);
   expect('"first Grand Final since 2013" passes when 2013 is in the block',
