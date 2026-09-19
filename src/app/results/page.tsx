@@ -4,13 +4,14 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
-import { getFollowedTeams, usePrefsVersion } from '@/lib/user-prefs';
+import { getFollowedTeams, getFollowedLeagues, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
-import { TEAMS, REAL_DATA_LEAGUES } from '@/lib/teams';
+import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
+import { resultMatchKey } from '@/lib/result-match-key';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
@@ -18,7 +19,19 @@ import type { Team, GameResult, SportKey } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ResultEntry = GameResult & { team: Team; id: string };
+type ResultEntry = GameResult & {
+  team: Team;
+  id: string;
+  /** True when the row came from a followed COMPETITION rather than a followed team.
+   *  A followed team's match arrives from both fetches, so the merge prefers the
+   *  team-sourced copy — it reads from the side the user actually follows. */
+  fromLeague?: boolean;
+};
+
+/** Perspective-independent match identity — shared with /api/results so the two
+ *  cannot drift. See lib/result-match-key.ts for why abbreviations, not ids. */
+const matchKey = (r: ResultEntry): string =>
+  resultMatchKey({ ...r, league: r.team.league, teamId: r.team.id, teamAbbr: r.team.abbreviation });
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -35,6 +48,48 @@ function makeResultId(teamId: string, result: GameResult): string {
 }
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
+
+/**
+ * Stand-in Team for a result that belongs to a COMPETITION rather than to a
+ * team the user follows. Used for F1, where the followed unit is the
+ * championship and a race is one event, not one row per driver.
+ */
+function competitionTeam(leagueId: string): Team {
+  const league = LEAGUES.find(l => l.id === leagueId);
+  const badge  = LEAGUE_BADGE[leagueId];
+  return {
+    id:            leagueId,
+    name:          league?.fullName ?? leagueId.toUpperCase(),
+    shortName:     league?.name ?? leagueId.toUpperCase(),
+    abbreviation:  badge?.label ?? leagueId.slice(0, 3).toUpperCase(),
+    league:        leagueId as SportKey,
+    sport:         league?.sport ?? '',
+    city:          '',
+    country:       league?.country ?? '',
+    primaryColor:  badge?.color ?? '#9b6bff',
+    secondaryColor: badge?.bg ?? '#9b6bff',
+    venue:         '',
+  } as Team;
+}
+
+/**
+ * Every result in a followed competition. Teams already followed individually
+ * are fetched separately; the caller dedupes by result id so a match is never
+ * listed twice.
+ */
+async function loadLeagueResults(leagueId: string): Promise<ResultEntry[]> {
+  if (!REAL_DATA_LEAGUES.has(leagueId)) return [];
+  try {
+    const res  = await fetch(`/api/results?league=${leagueId}&scope=league`);
+    const data = res.ok ? await res.json() : [];
+    if (!Array.isArray(data)) return [];
+    return data.map((r: GameResult & { teamId?: string }) => {
+      const team = TEAMS.find(t => t.id === r.teamId) ?? competitionTeam(leagueId);
+      return { ...r, team, id: makeResultId(team.id, r), fromLeague: true };
+    });
+  } catch { /* network error — return empty */ }
+  return [];
+}
 
 async function loadResults(team: Team): Promise<ResultEntry[]> {
   if (!REAL_DATA_LEAGUES.has(team.league)) return [];
@@ -748,24 +803,41 @@ export default function ResultsPage() {
 
     setTeams(teamsToFetch);
 
-    if (teamsToFetch.length === 0) { setLoading(false); return; }
+    // Competitions followed as a whole (onboarding's "Follow the whole
+    // competition") contribute every match in the competition — the way F1 is
+    // almost always followed, and the reason this page used to be empty for
+    // those users. Leagues already covered by a followed team are still
+    // fetched: the follow means "all of it", not "the ones I have a team in".
+    const leaguesToFetch = getFollowedLeagues();
+
+    if (teamsToFetch.length === 0 && leaguesToFetch.length === 0) { setLoading(false); return; }
 
     let active = true;
-    let remaining = teamsToFetch.length;
-    teamsToFetch.forEach(async (team) => {
-      try {
-        const entries = await loadResults(team);
-        if (active) {
-          setAllResults(prev => {
-            const seen = new Set(prev.map(r => r.id));
-            const merged = [...prev, ...entries.filter(r => !seen.has(r.id))];
-            return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          });
+    let remaining = teamsToFetch.length + leaguesToFetch.length;
+
+    const absorb = (entries: ResultEntry[]) => {
+      if (!active) return;
+      setAllResults(prev => {
+        // Dedupe on match identity, not render id: the same match reaches us
+        // from the followed team (their perspective) and from the competition
+        // (canonical home perspective) under two different ids.
+        const byMatch = new Map<string, ResultEntry>();
+        for (const r of [...prev, ...entries]) {
+          const k = matchKey(r);
+          const existing = byMatch.get(k);
+          if (!existing || (existing.fromLeague && !r.fromLeague)) byMatch.set(k, r);
         }
-      } finally {
-        remaining -= 1;
-        if (remaining === 0) setLoading(false);
-      }
+        return [...byMatch.values()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      });
+    };
+
+    const done = () => { remaining -= 1; if (remaining === 0) setLoading(false); };
+
+    teamsToFetch.forEach(async (team) => {
+      try { absorb(await loadResults(team)); } finally { done(); }
+    });
+    leaguesToFetch.forEach(async (leagueId) => {
+      try { absorb(await loadLeagueResults(leagueId)); } finally { done(); }
     });
     return () => { active = false; };
   }, [prefsVersion]);
@@ -808,7 +880,7 @@ export default function ResultsPage() {
     setEverExpandedIds(prev => { const next = new Set(prev); next.add(id); return next; });
   }, []);
 
-  if (!loading && teams.length === 0) return (
+  if (!loading && teams.length === 0 && allResults.length === 0) return (
     <EmptyState
       icon={Trophy}
       title="No results yet"

@@ -10,6 +10,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { GameResult } from '@/types';
+import { TEAMS } from '@/lib/teams';
+import { resultMatchKey } from '@/lib/result-match-key';
+
+/** A league-scoped result carries the perspective team so the client can resolve it. */
+type LeagueResult = GameResult & { teamId: string };
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { fetchTimeout, unknownTeam, parseCricketFormat, espnDateRange, fetchESPNScoreboard } from '@/lib/espn';
@@ -1101,6 +1106,67 @@ async function fetchNBAResults(teamId: string): Promise<GameResult[]> {
 const ALLOWED_LEAGUES = new Set(['afl', 'epl', 'nrl', 'super_rugby', 'rugby_int', 'f1', 'bbl', 'cricket_int', 'nba']);
 const TEAMID_RE = /^[a-z0-9]+-?[a-z0-9_-]*$/;
 
+/** Per-team dispatcher — the single mapping of league → results fetcher. */
+async function fetchTeamResults(league: string, teamId: string): Promise<GameResult[]> {
+  if (league === 'afl')         return fetchAFLResults(teamId);
+  if (league === 'nrl')         return (teamId === 'nrl-maroons' || teamId === 'nrl-blues')
+    ? fetchSOOResults(teamId) : fetchNRLResults(teamId);
+  if (league === 'epl')         return fetchEPLResults(teamId);
+  if (league === 'super_rugby') return fetchSuperRugbyResults(teamId);
+  if (league === 'rugby_int')   return fetchInternationalRugbyResults(teamId);
+  if (league === 'f1')          return fetchF1Results(teamId);
+  if (league === 'bbl')         return fetchBBLResults(teamId);
+  if (league === 'cricket_int') return fetchCricketIntResults(teamId);
+  if (league === 'nba')         return fetchNBAResults(teamId);
+  return [];
+}
+
+/**
+ * Whole-competition results, for a competition followed without following any
+ * team in it (onboarding's "Follow the whole competition" — how F1 is almost
+ * always followed).
+ *
+ * This deliberately fans out over the competition's teams and reuses
+ * fetchTeamResults rather than adding league-wide fetchers: one mapping stays
+ * authoritative, so a fix to a team's results is a fix to its league's. The
+ * fan-out is cheap because every fetcher goes through fetchTimeout with a
+ * revalidate window — the per-team calls collapse onto the same cached upstream
+ * responses (all 18 AFL teams read one Squiggle payload).
+ *
+ * F1 is the exception, and matches how the sport is actually consumed: a race
+ * is ONE event, not one row per driver. fetchF1Results already renders a
+ * championship view (race + winner) for an id that is neither a driver nor a
+ * constructor, so the competition follow asks for exactly that.
+ */
+async function fetchLeagueResults(league: string): Promise<LeagueResult[]> {
+  if (league === 'f1') {
+    // 'f1' matches no driver or constructor → the championship branch: one row
+    // per race, captioned with the winner.
+    return (await fetchF1Results('f1')).map(r => ({ ...r, teamId: 'f1' }));
+  }
+
+  const teams = TEAMS.filter(t => t.league === league);
+  const settled = await Promise.allSettled(
+    teams.map(async t => (await fetchTeamResults(league, t.id)).map(r => ({ ...r, teamId: t.id }))),
+  );
+
+  // Every match is returned twice — once from each side. Keep one row per match,
+  // preferring the HOME perspective so the league view reads canonically
+  // ("Home v Away"), which is the same convention /api/league-fixtures uses.
+  const abbrById = new Map(teams.map(t => [t.id, t.abbreviation]));
+  const byMatch = new Map<string, LeagueResult>();
+  for (const s of settled) {
+    if (s.status !== 'fulfilled') continue;
+    for (const r of s.value) {
+      const key = resultMatchKey({ ...r, league, teamAbbr: abbrById.get(r.teamId) });
+      const existing = byMatch.get(key);
+      if (!existing || (r.isHome && !existing.isHome)) byMatch.set(key, r);
+    }
+  }
+
+  return [...byMatch.values()].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
 export async function GET(req: NextRequest) {
   // SEC-2: abuse ceiling only — generous enough that a heavy page load (results
   // fetched per followed team) never trips it. The cross-league soccer path below
@@ -1113,6 +1179,7 @@ export async function GET(req: NextRequest) {
   const league   = req.nextUrl.searchParams.get('league') ?? '';
   const teamId   = req.nextUrl.searchParams.get('teamId') ?? '';
   const teamName = req.nextUrl.searchParams.get('teamName') ?? '';
+  const scope    = req.nextUrl.searchParams.get('scope') ?? 'team';
 
   // Cross-league soccer: look up any European club by display name.
   // Triggered when opponentId is unknown (opponent is from a foreign domestic league).
@@ -1129,22 +1196,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  if (!ALLOWED_LEAGUES.has(league) || !TEAMID_RE.test(teamId)) {
+  // scope=league needs no teamId; scope=team still requires a valid one.
+  if (!ALLOWED_LEAGUES.has(league) || (scope !== 'league' && !TEAMID_RE.test(teamId))) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
   }
 
   try {
-    let results: GameResult[] = [];
-    if      (league === 'afl')         results = await fetchAFLResults(teamId);
-    else if (league === 'nrl' && (teamId === 'nrl-maroons' || teamId === 'nrl-blues')) results = await fetchSOOResults(teamId);
-    else if (league === 'nrl')         results = await fetchNRLResults(teamId);
-    else if (league === 'epl')         results = await fetchEPLResults(teamId);
-    else if (league === 'super_rugby') results = await fetchSuperRugbyResults(teamId);
-    else if (league === 'rugby_int')   results = await fetchInternationalRugbyResults(teamId);
-    else if (league === 'f1')          results = await fetchF1Results(teamId);
-    else if (league === 'bbl')         results = await fetchBBLResults(teamId);
-    else if (league === 'cricket_int') results = await fetchCricketIntResults(teamId);
-    else if (league === 'nba')         results = await fetchNBAResults(teamId);
+    const results = scope === 'league'
+      ? await fetchLeagueResults(league)
+      : await fetchTeamResults(league, teamId);
 
     return NextResponse.json(results, { headers: CACHE_HEADERS });
   } catch (err) {
