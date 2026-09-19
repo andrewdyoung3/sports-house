@@ -13,6 +13,7 @@ import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { cn, contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal, dedupeChannels } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -399,7 +400,7 @@ function ScheduleRow({
     return (
       <article
         className={'sh-fix' + (isExpanded ? ' is-open' : '')}
-        style={{ '--accent': team.primaryColor } as React.CSSProperties}
+        style={accentVars(team.primaryColor) as React.CSSProperties}
         onClick={() => onToggle(game.id)}
         onMouseEnter={() => onHover(dateKey)}
         onMouseLeave={() => onHover(null)}
@@ -503,7 +504,7 @@ function ScheduleRow({
     <div
       className={'sh-fix cursor-pointer select-none' + (isExpanded ? ' is-open' : '')}
       style={{
-        '--accent': team.primaryColor,
+        ...accentVars(team.primaryColor),
         minHeight: '84px',
         // Followed/hovered rows keep their extra team-colour lift on top of the
         // card's own hover glow.
@@ -644,8 +645,9 @@ function ScheduleRow({
             <span
               className="inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 leading-none"
               style={{
+                ...accentVars(team.primaryColor),
                 background: `${team.primaryColor}22`,
-                color:      team.primaryColor,
+                color:      'var(--accent-ink)',
                 border:     `1px solid ${team.primaryColor}44`,
               }}
             >
@@ -744,7 +746,7 @@ function TeamFilterPill({
     <button
       onClick={onClick}
       className={'sh-chip' + (active ? ' is-active' : '')}
-      style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
+      style={active && primaryColor ? (accentVars(primaryColor) as React.CSSProperties) : undefined}
     >
       {logoUrl && (
         <img loading="lazy" decoding="async"
@@ -779,7 +781,7 @@ function LeagueFilterPill({
     <button
       onClick={onClick}
       className={'sh-chip' + (active ? ' is-active' : '')}
-      style={active ? ({ '--accent': leagueBrandAccent(leagueId) } as React.CSSProperties) : undefined}
+      style={active ? (accentVars(leagueBrandAccent(leagueId)) as React.CSSProperties) : undefined}
     >
       <SportBall league={leagueId} size={11} />
       {meta?.label ?? leagueId.toUpperCase()}
@@ -1401,7 +1403,7 @@ export default function SchedulePage() {
   const focalTeam = heroGame?.team;
   const focalAccent = focalTeam
     ? ({
-        '--accent':    focalTeam.primaryColor,
+        ...accentVars(focalTeam.primaryColor),
         '--accent-2':  focalTeam.secondaryColor ?? focalTeam.primaryColor,
         '--on-accent': contrastColor(focalTeam.primaryColor),
       } as React.CSSProperties)

@@ -14,6 +14,7 @@ const GameExpandPanel = dynamic(
 );
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { formatTimeInZone, contrastColor } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 import type { UpcomingGame, Team } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -214,7 +215,7 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
           <div className="flex items-center gap-2">
             <span
               className="text-[14px] font-black uppercase tracking-[0.18em]"
-              style={{ color: team.primaryColor }}
+              style={{ ...accentVars(team.primaryColor), color: 'var(--accent-ink)' }}
             >
               {isF1 ? 'Next Session' : 'Next Game'}
             </span>
@@ -252,7 +253,8 @@ export function NextGameHero({ game, userTz }: NextGameHeroProps) {
                   <span
                     className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border"
                     style={{
-                      color:        team.primaryColor,
+                      ...accentVars(team.primaryColor),
+                      color:        'var(--accent-ink)',
                       background:   `${team.primaryColor}18`,
                       borderColor:  `${team.primaryColor}45`,
                     }}

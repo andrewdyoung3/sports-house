@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Flag } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 
 export interface F1GridEntry {
   position: number;
@@ -73,7 +74,7 @@ export function F1StartingGrid({
           panel accent). The constructor-coloured rows below are intentional F1 branding
           and are left as-is. */}
       <div className="sh-detail-head">
-        <Flag className="sh-icon h-[13px] w-[13px]" style={{ color: accentColor }} />
+        <Flag className="sh-icon h-[13px] w-[13px]" style={{ ...accentVars(accentColor), color: 'var(--accent-ink)' }} />
         Starting Grid
       </div>
 

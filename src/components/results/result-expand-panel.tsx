@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
+import { accentVars } from '@/lib/team-ink';
 import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey, StandingRow } from '@/types';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 
@@ -98,7 +99,7 @@ function TeamStatsPanel({ data, accentColor }: { data: TeamMatchStats; accentCol
     <div className="min-w-0">
       <p
         className="text-[10px] font-black uppercase tracking-widest mb-2 truncate"
-        style={{ color: accentColor }}
+        style={{ ...accentVars(accentColor), color: 'var(--accent-ink)' }}
       >
         {firstName}
       </p>
@@ -315,7 +316,7 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
     // team-coloured ancestor). Pattern mirrors game-expand-panel (two-team path).
     <div
       className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
+      style={{ animation: 'slideDown 0.22s ease-out', ...accentVars(team.primaryColor) } as React.CSSProperties}
     >
       {/* ── Collapse pill — wired to the results page toggle (when provided) ── */}
       {onCollapse && (

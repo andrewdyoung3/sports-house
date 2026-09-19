@@ -10,6 +10,7 @@ import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
 import { TEAMS, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
@@ -213,7 +214,7 @@ function ResultRow({
       <div
         className={'sh-fix cursor-pointer select-none' + (isExpanded ? ' is-open' : '')}
         style={{
-          '--accent': team.primaryColor,
+          ...accentVars(team.primaryColor),
           minHeight: '84px',
           boxShadow: isHighlighted && !isExpanded
             ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
@@ -301,7 +302,7 @@ function ResultRow({
   return (
     <article
       className={'sh-fix' + (isExpanded ? ' is-open' : '')}
-      style={{ '--accent': team.primaryColor } as React.CSSProperties}
+      style={accentVars(team.primaryColor) as React.CSSProperties}
       onClick={onToggle}
       onMouseEnter={() => onHover(dateKey)}
       onMouseLeave={() => onHover(null)}
@@ -590,7 +591,7 @@ function TeamFilterPill({
     <button
       onClick={onClick}
       className={'sh-chip' + (active ? ' is-active' : '')}
-      style={active && primaryColor ? ({ '--accent': primaryColor } as React.CSSProperties) : undefined}
+      style={active && primaryColor ? (accentVars(primaryColor) as React.CSSProperties) : undefined}
     >
       {logoUrl && (
         <img loading="lazy" decoding="async" src={logoUrl} alt="" width={15} height={15} className="w-[15px] h-[15px] object-contain shrink-0"

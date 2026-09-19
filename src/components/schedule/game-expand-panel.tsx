@@ -14,6 +14,7 @@ import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components
 import { COMP_RULES } from '@/lib/competition-rules';
 import { cn, ordinal } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
+import { accentVars } from '@/lib/team-ink';
 import type { Team, UpcomingGame, GameResult, PreviewContext, TeamStanding, AIPreview, WeatherData } from '@/types';
 
 type ScheduleEntry = UpcomingGame & { team: Team };
@@ -643,7 +644,7 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
       // colour (e.g. #E8002D for the Formula 1 championship follow, the constructor's
       // colour for constructor follows). No backdrop-filter; bg + animation unchanged.
       className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 space-y-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
+      style={{ animation: 'slideDown 0.22s ease-out', ...accentVars(team.primaryColor) } as React.CSSProperties}
     >
       {/* ── Collapse pill — drives the feed's EXISTING expand toggle (Step 7). Absent for
           the old F1 hero mount, which keeps its own external "Collapse" toggle. ── */}
@@ -1210,7 +1211,7 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
   return (
     <div
       className={cn('sh-theme border-t border-white/8 bg-black/20 px-4 pt-4 pb-5 rounded-b-2xl', className)}
-      style={{ animation: 'slideDown 0.22s ease-out', '--accent': team.primaryColor } as React.CSSProperties}
+      style={{ animation: 'slideDown 0.22s ease-out', ...accentVars(team.primaryColor) } as React.CSSProperties}
     >
       {/* ── Mobile tab bar — Preview / Table, or Preview / Bracket in finals.
              Once a finals series is live the ladder is seeding-only, so its

@@ -51,6 +51,8 @@
     --accent:        #9b6bff;
     --accent-2:      #c79bff;
     --accent-soft:   color-mix(in oklab, var(--accent) 16%, transparent);
+    /* see the Accent ink note below .sh-theme */
+    --accent-ink:    var(--accent-ink-d, var(--accent));
     --on-accent:     #ffffff;
     --surface:       rgba(255,255,255,.045);
     --surface-2:     rgba(255,255,255,.075);
@@ -242,6 +244,7 @@
   --accent:      #9b6bff;
   --accent-2:    #c79bff;
   --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+  --accent-ink:  var(--accent-ink-d, var(--accent));
   --on-accent:   #ffffff;   /* paired with --accent via existing contrastColor() in Phase B */
 
   /* outcome */
@@ -341,7 +344,7 @@
   font-family: var(--font-head); font-weight: 800; font-size: 29px;
   letter-spacing: -0.5px; color: var(--text);
 }
-.sh-pagetitle .sh-icon { color: var(--accent); }
+.sh-pagetitle .sh-icon { color: var(--accent-ink); }
 .sh-pagetitle { white-space: nowrap; }
 
 /* ── Shared bits ── */
@@ -378,7 +381,7 @@
   font-family: var(--font-head); font-size: 10px; font-weight: 700; letter-spacing: 0.7px;
   text-transform: uppercase; padding: 2px 7px; border-radius: 5px; margin-left: 2px;
 }
-.sh-tag-away, .sh-tag-venue.is-away { color: var(--accent); background: var(--accent-soft); }
+.sh-tag-away, .sh-tag-venue.is-away { color: var(--accent-ink); background: var(--accent-soft); }
 .sh-tag-venue.is-home { color: var(--text-2); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
 
 /* ── Card base ── */
@@ -426,7 +429,7 @@
 .sh-hero-kicker {
   display: inline-flex; align-items: center; white-space: nowrap;
   font-family: var(--font-head); font-weight: 700; font-size: 12px;
-  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent);
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent-ink);
 }
 .sh-hero-when-pill {
   font-family: var(--font-head); font-weight: 700; font-size: 12px; letter-spacing: .4px; white-space: nowrap;
@@ -462,7 +465,7 @@
   background: color-mix(in oklab, var(--accent) 14%, rgba(255,255,255,.04));
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
-.sh-complockup-big { font-family: var(--font-head); font-weight: 900; font-size: 30px; color: var(--accent); letter-spacing: -1px; }
+.sh-complockup-big { font-family: var(--font-head); font-weight: 900; font-size: 30px; color: var(--accent-ink); letter-spacing: -1px; }
 .sh-complockup-sub { font-family: var(--font-head); font-weight: 700; font-size: 12px; line-height: 1.2; color: var(--text-2); letter-spacing: .3px; }
 .sh-hero-expand {
   position: relative; z-index: 1; width: 100%;
@@ -495,7 +498,7 @@
   padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border);
   background: var(--surface); color: var(--text-2); font-weight: 600; font-size: 13.5px;
 }
-.sh-comp-select .sh-icon:first-child { color: var(--accent); }
+.sh-comp-select .sh-icon:first-child { color: var(--accent-ink); }
 .sh-comp-select .sh-icon:last-child { color: var(--text-3); }
 .sh-filter-divider { height: 1px; background: var(--border); margin: 10px 0; }
 .sh-segmented {
@@ -762,7 +765,7 @@
   font-family: var(--font-head); font-weight: 700; font-size: 11px; letter-spacing: 1px;
   text-transform: uppercase; color: var(--text-3); white-space: nowrap;
 }
-.sh-detail-head .sh-icon, .sh-detail-head svg { color: var(--accent); }
+.sh-detail-head .sh-icon, .sh-detail-head svg { color: var(--accent-ink); }
 .sh-form-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
 .sh-form-team { flex: 1; font-weight: 600; font-size: 14px; color: var(--text-2); }
 .sh-empty {
@@ -781,7 +784,7 @@
   transition: all .15s;
 }
 .sh-addcal:hover { background: var(--accent-soft); border-color: color-mix(in oklab, var(--accent) 45%, transparent); }
-.sh-addcal .sh-icon { color: var(--accent); }
+.sh-addcal .sh-icon { color: var(--accent-ink); }
 /* Disabled "coming soon" state — Add to calendar has no handler yet (Phase B · Step 5). */
 .sh-addcal:disabled { opacity: .5; cursor: default; }
 .sh-addcal:disabled:hover { background: var(--surface); border-color: var(--border-strong); }
@@ -903,14 +906,14 @@
 }
 .sh-verdict-label {
   font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
-  color: var(--accent); font-style: normal; display: flex; align-items: center; gap: 5px; margin-bottom: 8px;
+  color: var(--accent-ink); font-style: normal; display: flex; align-items: center; gap: 5px; margin-bottom: 8px;
 }
 
 /* ── Sidebar ── */
 .sh-sidebar { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 18px; }
 .sh-card-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
 .sh-card-head-label { font-family: var(--font-head); font-weight: 700; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--text-2); }
-.sh-edit-link { margin-left: auto; border: none; background: none; color: var(--accent); font-weight: 600; font-size: 12.5px; }
+.sh-edit-link { margin-left: auto; border: none; background: none; color: var(--accent-ink); font-weight: 600; font-size: 12.5px; }
 
 /* calendar */
 .sh-cal { padding: 16px 18px; }
@@ -964,7 +967,7 @@
 }
 .sh-standings td.pct { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-2); }
 .sh-standings tr.is-mine td { background: var(--accent-soft); }
-.sh-standings tr.is-mine .sh-stand-team { color: var(--accent); font-weight: 700; }
+.sh-standings tr.is-mine .sh-stand-team { color: var(--accent-ink); font-weight: 700; }
 .sh-standings tr.is-mine td:first-child { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
 /* Hue-independent "this is mine" signal (Phase B · Step 3) — reads even for near-black
    brands where the accent-soft tint + accent name go muddy. Only affects `.sh-standings`. */
@@ -1036,7 +1039,7 @@
 .sh-home-banner-body { position: relative; z-index: 1; }
 .sh-home-banner-kicker {
   font-family: var(--font-head); font-weight: 700; font-size: 11px;
-  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent);
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent-ink);
   margin-bottom: 8px; display: block;
 }
 .sh-home-banner-title {
@@ -1054,7 +1057,7 @@
   letter-spacing: 1.1px; text-transform: uppercase; color: var(--text);
 }
 .sh-home-section-link {
-  font-size: 13px; font-weight: 600; color: var(--accent);
+  font-size: 13px; font-weight: 600; color: var(--accent-ink);
   border: none; background: none; padding: 0;
 }
 .sh-home-block { margin-bottom: 28px; }
@@ -1112,9 +1115,20 @@
    value's place in the hierarchy; (3) surface/wash/glass/bracket art
    adaptations. Regenerate the remap block if new variants appear. */
 
+
+/* ── Accent ink ──────────────────────────────────────────────────────────────
+ * Brand hexes are chosen for jerseys, not for type: an audit of all 255 teams
+ * found none that clears WCAG AA as text in BOTH themes (yellows/cyans/silvers
+ * vanish on light, blacks/navies vanish on dark). accentVars() in lib/team-ink.ts
+ * emits --accent-ink-l / --accent-ink-d alongside --accent; --accent-ink picks
+ * the one for the current theme, so the navbar toggle swaps ink with no
+ * recompute. Paint TEXT and ICONS with --accent-ink; --accent stays the brand
+ * colour for fills, borders, glows and tints, where contrast does not apply.
+ * The fallback keeps --accent working for any element not yet migrated. */
 [data-theme='light'] {
   color-scheme: light;
   --accent: #6d3ee0; --accent-2: #7c4fe8;
+  --accent-ink: var(--accent-ink-l, var(--accent));
   --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
   --on-accent: #ffffff;
   --surface: rgba(25,19,37,0.05); --surface-2: rgba(25,19,37,0.08);
@@ -1147,6 +1161,7 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
 [data-theme='light'] .glass-hero { box-shadow: 0 24px 60px rgba(60,30,110,0.12), inset 0 1px 0 rgba(255,255,255,0.8); }
 [data-theme='light'] .sh-theme {
   --bg: #f4f1f8;
+  --accent-ink: var(--accent-ink-l, var(--accent));
   --surface: rgba(25,19,37,0.05); --surface-2: rgba(25,19,37,0.08);
   --border: rgba(25,19,37,0.12); --border-strong: rgba(25,19,37,0.22);
   --text: #191325; --text-2: #4d4460; --text-3: #6f6683;

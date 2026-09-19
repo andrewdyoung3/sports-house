@@ -17,6 +17,7 @@
  */
 
 import { TEAMS } from '@/lib/teams';
+import { accentVars } from '@/lib/team-ink';
 import type { SportKey, StandingRow } from '@/types';
 
 interface LeagueTableShProps {
@@ -38,7 +39,7 @@ export function LeagueTableSh({ league, rows, followedTeamIds, compColor, compSh
   // Per-row "mine" accent = that team's own colour (looked up from the canonical list).
   const mineAccent = (teamId?: string) => {
     const c = teamId ? TEAMS.find(t => t.id === teamId)?.primaryColor : undefined;
-    return c ? ({ '--accent': c } as React.CSSProperties) : undefined;
+    return c ? (accentVars(c) as React.CSSProperties) : undefined;
   };
 
   return (

@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { contrastRatio } from '@/lib/team-ink';
 
 /** Merge Tailwind classes without conflicts. */
 export function cn(...inputs: ClassValue[]) {
@@ -35,15 +36,19 @@ export function timeAgo(iso: string): string {
 
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
-/** Return a contrasting text color (black or white) for a given hex background. */
+/**
+ * Return the more readable of black/white for text ON a hex fill (team badges,
+ * accent buttons, "today" calendar cells).
+ *
+ * This used to threshold the perceived-brightness average (0.299R+0.587G+0.114B
+ * > 0.5), mislabelled as the WCAG formula. That is not gamma-correct and it
+ * mispicked for 23 of the 181 team colours — the mid blues and greens worst of
+ * all: Melbourne Stars #00B140 took white at 2.85:1 where black gives 7.36:1.
+ * Now it computes the real WCAG contrast both ways and returns the winner.
+ */
 export function contrastColor(hex: string): string {
   if (!HEX_RE.test(hex)) return '#ffffff';
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  // WCAG luminance formula
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#000000' : '#ffffff';
+  return contrastRatio('#000000', hex) >= contrastRatio('#ffffff', hex) ? '#000000' : '#ffffff';
 }
 
 /**

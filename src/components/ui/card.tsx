@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 import type { HTMLAttributes, CSSProperties } from 'react';
 
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
@@ -20,7 +21,7 @@ export function Card({ className, accentColor, style, children, ...props }: Card
         ...(accentColor ? {
           borderTopColor: accentColor,
           borderTopWidth: '3px',
-          '--accent': accentColor,
+          ...accentVars(accentColor),
         } : {}),
         ...style,
       } as CSSProperties}

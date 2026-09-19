@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { datekeyInZone, formatTimeInZone } from '@/lib/utils';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { TEAM_LOGOS } from '@/lib/team-logos';
+import { accentVars } from '@/lib/team-ink';
 import type { Team, UpcomingGame, GameResult } from '@/types';
 
 type ScheduleEntry  = UpcomingGame & { team: Team };
@@ -253,7 +254,7 @@ export function ScheduleCalendar({
                     </span>
                     <span
                       className="text-[10px] font-bold shrink-0 leading-none"
-                      style={{ color: game.team.primaryColor }}
+                      style={{ ...accentVars(game.team.primaryColor), color: 'var(--accent-ink)' }}
                     >
                       {formatTimeInZone(game.date, userTz)}
                     </span>

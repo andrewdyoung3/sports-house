@@ -4,6 +4,7 @@ import type { UpcomingGame } from '@/types';
 import { Tv } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { formatGameDate, formatTimeInZone } from '@/lib/utils';
+import { accentVars } from '@/lib/team-ink';
 
 interface GameCardProps {
   game: UpcomingGame;
@@ -21,7 +22,7 @@ export function GameCard({ game, teamColor, teamShortName, compLabel, userTz }: 
   return (
     <div
       className="sh-tile"
-      style={{ '--accent': teamColor } as React.CSSProperties}
+      style={accentVars(teamColor) as React.CSSProperties}
     >
       {/* Comp row: opponent badge + competition / league label */}
       <div className="sh-tile-comp">
