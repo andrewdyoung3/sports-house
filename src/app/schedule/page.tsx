@@ -494,23 +494,25 @@ function ScheduleRow({
     );
   }
 
+  // F1 rows previously used the legacy `.glass` utility while every other
+  // league used the design-system `.sh-fix` card — different surface, border,
+  // radius, padding and hover behaviour, which is why they read as a different
+  // component. They now share `.sh-fix` (token surface, accent left edge, hover
+  // glow); only the INNER layout stays F1-specific (GP headline, no matchup).
   return (
     <div
-      className={[
-        'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer min-h-[84px]',
-        'transition-all duration-300 ease-out select-none',
-        isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
-      ].join(' ')}
+      className={'sh-fix cursor-pointer select-none' + (isExpanded ? ' is-open' : '')}
       style={{
-        borderLeftColor: isFollowed ? team.primaryColor : `${team.primaryColor}cc`,
-        borderLeftWidth: isFollowed ? '3px' : '3px',
-        transition: 'box-shadow 0.4s ease-out',
+        '--accent': team.primaryColor,
+        minHeight: '84px',
+        // Followed/hovered rows keep their extra team-colour lift on top of the
+        // card's own hover glow.
         boxShadow: isFollowed && !isExpanded
           ? `inset 0 0 0 1px ${team.primaryColor}30, 0 0 32px ${team.primaryColor}28`
           : isHighlighted && !isExpanded
             ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
             : undefined,
-      }}
+      } as React.CSSProperties}
       onClick={() => onToggle(game.id)}
       onMouseEnter={() => onHover(dateKey)}
       onMouseLeave={() => onHover(null)}

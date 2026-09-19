@@ -207,20 +207,18 @@ function ResultRow({
   // ── Step 8 — F1 gate: keep the original render for F1 results ─────────────────
   // The two-team .sh-fix path below handles all other leagues (AFL, NRL, EPL, cricket…).
   if (team.league === 'f1') {
+    // Shares the design-system .sh-fix card with every other league (see the
+    // schedule row note) — only the inner layout is F1-specific.
     return (
       <div
-        className={[
-          'relative overflow-hidden flex items-center gap-4 glass px-4 py-4 cursor-pointer min-h-[84px]',
-          'transition-all duration-300 ease-out select-none',
-          isExpanded ? 'rounded-t-2xl' : 'rounded-2xl',
-        ].join(' ')}
+        className={'sh-fix cursor-pointer select-none' + (isExpanded ? ' is-open' : '')}
         style={{
-          borderLeftColor: `${team.primaryColor}cc`,
-          borderLeftWidth: '3px',
+          '--accent': team.primaryColor,
+          minHeight: '84px',
           boxShadow: isHighlighted && !isExpanded
             ? `inset 0 0 0 1px ${team.primaryColor}28, 0 0 40px ${team.primaryColor}22`
             : undefined,
-        }}
+        } as React.CSSProperties}
         onClick={onToggle}
         onMouseEnter={() => onHover(dateKey)}
         onMouseLeave={() => onHover(null)}
