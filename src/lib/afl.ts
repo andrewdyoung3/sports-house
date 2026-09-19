@@ -63,3 +63,28 @@ export const AFL_TEAM_BY_SQUIGGLE: Record<string, AflTeamEntry> = (() => {
   }
   return out;
 })();
+
+
+/**
+ * Squiggle occasionally carries TWO live records for the same match: the finals
+ * bracket pre-allocates a slot (placeholder start time and home side) and a
+ * second record appears once the fixture is scheduled for real. Both remain in
+ * the feed with identical teams and date — which surfaced as a duplicated 2026
+ * Grand Final (Brisbane home 19:20 alongside Fremantle home 14:30).
+ *
+ * Keeps one record per matchup+day: the most recently updated, tie-broken by
+ * the newer record id. Every AFL consumer must run its raw `games` array
+ * through this before mapping.
+ */
+export function dedupeSquiggleGames<T extends Record<string, unknown>>(games: T[]): T[] {
+  const canonical = new Map<string, T>();
+  for (const g of games) {
+    if (!g?.hteam || !g?.ateam || !g?.date) continue;
+    const key = [String(g.hteam), String(g.ateam)].sort().join('|') + '·' + String(g.date).slice(0, 10);
+    const prev = canonical.get(key);
+    if (!prev) { canonical.set(key, g); continue; }
+    const gu = String(g.updated ?? ''), pu = String(prev.updated ?? '');
+    if (gu > pu || (gu === pu && Number(g.id) > Number(prev.id))) canonical.set(key, g);
+  }
+  return Array.from(canonical.values());
+}

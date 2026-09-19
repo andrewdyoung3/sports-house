@@ -15,7 +15,7 @@ import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, espnMonthParams, aestDisplay, unknownTeam, fetchESPNScoreboard } from '@/lib/espn';
-import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM } from '@/lib/afl';
+import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM, dedupeSquiggleGames } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
 import { fetchLeagueFixtures } from '@/lib/league-fixtures';
 import { TEAMS } from '@/lib/teams';
@@ -60,7 +60,9 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
   // visible during the game) and are not yet complete.
   const twoHoursAgo = now - 2 * 3600 * 1000;
 
-  return (games as any[])
+  // dedupeSquiggleGames: the feed can hold two records for one match (see the
+  // helper) — without this the Grand Final appeared twice in the schedule.
+  return dedupeSquiggleGames(games as any[])
     .filter(g =>
       (g.hteam === sqName || g.ateam === sqName) &&
       g.complete < 100 &&

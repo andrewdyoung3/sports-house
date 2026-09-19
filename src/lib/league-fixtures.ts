@@ -18,7 +18,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
 import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat, espnMonthParams, fetchESPNScoreboard } from '@/lib/espn';
-import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS } from '@/lib/afl';
+import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS , dedupeSquiggleGames } from '@/lib/afl';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, cricSeriesSearch, type CricMatch } from '@/lib/cricketdata';
 import { INTL_TEAM_COUNTRY, resolveIntlVenueStatus, countryFromVenueString, type IntlVenueStatus } from '@/lib/international';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
@@ -48,7 +48,7 @@ export async function fetchAFLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
   const lookbackMs = lookbackDays * 86400_000;
   const seen       = new Set<string>();
 
-  return (games as any[])
+  return dedupeSquiggleGames(games as any[])
     .filter(g => {
       const t         = g.unixtime * 1000;
       const isComplete = Number(g.complete) >= 100;
