@@ -7,7 +7,7 @@
 
 import {
   decideForTeam,
-  SETTLE_BUFFER_HOURS,
+  POST_MATCH_GRACE_MIN,
   LOOKAHEAD_DAYS,
   type TaggedFixture,
 } from '@/lib/preview-lifecycle';
@@ -59,23 +59,24 @@ function assert(
 
 console.log('\ndecideForTeam() — 7 cases\n');
 
-// 1. Prior completed SETTLE_BUFFER + 1h ago, no preview → initial
+// 1. Prior completed, grace elapsed, no preview → initial (fires ~20 min after
+//    the feed closes out the previous game, not hours later)
 {
-  const prior  = fix('prior-1', -(SETTLE_BUFFER_HOURS + 1) * H, true);
+  const prior  = fix('prior-1', -(POST_MATCH_GRACE_MIN + 10) * 60_000, true);
   const next   = fix('next-1',  3 * D);
   assert(
-    '1. buffer elapsed → initial',
+    '1. grace elapsed → initial',
     decideForTeam(TEAM, [prior, next], new Map(), NOW),
     'initial',
   );
 }
 
-// 2. Prior completed SETTLE_BUFFER − 1h ago, no preview → null
+// 2. Prior flagged complete implausibly early (inside the grace) → null
 {
-  const prior = fix('prior-2', -(SETTLE_BUFFER_HOURS - 1) * H, true);
+  const prior = fix('prior-2', -(POST_MATCH_GRACE_MIN - 10) * 60_000, true);
   const next  = fix('next-2',  3 * D);
   assert(
-    '2. inside buffer → null',
+    '2. inside grace → null',
     decideForTeam(TEAM, [prior, next], new Map(), NOW),
     null,
   );

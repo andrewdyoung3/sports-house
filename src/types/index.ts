@@ -445,6 +445,13 @@ export interface AIPreview {
   /** 3–4 short punchy tactical or contextual insights. */
   keyInsights: string[];
   /**
+   * Generated before either team list was published (AFL name ~Thursday, NRL
+   * Tuesday), so it leans on form, ladder and stakes rather than personnel.
+   * The 48h/24h regens clear it once squads land. UI surfaces it as a badge so
+   * a thinner preview reads as timing, not as a failure.
+   */
+  firstLook?: boolean;
+  /**
    * "From the media" — attributed editorial talking points sourced from the
    * fetched news headlines, model tips, and expected-lineup framing. Every entry
    * is presented as reporting or opinion ("[Outlet] reports…", "The tipsters

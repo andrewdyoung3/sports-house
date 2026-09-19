@@ -53,9 +53,11 @@
     <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; source "$NVM_DIR/nvm.sh" || export PATH="/Users/andreasjenkins/.nvm/versions/node/v20.20.2/bin:$PATH"; cd /Users/andreasjenkins/Documents/SportHouse &amp;&amp; npm run warm</string>
   </array>
 
-  <!-- Fire every hour. -->
+  <!-- Every 15 min: the lifecycle now triggers off the previous game's
+       completion flag, so polling hourly would add up to an hour of
+       latency to a ~20-minute trigger. Idle runs exit in under a second. -->
   <key>StartInterval</key>
-  <integer>3600</integer>
+  <integer>900</integer>
 
   <key>WorkingDirectory</key>
   <string>/Users/andreasjenkins/Documents/SportHouse</string>

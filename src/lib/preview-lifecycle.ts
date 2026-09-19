@@ -9,7 +9,16 @@
 
 import type { UpcomingGame } from '@/types';
 
-export const SETTLE_BUFFER_HOURS = 4;
+/**
+ * Grace measured from the prior fixture's kickoff before its successor's
+ * preview may be generated. The real trigger is that fixture's `completed`
+ * flag (the candidate is selected from completed fixtures only); this window
+ * just guards against a feed flagging completion implausibly early. Replaced
+ * the old 4h-from-kickoff settle buffer, which delayed previews ~75 min past
+ * full time for no data gain — verified: Squiggle flips `complete` within
+ * minutes of the siren and recalculates the ladder immediately.
+ */
+export const POST_MATCH_GRACE_MIN = 20;
 export const REGEN_MARKS_HOURS   = [48, 24] as const;
 export const LOOKAHEAD_DAYS      = 14;
 export const LOOKBACK_DAYS       = 3;
@@ -24,7 +33,7 @@ export interface TaggedFixture extends UpcomingGame {
  *
  * Rules (in order):
  *   1. Find the team's next upcoming fixture within LOOKAHEAD_DAYS.
- *   2. No preview row → initial gen (gated by settle buffer; season openers skip gate).
+ *   2. No preview row → initial gen (once the prior fixture is complete; season openers skip the gate).
  *   3. Preview exists → regen at 48 h and 24 h marks before kickoff (each fires once).
  *   4. Otherwise → null (nothing to do).
  *
@@ -65,8 +74,12 @@ export function decideForTeam(
     // Season opener or no prior completed fixture found — generate immediately
     if (!prior) return { fixture: next, action: 'initial' };
 
-    // Wait for SETTLE_BUFFER_HOURS after the prior fixture's kickoff time
-    if (now >= new Date(prior.date).getTime() + SETTLE_BUFFER_HOURS * 3600_000)
+    // `prior` is by definition the most recent COMPLETED fixture, so the feed
+    // has already closed out this team's last game — result, ladder and form
+    // are in (verified: Squiggle flips `complete` within minutes of the siren
+    // and recalculates the ladder immediately). Only feed lag needs covering,
+    // so the gate is a short grace rather than the old kickoff + 4h window.
+    if (now >= new Date(prior.date).getTime() + POST_MATCH_GRACE_MIN * 60_000)
       return { fixture: next, action: 'initial' };
 
     return null; // still inside settle window

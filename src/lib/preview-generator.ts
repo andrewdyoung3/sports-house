@@ -1515,11 +1515,19 @@ export async function generateAndStorePreview(
 
     if (isValidPreview(preview)) {
       const newsFingerprint = computeNewsFingerprint(ctx);  // DAT-3
-      await upsertPreview(fixture.id, preview, AI_MODEL, newsFingerprint);
+      // FIRST LOOK: generated before either side's team list is published
+      // (AFL name ~Thursday, NRL Tuesday), so the richest personnel content is
+      // absent by timing, not by failure. Stamped on the payload so the UI can
+      // say so; the 48h/24h regens overwrite it once squads land.
+      const stamped: AIPreview = {
+        ...preview,
+        firstLook: !collectPlayerWhitelist(prompt).hasPlayerData || undefined,
+      };
+      await upsertPreview(fixture.id, stamped, AI_MODEL, newsFingerprint);
       // Representative games (State of Origin) key per perspective on the display
       // side — upsert the SAME payload under the mirror key(s) so both resolve.
       for (const mirrorId of fixture.mirrorGameIds ?? []) {
-        await upsertPreview(mirrorId, preview, AI_MODEL, newsFingerprint);
+        await upsertPreview(mirrorId, stamped, AI_MODEL, newsFingerprint);
       }
       return { ok: true };
     }

@@ -1329,7 +1329,14 @@ function GameExpandPanelInner({ game, className, compact = false, onStandingsUpd
       {aiEnabled && !aiLoading && (
         aiPreview?.context ? (
           <div>
-            <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Preview</div>
+            <div className="sh-detail-head">
+              <Zap className="sh-icon h-[13px] w-[13px]" />Match Preview
+              {aiPreview.firstLook && (
+                <span className="sh-firstlook" title="Written before team lists were published — refreshed once squads are named">
+                  First look
+                </span>
+              )}
+            </div>
             {aiUpdating && (
               <p className="text-[9px] text-white/20 uppercase tracking-widest flex items-center gap-1 mb-1.5">
                 <Loader2 className="h-2.5 w-2.5 animate-spin" />
