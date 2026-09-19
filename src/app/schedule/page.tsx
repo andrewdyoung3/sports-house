@@ -1107,8 +1107,14 @@ export default function SchedulePage() {
     // pair + day) — id equality across the two sources is not guaranteed, and
     // relying on it let a canonical league copy shadow the followed-team copy.
     if (!isLeagueMode && activeTeamId === 'all' && followedLeagues.length > 0) {
+      // Perspective-independent identity for a fixture. F1 is the exception:
+      // several sessions of one weekend share team + circuit + DAY (FP1/FP2,
+      // FP3/qualifying), so a team+opponent+date key silently swallowed them —
+      // F1 sessions are distinct fixtures and key on their own id.
       const pairKey = (g: ScheduleEntry) =>
-        [g.team.id, g.opponentId ?? g.opponent].sort().join('|') + '·' + g.date.slice(0, 10);
+        g.team.league === 'f1'
+          ? `id:${g.id}`
+          : [g.team.id, g.opponentId ?? g.opponent].sort().join('|') + '·' + g.date.slice(0, 10);
       const seen = new Set(allGames.map(pairKey));
       const extra: ScheduleEntry[] = [];
       for (const lg of followedLeagues) {
