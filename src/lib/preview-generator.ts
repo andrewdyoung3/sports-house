@@ -576,6 +576,9 @@ const SPORT_BANNED_PHRASES: Array<{ re: RegExp; bannedIn: string[]; why: string 
   { re: /\bladder\b/gi,
     bannedIn: ['nba', 'epl'],
     why: 'this sport does not use "ladder" — NBA says "the standings", the EPL says "the Table"' },
+  { re: /\bpitch\b/gi,
+    bannedIn: ['afl'],
+    why: 'AFL is played on a GROUND or OVAL — "pitch" is football/cricket vocabulary' },
 ];
 const SPORT_MARKER_TERMS: Array<{ re: RegExp; sports: string[]; family: string }> = [
   { re: /\binside[- ]50s?\b|\bcentre bounces?\b|\bpremiership quarter\b|\bbehinds\b/gi, sports: ['afl'], family: 'AFL' },
@@ -1058,6 +1061,192 @@ export function validateSeriesClaims(output: AIPreview, prompt: string): string[
   return violations;
 }
 
+// ─── Form / meeting claim validators ─────────────────────────────────────────
+// Parse the RECENT FORM block once: per team, the W/L/D string and the named
+// results ("def. Hawthorn 131–122; lost to Sydney 88–141"). Both validators
+// below bind prose claims to exactly these tokens.
+type FormFacts = { runs: string[]; byOpponent: Map<string, Set<'W' | 'L' | 'D'>> };
+function parseFormFacts(prompt: string): FormFacts | null {
+  const start = prompt.indexOf('RECENT FORM');
+  if (start < 0) return null;
+  const section = prompt.slice(start, prompt.indexOf('\n\n', start) === -1 ? undefined : prompt.indexOf('\n\n', start));
+  const runs: string[] = [];
+  const byOpponent = new Map<string, Set<'W' | 'L' | 'D'>>();
+  for (const line of section.split('\n').slice(1)) {
+    const m = line.match(/^\s*.+?:\s*([WLD](?:-[WLD])*)\s*(?:—\s*(.*))?$/);
+    if (!m) continue;
+    runs.push(m[1].replace(/-/g, ''));
+    for (const entry of (m[2] ?? '').split(';')) {
+      const e = entry.trim().match(/^(def\.|lost to|drew with)\s+(.+?)\s+\d+\s*[–-]\s*\d+$/);
+      if (!e) continue;
+      const res: 'W' | 'L' | 'D' = e[1] === 'def.' ? 'W' : e[1] === 'lost to' ? 'L' : 'D';
+      const key = e[2].toLowerCase();
+      byOpponent.set(key, new Set([...(byOpponent.get(key) ?? []), res]));
+    }
+  }
+  return runs.length > 0 ? { runs, byOpponent } : null;
+}
+const toNum = (w: string) => parseInt(WORD_NUM[w.toLowerCase()] ?? w, 10);
+
+/**
+ * "N straight / consecutive / in a row" must be a run that actually exists in
+ * a RECENT FORM string. Closes the ≤5 numeral exemption for this claim class:
+ * "4 straight before the Prelim" was invented against a W-W-L-W-W line.
+ */
+export function validateFormRuns(output: AIPreview, prompt: string): string[] {
+  const facts = parseFormFacts(prompt);
+  if (!facts) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const runRe = /\b(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:straight|consecutive|successive|on the (?:trot|bounce|spin)|in a row)(?:\s+(wins?|victories|losses|defeats))?|\b(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten)[- ](?:game|match)\s+(winning|losing|unbeaten)\s+(?:streak|run)|\b(winning|losing|unbeaten)\s+(?:streak|run)\s+of\s+(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten)\b|\b(won|lost)\s+(\d{1,2}|two|three|four|five|six|seven|eight|nine|ten)\s+(?:straight|consecutive|successive|in a row|on the (?:trot|bounce))/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(runRe)) {
+    const n = toNum(m[1] ?? m[3] ?? m[6] ?? m[8] ?? '0');
+    if (!Number.isFinite(n) || n < 2) continue;
+    const kindWord = (m[2] ?? m[4] ?? m[5] ?? m[7] ?? '').toLowerCase();
+    const letters: Array<'W' | 'L'> =
+      /^(win|victor|won|unbeaten)/.test(kindWord) ? ['W'] : /^(los|defeat)/.test(kindWord) ? ['L'] : ['W', 'L'];
+    const exists = facts.runs.some(run => letters.some(ch => run.includes(ch.repeat(n))));
+    if (exists) continue;
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`form-run claim "${m[0].slice(0, 50)}" — no such run exists in RECENT FORM (${facts.runs.join(' / ')}); describe only runs that appear in the form strings`);
+  }
+  return violations;
+}
+
+/**
+ * A named past result must point the way the form block says. "successive
+ * losses to Sydney and Hawthorn" was written against a line reading
+ * "def. Hawthorn … lost to Sydney". Only opponents that appear in the RECENT
+ * FORM entries are checked (either team's); anything else is out of scope.
+ * Past-tense forms only — bare "beat" is skipped as it doubles as a conditional.
+ */
+export function validateResultDirection(output: AIPreview, prompt: string): string[] {
+  const facts = parseFormFacts(prompt);
+  if (!facts || facts.byOpponent.size === 0) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const NAME = String.raw`((?:the\s+)?[A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){0,2})`;
+  const claimRe = new RegExp(
+    String.raw`\b(lost to|fell to|(?:were |was )?beaten by|(?:were |was )?defeated by|went down to|loss(?:es)? (?:to|against)|defeats? (?:to|against|by)|defeated|overcame|got past|accounted for|saw off|edged|thrashed|toppled|wins? (?:over|against)|victor(?:y|ies) (?:over|against))\s+${NAME}(?:(?:,|\s+and)\s+${NAME})?`,
+    'g',
+  );
+  const lossVerb = /^(lost to|fell to|(?:were |was )?beaten by|(?:were |was )?defeated by|went down to|loss(?:es)? |defeats? )/;
+  const lookup = (raw: string): Set<'W' | 'L' | 'D'> | undefined => {
+    const n = raw.replace(/^the\s+/i, '').replace(/[.,'’]+$/, '').toLowerCase();
+    for (const [key, set] of facts.byOpponent) {
+      if (key === n || key.startsWith(n + ' ') || n.startsWith(key + ' ')) return set;
+    }
+    return undefined;
+  };
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(claimRe)) {
+    const claimed: 'W' | 'L' = lossVerb.test(m[1].toLowerCase()) ? 'L' : 'W';
+    for (const name of [m[2], m[3]].filter(Boolean) as string[]) {
+      const recorded = lookup(name);
+      if (!recorded || recorded.has(claimed)) continue;
+      const hit = `${m[1]} ${name}`.toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`result direction "${m[1]} ${name.replace(/[.,]+$/, '')}" contradicts RECENT FORM, which records only ${[...recorded].join('/')} against ${name.replace(/^the\s+/i, '').replace(/[.,]+$/, '')} — state results exactly as the form block gives them`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * With a HEAD-TO-HEAD block present, the most recent meeting has a stated
+ * winner ("Most recently, Brisbane Lions lost" / "… lost in that single
+ * meeting"). A sentence that frames a past meeting AND assigns a win/loss to
+ * either side must agree with it. Subject detection is by team-name token
+ * ("Brisbane"/"Lions"), so nickname-only prose ("the Dockers") is out of scope.
+ */
+function validateH2HDirection(factual: string, prompt: string): string[] {
+  const fx = prompt.match(/^FIXTURE:\s*(.+?)\s+(?:vs?\.?|v)\s+(.+?)\s*$/m);
+  const last = prompt.match(/(?:Most recently, |no scores, years or dates are given\): )(.+?) (won|lost|drew)\b/);
+  if (!fx || !last || last[2] === 'drew') return [];
+  const [, homeName, awayName] = fx;
+  const statedTeam = last[1].trim();
+  const teamIsHome = homeName.toLowerCase().startsWith(statedTeam.toLowerCase()) || statedTeam.toLowerCase().startsWith(homeName.toLowerCase());
+  const team = teamIsHome ? homeName : awayName;
+  const opp  = teamIsHome ? awayName : homeName;
+  const teamWon = last[2] === 'won';
+  const tokens = (n: string) => n.split(/\s+/).filter(w => w.length >= 4).map(w => w.replace(/[^A-Za-z]/g, ''));
+  const hasTok = (sentence: string, n: string) => tokens(n).some(t => new RegExp(`\\b${t}\\b`, 'i').test(sentence));
+  const cue = /\b(?:last time|most recent(?:ly)?|previous(?:ly)?|earlier this season|regular[- ]season|home-and-away|that (?:single )?meeting|this opponent|these sides|the two sides|in round \d+)\b/i;
+  const winRe  = /\b(?:won|beat|beaten|prevailed|defeated|got the better|edged|thrashed|overcame|accounted for|saw off|triumphed)\b/i;
+  const lossRe = /\b(?:lost|fell|went down|were beaten|was beaten|were defeated|was defeated|succumbed)\b/i;
+  const violations: string[] = [];
+  for (const sentence of factual.split(/(?<=[.!?])\s+/)) {
+    if (!cue.test(sentence)) continue;
+    const subjTeam = hasTok(sentence, team), subjOpp = hasTok(sentence, opp);
+    if (subjTeam === subjOpp) continue; // both or neither named: subject ambiguous
+    const subject = subjTeam ? team : opp;
+    const subjectWon = subjTeam ? teamWon : !teamWon;
+    // "X lost to Y" / "X were beaten by Y" → X lost; "X beat/defeated Y" → X won.
+    const claimsLoss = lossRe.test(sentence) || /\b(?:beaten|defeated)\s+by\b/i.test(sentence);
+    const claimsWin  = !claimsLoss && winRe.test(sentence);
+    if (!claimsLoss && !claimsWin) continue;
+    if (claimsLoss === !subjectWon) continue;
+    violations.push(`head-to-head direction "${sentence.trim().slice(0, 70)}" — the data block says ${team} ${teamWon ? 'won' : 'lost'} the most recent meeting; ${subject} did not ${claimsLoss ? 'lose' : 'win'} it`);
+  }
+  return violations;
+}
+
+/**
+ * Any framing of a past meeting between THESE two sides needs a HEAD-TO-HEAD
+ * block. With one meeting suppressed (old ≥2 gate), the model invented a
+ * regular-season result and reversed the winner.
+ */
+export function validateHeadToHeadClaims(output: AIPreview, prompt: string): string[] {
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  if (/HEAD-TO-HEAD/.test(prompt)) return validateH2HDirection(factual, prompt);
+  const h2hRe = /\b(?:last|previous|earlier|most recent|regular[- ]season|first)\s+(?:meeting|encounter|clash|contest|match-?up)s?\b[^.]{0,60}\b(?:season|these|the two|sides|teams|between)|\bhead[- ]to[- ]head\b|\b(?:lost to|beat|beaten|defeated|overcame|got past|edged|thrashed)\s+(?:this|the same|their|today's|tonight's|saturday's)\s+opponents?\b|\bthe last time (?:these|the two|both) (?:sides|teams|clubs) (?:met|played|clashed)\b|\b(?:met|meeting|meetings|clash(?:es)?)\b[^.]{0,30}\b(?:earlier this season|during the (?:regular|home-and-away) season|in the regular season)\b|\bpsychological (?:edge|hold)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(h2hRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`meeting claim "${m[0].slice(0, 60)}" — the data block has no HEAD-TO-HEAD section for this fixture; do not describe past meetings between these sides`);
+  }
+  return violations;
+}
+
+/**
+ * Ground dimensions are never in the data ("the MCG is wider" was invented and
+ * is dubious besides — Optus Stadium is longer). No block emits them, so any
+ * such claim is unsourced.
+ */
+export function validateVenueDimensions(output: AIPreview, prompt: string): string[] {
+  if (/\bDIMENSIONS\b/.test(prompt)) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const dimRe = /\b(?:ground|oval|pitch|surface|arena|field|stadium|[A-Z][A-Za-z.]+ (?:Stadium|Oval|Park|Arena|Ground))\b[^.]{0,30}\b(?:wider|narrower|longer|shorter|bigger|smaller|larger|dimensions|width|length|expansive|cavernous|tight confines)\b|\b(?:wider|narrower|longer|shorter|larger|bigger|more expansive)\b[^.]{0,25}\b(?:ground|oval|pitch|surface|playing (?:area|field)|dimensions)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(dimRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`venue-dimension claim "${m[0].slice(0, 60)}" — ground dimensions are not in the data; do not characterise the size or shape of the playing surface`);
+  }
+  return violations;
+}
+
 /**
  * Mid-round finality. When the data block reports the round still being
  * played (counted from the feed's own round identity — never inferred from
@@ -1286,6 +1475,10 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateDoubleChance(v, prompt),
     ...validateSeriesClaims(v, prompt),
     ...validateProvisionalLadder(v, prompt),
+    ...validateFormRuns(v, prompt),
+    ...validateResultDirection(v, prompt),
+    ...validateHeadToHeadClaims(v, prompt),
+    ...validateVenueDimensions(v, prompt),
   ];
 }
 

@@ -32,6 +32,10 @@ import {
   validateDoubleChance,
   validateSeriesClaims,
   validateProvisionalLadder,
+  validateFormRuns,
+  validateResultDirection,
+  validateHeadToHeadClaims,
+  validateVenueDimensions,
 } from '@/lib/preview-generator';
 
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
@@ -153,6 +157,10 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateDoubleChance(shaped, dataBlock),
     ...validateSeriesClaims(shaped, dataBlock),
     ...validateProvisionalLadder(shaped, dataBlock),
+    ...validateFormRuns(shaped, dataBlock),
+    ...validateResultDirection(shaped, dataBlock),
+    ...validateHeadToHeadClaims(shaped, dataBlock),
+    ...validateVenueDimensions(shaped, dataBlock),
     ...validateReviewOverlap(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

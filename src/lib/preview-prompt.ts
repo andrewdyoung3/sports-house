@@ -11,6 +11,7 @@ import { TEAMS } from '@/lib/teams';
 import { getCompetitionProfile } from '@/lib/competition-context';
 import { resolveCompetitionContext, finalsRoundDisplay, buildFinalsPathFacts, seasonThird } from '@/lib/competition-structure';
 import { COMP_RULES, finalsRoundForDate } from '@/lib/competition-rules';
+import { clubHonours, describeHonours, HONOURS_THROUGH } from '@/lib/club-honours';
 import { venueProfileLines } from '@/lib/cricket-venue-facts';
 import { deriveAngles } from '@/lib/angle-engine';
 
@@ -85,8 +86,19 @@ function classifyVenue(
   opponentId: string | undefined,
   isHome: boolean | undefined,
   venueNeutral?: boolean,
+  fixedVenueDecider = false,
 ): string {
   if (!venue) return '';
+
+  // A decider at a FIXED venue (AFL Grand Final at the MCG, NRL at Accor) is
+  // neutral by definition: the feed still labels one side "home" by seeding,
+  // and that label read literally produced "the Dockers' home-ground
+  // advantage" for a Fremantle side playing in Melbourne. Positive evidence
+  // here is the competition rules' decider flag, not a string match.
+  if (fixedVenueDecider) {
+    const designated = isHome === true ? teamName : isHome === false ? opponentName : undefined;
+    return `VENUE: ${venue} — NEUTRAL GROUND (the ${venue} hosts this decider regardless of who plays; ${designated ? `${designated} are the designated home side by seeding only — ` : ''}no home-ground advantage for either team)`;
+  }
 
   const teamHome = TEAM_HOME_VENUE[teamId]     ?? '';
   const oppHome  = TEAM_HOME_VENUE[opponentId ?? ''] ?? '';
@@ -1505,7 +1517,8 @@ export function buildDataBlock(
   const played      = context.teamStanding?.played ?? context.opponentStanding?.played;
 
   lines.push(`FIXTURE: ${teamName} vs ${opponentName}`);
-  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome, context.venueNeutral);
+  const fixedVenueDecider = finalsRoundForDate(league, context.fixtureDate)?.decider === true && league !== 'f1';
+  const venueLine = classifyVenue(venue, teamName, opponentName, teamId ?? '', opponentId, isHome, context.venueNeutral, fixedVenueDecider);
   if (venueLine) lines.push(venueLine);
   // Season record at this ground — grounds any venue-form claim ("fortress",
   // "performs well here"): validateVenueFormClaims rejects such claims when
@@ -1838,6 +1851,21 @@ export function buildDataBlock(
             pathFacts.forEach(f => lines.push(`  • ${f}`));
             lines.push('');
           }
+          // Decider only: the premiership record is the one history a Grand
+          // Final preview cannot do without (a drought, a first flag, a
+          // three-peat). Curated in club-honours.ts; never in the live feeds.
+          if (finalsRoundForDate(league, context.fixtureDate)?.decider === true) {
+            const honourLines = [
+              [teamName, clubHonours(league, teamId)] as const,
+              [opponentName, clubHonours(league, opponentId)] as const,
+            ].filter((pair): pair is readonly [string, NonNullable<ReturnType<typeof clubHonours>>] => pair[1] !== null)
+             .map(([name, h]) => `  • ${describeHonours(league, name, h)}`);
+            if (honourLines.length > 0) {
+              lines.push(`CLUB HONOURS (premiership record to the end of ${HONOURS_THROUGH[league]} — the ONLY verified history for this decider; use these numbers exactly, add nothing else from memory: no other years, finals, streaks or "last met in" claims):`);
+              lines.push(...honourLines);
+              lines.push('');
+            }
+          }
         } else {
           // Full table with mathematical status analysis
           const statusNotes = computeCompetitionStatus(league, context.leagueTable);
@@ -1945,6 +1973,15 @@ export function buildDataBlock(
       lines.push(`HEAD-TO-HEAD (matchup trend only — no scores, years or dates are given; use for context, do NOT recite a record):`);
       lines.push(`  Over the last ${h2h.length} meetings, ${trend}.`);
       lines.push(`  Most recently, ${teamName} ${lastVerb}${venueNote}.`);
+      lines.push('');
+    } else if (h2h.length === 1 && league !== 'f1') {
+      // ONE meeting this season is the common Grand Final case (sides from
+      // different halves of the draw). Left silent, the model invented a
+      // meeting and got the winner backwards. State the one fact, no trend.
+      const only = h2h[0];
+      const verb = only.result === 'D' ? 'drew' : only.result === 'W' ? 'won' : 'lost';
+      const venueNote = only.teamWasHome === true ? ' at home' : only.teamWasHome === false ? ' away' : '';
+      lines.push(`HEAD-TO-HEAD (the sides have met ONCE this season — no trend exists; no scores, years or dates are given): ${teamName} ${verb}${venueNote} in that single meeting.`);
       lines.push('');
     }
   }

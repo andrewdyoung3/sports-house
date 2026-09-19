@@ -31,6 +31,10 @@ import {
   validateDoubleChance,
   validateSeriesClaims,
   validateProvisionalLadder,
+  validateFormRuns,
+  validateResultDirection,
+  validateHeadToHeadClaims,
+  validateVenueDimensions,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -676,6 +680,96 @@ expect('invented F1 driver in spotlight is rejected',
     pl('Brisbane have secured second.', DONE).length === 0);
 }
 
+// ─── GF audit class: form runs / result direction / meetings / dimensions ──────
+// Live catches from the 2026 AFL GF preview (Brisbane v Fremantle, afl-39880).
+
+{
+  const FORM = 'RECENT FORM (last 5 fixtures, most recent first):\n  Brisbane Lions: W-W-L-W-W — def. Hawthorn 131–122; lost to Sydney 88–141; def. Geelong 98–72\n  Fremantle: W-W-W-L-L — def. Collingwood 110–75; def. Gold Coast 90–80; def. Adelaide 100–84\n\nOTHER BLOCK: x\n';
+  const fr = (t: string, p = FORM) => validateFormRuns(preview({ context: t }), p);
+  console.log('validateFormRuns:');
+  expect('live catch: "4 straight before the Prelim" rejected against W-W-L-W-W',
+    fr('Brisbane won 4 straight before the Prelim.').length > 0);
+  expect('"three consecutive wins" passes (Fremantle W-W-W)',
+    fr('Fremantle arrive on three consecutive wins.').length === 0);
+  expect('"two straight" passes (Brisbane W-W)',
+    fr('Brisbane have won two straight.').length === 0);
+  expect('"four-game winning streak" rejected (no WWWW anywhere)',
+    fr('A four-game winning streak has the Lions humming.').length > 0);
+  expect('"three-game losing run" rejected (Fremantle only L-L)',
+    fr('Fremantle snapped a three-game losing run.').length > 0);
+  expect('"two straight losses" passes (Fremantle L-L)',
+    fr('Fremantle recovered from two straight losses.').length === 0);
+  expect('no RECENT FORM block → validator silent',
+    fr('Brisbane won 9 straight.', 'LADDER: x').length === 0);
+  expect('"one straight" ignored (N<2)',
+    fr('one straight win').length === 0);
+
+  const rd = (t: string, p = FORM) => validateResultDirection(preview({ context: t }), p);
+  console.log('validateResultDirection:');
+  expect('live catch: "successive losses to Sydney and Hawthorn" rejected (they beat Hawthorn)',
+    rd('Brisbane overcame successive losses to Sydney and Hawthorn.').length > 0);
+  expect('"lost to Sydney" passes',
+    rd('Brisbane lost to Sydney in the qualifying final.').length === 0);
+  expect('"defeated Hawthorn" passes',
+    rd('Brisbane defeated Hawthorn in the preliminary final.').length === 0);
+  expect('"were beaten by Geelong" rejected (Brisbane def. Geelong)',
+    rd('The Lions were beaten by Geelong a fortnight ago.').length > 0);
+  expect('"win over Collingwood" passes (Fremantle def. Collingwood)',
+    rd('Fremantle\'s win over Collingwood was emphatic.').length === 0);
+  expect('"loss to Collingwood" rejected',
+    rd('Fremantle\'s loss to Collingwood still stings.').length > 0);
+  expect('opponent not in form block → skipped',
+    rd('Fremantle lost to Carlton back in round 3.').length === 0);
+  expect('"the Hawks" nickname not matched → skipped (no false positive)',
+    rd('Brisbane lost to the Hawks.').length === 0);
+  expect('bare "beat" is not checked (conditional usage)',
+    rd('If Brisbane beat Geelong they go through.').length === 0);
+
+  const NO_H2H = 'FIXTURE: Brisbane Lions vs Fremantle\n' + FORM;
+  const H2H = NO_H2H + 'HEAD-TO-HEAD (the sides have met ONCE this season — no trend exists; no scores, years or dates are given): Brisbane Lions lost in that single meeting.\n';
+  const hh = (t: string, p = NO_H2H) => validateHeadToHeadClaims(preview({ context: t }), p);
+  console.log('validateHeadToHeadClaims:');
+  expect('live catch: "Fremantle lost to this opponent during the regular season" rejected',
+    hh('Fremantle lost to this opponent during the regular season.').length > 0);
+  expect('"the last time these sides met" rejected without H2H',
+    hh('The last time these sides met Brisbane prevailed.').length > 0);
+  expect('"regular-season meeting between the two" rejected',
+    hh('The regular-season meeting between the two went to Fremantle.').length > 0);
+  expect('"head-to-head" rejected without H2H',
+    hh('The head-to-head favours Brisbane.').length > 0);
+  expect('"psychological edge" rejected without H2H',
+    hh('Fremantle hold a psychological edge.').length > 0);
+  expect('same claims pass WITH a HEAD-TO-HEAD block',
+    hh('The last time these sides met Fremantle prevailed.', H2H).length === 0);
+  expect('plain form prose passes ("lost to Sydney" is form, not H2H)',
+    hh('Brisbane lost to Sydney but rebounded against Hawthorn.').length === 0);
+  expect('live catch (inverted): "Fremantle lost to this opponent" rejected when H2H says Brisbane lost',
+    hh('Fremantle lost to this opponent during the regular season.', H2H).length > 0);
+  expect('correct direction passes: "Fremantle beat the Lions earlier this season"',
+    hh('Fremantle beat the Lions earlier this season.', H2H).length === 0);
+  expect('correct direction passes: "Brisbane lost that single meeting"',
+    hh('Brisbane lost that single meeting at the Gabba.', H2H).length === 0);
+  expect('inverted: "Brisbane prevailed the last time these sides met" rejected',
+    hh('Brisbane prevailed the last time these sides met.', H2H).length > 0);
+  expect('both sides named in one sentence → subject ambiguous, skipped',
+    hh('Fremantle and Brisbane met earlier this season and it was tight.', H2H).length === 0);
+
+  const vd = (t: string, p = FORM) => validateVenueDimensions(preview({ context: t }), p);
+  console.log('validateVenueDimensions:');
+  expect('live catch: "The MCG pitch is wider" rejected',
+    vd('The MCG pitch is wider than Optus Stadium.').length > 0);
+  expect('"wider ground" rejected',
+    vd('The wider ground suits their run-and-carry.').length > 0);
+  expect('"Optus Stadium is longer" rejected',
+    vd('Optus Stadium is longer and narrower.').length > 0);
+  expect('"the ground\'s dimensions" rejected',
+    vd('The ground\'s dimensions favour Fremantle.').length > 0);
+  expect('non-dimension venue prose passes',
+    vd('The MCG crowd will be overwhelmingly Victorian.').length === 0);
+  expect('"longer" unrelated to venue passes',
+    vd('Their forwards kick longer goals.').length === 0);
+}
+
 // ─── validateSeriesClaims — series narratives need SERIES data ─────────────────
 
 {
@@ -706,6 +800,10 @@ expect('invented F1 driver in spotlight is rejected',
     validateSportRegister(preview({ context: 'They top the ladder.' }), 'SPORT: NBA Basketball.\n').length > 0);
   expect('"ladder" fine in AFL register',
     validateSportRegister(preview({ context: 'They top the ladder.' }), 'SPORT: Australian Rules Football (AFL).\n').length === 0);
+  expect('live catch: "pitch" banned in AFL register',
+    validateSportRegister(preview({ context: 'The MCG pitch is wide.' }), 'SPORT: Australian Rules Football (AFL).\n').length > 0);
+  expect('"pitch" fine in EPL register',
+    validateSportRegister(preview({ context: 'A heavy pitch tonight.' }), 'SPORT: Association Football (EPL).\n').length === 0);
 }
 
 // ─── validateDoubleChance — structural, week-one-only framing ───────────────────
