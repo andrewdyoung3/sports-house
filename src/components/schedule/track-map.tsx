@@ -16,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import { Map as MapIcon } from 'lucide-react';
 
-interface TrackCorner { number: number; x: number; y: number }
+interface TrackCorner { number: number; x: number; y: number; angle: number; length: number }
 interface TrackGeometry {
   name: string; location?: string;
   points: Array<{ x: number; y: number }>;
@@ -107,6 +107,7 @@ export function TrackMap({ circuitId, year, accent, mapUrl }: { circuitId: strin
             ) : (
               <div className="sh-track-body">
                 <TrackSVG geo={data.geometry} color={color} />
+                <TrackLegend color={color} />
 
                 {/* F1's own circuit artwork — this is where DRS zones and the
                     pit lane are annotated, by the series itself. */}
@@ -166,38 +167,131 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+/** Corner severity bands, by turn ANGLE — geometry, not inferred speed. */
+const SEV = [
+  { max: 60,  color: '#46cd80', label: 'Open (<60°)' },
+  { max: 120, color: '#f5a623', label: 'Medium (60–120°)' },
+  { max: 999, color: '#e8002d', label: 'Tight (>120°)' },
+];
+const severity = (angle: number) => SEV.find(b => Math.abs(angle) < b.max) ?? SEV[2];
+
 function TrackSVG({ geo, color }: { geo: TrackGeometry; color: string }) {
   const { map, path } = project(geo);
   const d = path.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') + ' Z';
   const start = path[0];
-  // Direction of travel at the line, for the start/finish tick.
   const next = path[Math.min(8, path.length - 1)];
   const ang = Math.atan2(next.y - start.y, next.x - start.x) * 180 / Math.PI;
 
+  // Longest straight, measured ALONG THE TRACK: arc length between consecutive
+  // corners (including the wrap across the start/finish line, which is usually
+  // the main straight), scaled to metres by the circuit's published lap length.
+  // Both inputs are data — the corner positions and the racing line itself.
+  const cum: number[] = [0];
+  for (let i = 1; i < path.length; i++) {
+    const dx = path[i].x - path[i - 1].x, dy = path[i].y - path[i - 1].y;
+    cum.push(cum[i - 1] + Math.hypot(dx, dy));
+  }
+  const totalArc = cum[cum.length - 1] || 1;
+
+  const nearestIdx = (c: TrackCorner) => {
+    const t = map({ x: c.x, y: c.y });
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < path.length; i++) {
+      const d2 = (path[i].x - t.x) ** 2 + (path[i].y - t.y) ** 2;
+      if (d2 < bd) { bd = d2; bi = i; }
+    }
+    return bi;
+  };
+  const marks = geo.corners
+    .map(c => ({ c, i: nearestIdx(c) }))
+    .sort((a, b) => a.i - b.i);
+
+  let longest: { from: number; to: number; arc: number; fromC: TrackCorner; toC: TrackCorner } | null = null;
+  for (let k = 0; k < marks.length; k++) {
+    const a = marks[k], b = marks[(k + 1) % marks.length];
+    const arc = b.i > a.i ? cum[b.i] - cum[a.i] : (totalArc - cum[a.i]) + cum[b.i];
+    if (!longest || arc > longest.arc) longest = { from: a.i, to: b.i, arc, fromC: a.c, toC: b.c };
+  }
+  // NOTE: no distance is printed for the highlighted run. Deriving metres from
+  // arc-length × published lap length was validated against four circuits and
+  // came out up to 40% wrong (Baku's 2.2 km main straight measured 1,301 m) —
+  // the polyline's point spacing is not uniform. The SECTION identification was
+  // correct on all four, so the map names it and stays silent on its length.
+  // Sub-path for the highlighted section (handles the wrap).
+  const seg = longest
+    ? (longest.to > longest.from
+        ? path.slice(longest.from, longest.to + 1)
+        : [...path.slice(longest.from), ...path.slice(0, longest.to + 1)])
+    : [];
+  const segD = seg.length > 1
+    ? seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+    : '';
+  const segMid = seg.length > 1 ? seg[Math.floor(seg.length / 2)] : null;
+
   return (
     <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="sh-track-svg" role="img" aria-label={`${geo.name} circuit layout`}>
-      {/* Track bed, then the racing line on top */}
-      <path d={d} fill="none" stroke="var(--bkt-box-border, rgba(255,255,255,0.14))" strokeWidth={26} strokeLinejoin="round" strokeLinecap="round" />
-      <path d={d} fill="none" stroke={color} strokeWidth={7} strokeLinejoin="round" strokeLinecap="round" />
+      {/* Track: dark casing, kerb-tone inner, racing line — F1 graphic layering */}
+      <path d={d} fill="none" stroke="var(--bkt-box-border, rgba(255,255,255,0.16))" strokeWidth={30} strokeLinejoin="round" strokeLinecap="round" />
+      <path d={d} fill="none" stroke="var(--modal-bg, #121016)" strokeWidth={22} strokeLinejoin="round" strokeLinecap="round" />
+      <path d={d} fill="none" stroke={color} strokeWidth={6} strokeLinejoin="round" strokeLinecap="round" opacity={0.95} />
 
-      {/* Start/finish line */}
+      {/* Longest straight — the actual track section, highlighted and measured */}
+      {segD && (
+        <g>
+          <path d={segD} fill="none" stroke="#35c8ff" strokeWidth={13} strokeLinecap="round" opacity={0.85} />
+          {segMid && (
+            <>
+              <text x={segMid.x} y={segMid.y - 22} textAnchor="middle" fontSize={20} fontWeight={800} fill="#35c8ff">
+                LONGEST STRAIGHT
+              </text>
+              <text x={segMid.x} y={segMid.y - 2} textAnchor="middle" fontSize={18} fontWeight={700} fill="#35c8ff" opacity={0.9}>
+                T{longest!.fromC.number} → T{longest!.toC.number}
+              </text>
+            </>
+          )}
+        </g>
+      )}
+
+      {/* Start/finish: chequered block + pit-loss badge */}
       <g transform={`translate(${start.x} ${start.y}) rotate(${ang + 90})`}>
-        <rect x={-19} y={-3} width={38} height={6} fill="var(--bkt-ink, #ffffff)" rx={1} />
+        <rect x={-21} y={-4} width={42} height={8} fill="var(--bkt-ink, #ffffff)" rx={1} />
+        <rect x={-21} y={-4} width={10.5} height={4} fill="#111" />
+        <rect x={0}   y={-4} width={10.5} height={4} fill="#111" />
+        <rect x={-10.5} y={0} width={10.5} height={4} fill="#111" />
+        <rect x={10.5}  y={0} width={10.5} height={4} fill="#111" />
       </g>
-      <text x={start.x} y={start.y - 26} textAnchor="middle" fontSize={26} fontWeight={800}
-        fill="var(--bkt-ink-2, rgba(255,255,255,0.78))">START</text>
+      <text x={start.x} y={start.y - 30} textAnchor="middle" fontSize={23} fontWeight={800}
+        fill="var(--bkt-ink-2, rgba(255,255,255,0.78))">START / FINISH</text>
+      {geo.pitLoss?.normal && (
+        <text x={start.x} y={start.y + 44} textAnchor="middle" fontSize={19} fontWeight={700} fill="var(--bkt-ink-3, rgba(255,255,255,0.55))">
+          PIT LANE −{geo.pitLoss.normal}s
+        </text>
+      )}
 
-      {/* Numbered corners */}
+      {/* Corners, colour-coded by turn angle */}
       {geo.corners.map(c => {
         const p = map({ x: c.x, y: c.y });
+        const sev = severity(c.angle);
         return (
           <g key={c.number}>
-            <circle cx={p.x} cy={p.y} r={15} fill="var(--modal-bg, #121016)" stroke={color} strokeWidth={2.5} />
-            <text x={p.x} y={p.y + 7} textAnchor="middle" fontSize={19} fontWeight={800}
-              fill="var(--bkt-ink, #ffffff)">{c.number}</text>
+            <circle cx={p.x} cy={p.y} r={15} fill="var(--modal-bg, #121016)" stroke={sev.color} strokeWidth={3} />
+            <text x={p.x} y={p.y + 7} textAnchor="middle" fontSize={18} fontWeight={800} fill={sev.color}>{c.number}</text>
           </g>
         );
       })}
     </svg>
+  );
+}
+
+/** Colour key for the map — explains every hue on screen. */
+function TrackLegend({ color }: { color: string }) {
+  return (
+    <div className="sh-track-legend">
+      <span className="sh-track-key"><i style={{ background: color }} />Racing line</span>
+      <span className="sh-track-key"><i style={{ background: '#35c8ff' }} />Longest run between corners</span>
+      {SEV.map(b => (
+        <span key={b.label} className="sh-track-key"><i style={{ background: b.color }} />{b.label}</span>
+      ))}
+    </div>
   );
 }

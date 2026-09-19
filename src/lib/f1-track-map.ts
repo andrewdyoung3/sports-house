@@ -42,7 +42,13 @@ export const MV_CIRCUIT_KEYS: Record<string, number> = {
   yas_marina:         70,
 };
 
-export interface TrackCorner { number: number; x: number; y: number }
+export interface TrackCorner {
+  number: number; x: number; y: number;
+  /** Turn angle in degrees (magnitude = how sharply the corner turns). */
+  angle: number;
+  /** Cumulative distance to the corner, in the feed's own units. */
+  length: number;
+}
 export interface TrackGeometry {
   name: string;
   location?: string;
@@ -90,7 +96,11 @@ export async function fetchTrackGeometry(circuitId: string, year: number): Promi
         points:   xs.map((x, i) => ({ x, y: ys[i] })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y)),
         corners:  ((d.corners ?? []) as Array<Record<string, any>>)
           .filter(c => c?.trackPosition)
-          .map(c => ({ number: Number(c.number), x: Number(c.trackPosition.x), y: Number(c.trackPosition.y) })),
+          .map(c => ({
+            number: Number(c.number),
+            x: Number(c.trackPosition.x), y: Number(c.trackPosition.y),
+            angle: Number(c.angle ?? 0), length: Number(c.length ?? 0),
+          })),
         rotation: Number(d.rotation ?? 0),
         pitLoss:  (d.pitLoss ?? undefined) as TrackGeometry['pitLoss'],
         year:     y,
