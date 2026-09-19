@@ -7,7 +7,7 @@ import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
-import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS } from '@/lib/f1-data';
+import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components/schedule/finals-bracket';
 import { COMP_RULES } from '@/lib/competition-rules';
@@ -181,6 +181,58 @@ function savePreviewCache(gameId: string, entry: PreviewCache): void {
 /** Generate AI previews only for fixtures within this many days.
  *  Too far out and form, injuries, and selection are all unknowns. */
 const AI_PREVIEW_DAYS = 14;
+
+/**
+ * Resolve a constructor NAME (as the standings feeds spell it) to our F1 team
+ * entry, for its logo and brand colour. Feeds vary — "Haas F1 Team" vs "Haas",
+ * "Red Bull" vs "Red Bull Racing", "Sauber" vs "Kick Sauber" — so exact match
+ * first, then a normalised containment test either way.
+ */
+function f1ConstructorTeam(name: string | undefined) {
+  if (!name) return undefined;
+  const exact = F1_CONSTRUCTOR_TEAMS.find(t => t.name === name || t.division === name);
+  if (exact) return exact;
+  const norm = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');
+  const n = norm(name);
+  return F1_CONSTRUCTOR_TEAMS.find(t => {
+    const a = norm(t.name), b = norm(t.shortName);
+    return n.includes(a) || a.includes(n) || n.includes(b) || b.includes(n);
+  });
+}
+
+/**
+ * Constructor marque for the championship tables: the team's logo on a fixed
+ * DARK plate ringed in its brand colour. The plate is deliberately dark in both
+ * themes — the official F1 team logos are near-white wordmarks (measured
+ * luminance ~205-227/255), so on the light canvas they would be invisible.
+ * Falls back to the abbreviation in brand colour if the image fails.
+ */
+function F1Marque({ constructorName, fallback }: { constructorName?: string; fallback: string }) {
+  const t = f1ConstructorTeam(constructorName);
+  const color = t?.primaryColor ?? '#9CA3AF';
+  const logo = t ? TEAM_LOGOS[t.id] : undefined;
+  const [failed, setFailed] = useState(false);
+  return (
+    <span
+      className="shrink-0 inline-flex items-center justify-center rounded-md overflow-hidden"
+      style={{
+        width: 24, height: 24, background: '#15121c',
+        boxShadow: `inset 0 0 0 1.5px ${color}`,
+      }}
+      title={constructorName}
+    >
+      {logo && !failed ? (
+        <img
+          src={logo} alt="" aria-hidden="true" width={24} height={24}
+          className="object-contain" style={{ width: 17, height: 17 }}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="text-[8.5px] font-black" style={{ color }}>{fallback.slice(0, 3).toUpperCase()}</span>
+      )}
+    </span>
+  );
+}
 
 /**
  * Deterministic pre-season blurb for games beyond the AI window: composed
@@ -778,7 +830,10 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
         ) : driverStandings && driverStandings.length > 0 ? (
           <div>
             {driverStandings.slice(0, 15).map((row, i) => {
-              const constructorColor = CONSTRUCTOR_COLORS_MAP[row.constructorName ?? ''] ?? '#9CA3AF';
+              // Resolver first (handles feed spellings like "Haas F1 Team"), then the
+              // local map, then grey — same colour the marque ring uses.
+              const constructorColor = f1ConstructorTeam(row.constructorName)?.primaryColor
+                ?? CONSTRUCTOR_COLORS_MAP[row.constructorName ?? ''] ?? '#9CA3AF';
               // Highlight: followed driver → match by teamId; followed constructor → match all their drivers
               const isHighlighted = isConstructorFollow
                 ? row.constructorName === followedConstructorName
@@ -790,11 +845,9 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
                   style={isHighlighted ? { borderLeft: '2px solid var(--accent)', paddingLeft: 6, background: 'color-mix(in oklab, var(--accent) 8%, transparent)' } : undefined}
                 >
                   <span className="sh-l-pos">{row.position}</span>
-                  <span className="text-[10px] font-black shrink-0 w-7 truncate" style={{ color: constructorColor }}>
-                    {row.name.split(' ').map((w: string) => w[0]).join('').slice(0, 3).toUpperCase()}
-                  </span>
+                  <F1Marque constructorName={row.constructorName} fallback={row.name} />
                   <span className="sh-l-name">{row.name}</span>
-                  <span className="sh-l-record truncate max-w-[80px]">{row.constructorName}</span>
+                  <span className="sh-l-record truncate max-w-[80px]" style={{ color: constructorColor }}>{row.constructorName}</span>
                   <span className="sh-l-pts">
                     {row.points ?? 0}<span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-3)' }}>pts</span>
                   </span>
@@ -818,7 +871,9 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
         ) : constructorStandings && constructorStandings.length > 0 ? (
           <div>
             {constructorStandings.map((row, i) => {
-              const constructorColor = (row as any).primaryColor ?? CONSTRUCTOR_COLORS_MAP[row.name] ?? '#9CA3AF';
+              const constructorColor = (row as any).primaryColor
+                ?? f1ConstructorTeam(row.name)?.primaryColor
+                ?? CONSTRUCTOR_COLORS_MAP[row.name] ?? '#9CA3AF';
               // Highlight: followed constructor → match by teamId or name; followed driver → match their constructor
               const isHighlighted = isConstructorFollow
                 ? row.teamId === team.id || row.name === followedConstructorName
@@ -830,10 +885,8 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
                   style={isHighlighted ? { borderLeft: '2px solid var(--accent)', paddingLeft: 6, background: 'color-mix(in oklab, var(--accent) 8%, transparent)' } : undefined}
                 >
                   <span className="sh-l-pos">{row.position}</span>
-                  <span className="text-[10px] font-black shrink-0 w-7 truncate" style={{ color: constructorColor }}>
-                    {row.name.slice(0, 3).toUpperCase()}
-                  </span>
-                  <span className="sh-l-name">{row.name}</span>
+                  <F1Marque constructorName={row.name} fallback={row.name} />
+                  <span className="sh-l-name" style={{ color: constructorColor }}>{row.name}</span>
                   <span className="sh-l-record">{row.wins > 0 ? `${row.wins}W` : ''}</span>
                   <span className="sh-l-pts">
                     {row.points ?? 0}<span style={{ fontSize: 9, fontWeight: 400, color: 'var(--text-3)' }}>pts</span>
