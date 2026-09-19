@@ -28,6 +28,9 @@ export interface ClubHonours {
   lastDecider: { season: number; result: 'won' | 'lost'; opponent: string } | null;
   /** Consecutive titles entering this season, if the club is the reigning champion. */
   streak?: number;
+  /** The club's own longest earlier run of consecutive titles, when one exists. Stated so the
+   *  model has no reason to reach for "unprecedented" — it is told outright the feat has precedent. */
+  priorRun?: { length: number; span: string };
   /** Clarifying note for identity/counting edge cases. */
   note?: string;
 }
@@ -38,6 +41,7 @@ export const HONOURS_THROUGH: Record<string, number> = { afl: 2025, nrl: 2025 };
 const AFL: Record<string, ClubHonours> = {
   'afl-crows':     { titles: 2,  lastTitle: 1998, lastDecider: { season: 2017, result: 'lost', opponent: 'Richmond' } },
   'afl-lions':     { titles: 5,  lastTitle: 2025, lastDecider: { season: 2025, result: 'won',  opponent: 'Geelong' }, streak: 2,
+                     priorRun: { length: 3, span: '2001–03' },
                      note: 'counted as Brisbane Lions (2001–03, 2024, 2025); Fitzroy\'s 8 VFL flags are not included' },
   'afl-blues':     { titles: 16, lastTitle: 1995, lastDecider: { season: 1999, result: 'lost', opponent: 'North Melbourne' } },
   'afl-pies':      { titles: 16, lastTitle: 2023, lastDecider: { season: 2023, result: 'won',  opponent: 'Brisbane Lions' } },
@@ -70,7 +74,8 @@ const NRL: Record<string, ClubHonours> = {
   'nrl-dolphins':  { titles: 0,  lastTitle: null, lastDecider: null, note: 'never played in a Grand Final' },
   'nrl-titans':    { titles: 0,  lastTitle: null, lastDecider: null, note: 'never played in a Grand Final' },
   'nrl-eels':      { titles: 4,  lastTitle: 1986, lastDecider: { season: 2022, result: 'lost', opponent: 'Penrith' } },
-  'nrl-panthers':  { titles: 6,  lastTitle: 2024, lastDecider: { season: 2024, result: 'won',  opponent: 'Melbourne Storm' } },
+  'nrl-panthers':  { titles: 6,  lastTitle: 2024, lastDecider: { season: 2024, result: 'won',  opponent: 'Melbourne Storm' },
+                     priorRun: { length: 4, span: '2021–24' } },
   'nrl-seahawks':  { titles: 8,  lastTitle: 2011, lastDecider: { season: 2013, result: 'lost', opponent: 'Sydney Roosters' } },
   'nrl-storm':     { titles: 4,  lastTitle: 2020, lastDecider: { season: 2025, result: 'lost', opponent: 'Brisbane Broncos' },
                      note: 'the 2007 and 2009 titles were stripped and are not counted' },
@@ -113,9 +118,15 @@ export function describeHonours(league: string, teamName: string, h: ClubHonours
       parts.push(`won the ${h.lastDecider.season} decider v ${h.lastDecider.opponent}`);
     }
     if (h.streak && h.streak >= 1) {
+      const next = h.streak + 1;
+      const precedent = h.priorRun
+        ? (h.priorRun.length >= next
+          ? ` — NOT unprecedented for this club: they won ${h.priorRun.length} straight in ${h.priorRun.span}`
+          : ` — their longest run to date is ${h.priorRun.length} (${h.priorRun.span})`)
+        : '';
       parts.push(h.streak >= 2
-        ? `reigning champions on a run of ${h.streak} straight — a win here makes it ${h.streak + 1} in a row`
-        : 'reigning champions — a win here makes it back-to-back');
+        ? `reigning champions on a run of ${h.streak} straight — a win here makes it ${next} in a row${precedent}`
+        : `reigning champions — a win here makes it back-to-back${precedent}`);
     }
   }
   const line = parts.join('; ');

@@ -737,6 +737,8 @@ expect('invented F1 driver in spotlight is rejected',
   console.log('validateDeciderClaims:');
   expect('live catch: "unprecedented third-straight flag" rejected',
     dc('Brisbane seek an unprecedented third-straight flag.').length > 0);
+  expect('negated rarity passes ("not unprecedented for this club" echoes the block)',
+    dc('A third straight flag is not unprecedented for this club.').length === 0);
   expect('"first time since" rejected',
     dc('A flag for the first time since the club\'s early years.').length > 0);
   expect('live catch: "path through September has been more tortuous" rejected under PATH PARITY',

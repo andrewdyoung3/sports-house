@@ -1265,7 +1265,7 @@ export function validateDeciderClaims(output: AIPreview, prompt: string): string
   ].join('  ');
   const violations: string[] = [];
   if (/CLUB HONOURS/.test(prompt)) {
-    const rarityRe = /\b(?:unprecedented|never before|(?:for the )?first time (?:since|in)\b[^.]{0,20}|first (?:club|team|side) (?:in|to|since)|first since\b|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
+    const rarityRe = /(?<!\b(?:not|hardly|far from|nothing)\s)\b(?:unprecedented|never before|(?:for the )?first time (?:since|in)\b[^.]{0,20}|first (?:club|team|side) (?:in|to|since)|first since\b|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
     const seen = new Set<string>();
     for (const m of factual.matchAll(rarityRe)) {
       const hit = m[0].toLowerCase().trim();
