@@ -30,6 +30,7 @@ import {
   validateVenueFormClaims,
   validateDoubleChance,
   validateSeriesClaims,
+  validateProvisionalLadder,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -654,6 +655,25 @@ expect('invented F1 driver in spotlight is rejected',
     r('Hawthorn earned this home final by winning their Qualifying Final.').length === 0);
   expect('double-chance week guard still lifts the rule',
     r('The loser is eliminated.', QF).length === 0);
+}
+
+// ─── validateProvisionalLadder — mid-round positions aren't settled ────────────
+
+{
+  const PROV = 'DERIVED FACTS:\n  • PROVISIONAL LADDER: 4 of 18 teams have a game in hand — the round is not complete.\n';
+  const DONE = 'DERIVED FACTS:\n  • LADDER POSITION: Brisbane Lions — 2nd of 18.\n';
+  const pl = (t: string, p: string) => validateProvisionalLadder(preview({ context: t }), p);
+  console.log('validateProvisionalLadder:');
+  expect('"locked up second" rejected mid-round',
+    pl('Brisbane have locked up second.', PROV).length > 0);
+  expect('"top four is now secured" rejected mid-round',
+    pl('Their top four is now secured.', PROV).length > 0);
+  expect('snapshot framing passes ("sit second, with matches to come")',
+    pl('Brisbane sit second, with matches still to come in the round.', PROV).length === 0);
+  expect('the user\'s example passes ("consolidate their position")',
+    pl('Brisbane consolidate their position with matches remaining in the round.', PROV).length === 0);
+  expect('finality fine when the round IS complete',
+    pl('Brisbane have secured second.', DONE).length === 0);
 }
 
 // ─── validateSeriesClaims — series narratives need SERIES data ─────────────────

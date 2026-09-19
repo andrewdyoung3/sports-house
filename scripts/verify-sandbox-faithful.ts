@@ -68,6 +68,22 @@ function compose(blocks: { id: string; text: string }[], footer: string): string
   return parts.join('\n');
 }
 
+/**
+ * The FROM THE MEDIA block is fetched live (RSS + Guardian) by whichever
+ * process builds the prompt — this script and the dev server hold separate
+ * caches, so identical CODE can legitimately produce different HEADLINES
+ * seconds apart. That is a data race, not a faithfulness break, so the block
+ * is excluded from the byte comparison; everything structural still counts.
+ */
+function stripVolatile(prompt: string): string {
+  const lines = prompt.split('\n');
+  const start = lines.findIndex(l => l.startsWith('FROM THE MEDIA'));
+  if (start < 0) return prompt;
+  let end = start + 1;
+  while (end < lines.length && lines[end].trim() !== '') end++;
+  return [...lines.slice(0, start), '<MEDIA BLOCK OMITTED — live feed>', ...lines.slice(end)].join('\n');
+}
+
 function firstDiff(a: string, b: string): string[] {
   const al = a.split('\n');
   const bl = b.split('\n');
@@ -142,12 +158,12 @@ async function main() {
 
     const tag = `${gameId}  (${teamName} vs ${fixture.opponent}, ${league})`;
     const sysOk  = prodSystem === sbSystem;
-    const userOk = prodUser === sbUser;
+    const userOk = stripVolatile(prodUser) === stripVolatile(sbUser);
 
     if (sysOk && userOk) {
       console.log(`\n✅ ${tag}`);
       console.log(`   SYSTEM identical — ${prodSystem.length} bytes`);
-      console.log(`   USER   identical — ${prodUser.length} bytes (${sb.blocks.length} blocks)`);
+      console.log(`   USER   identical — ${prodUser.length} bytes (${sb.blocks.length} blocks; live media block excluded)`);
     } else {
       anyFail = true;
       console.log(`\n❌ ${tag}`);
@@ -158,8 +174,8 @@ async function main() {
         console.log(`   SYSTEM identical — ${prodSystem.length} bytes`);
       }
       if (!userOk) {
-        console.log(`   USER DIFFERS — prod ${prodUser.length} vs sandbox ${sbUser.length} bytes`);
-        console.log(firstDiff(prodUser, sbUser).join('\n'));
+        console.log(`   USER DIFFERS (outside the live media block) — prod ${prodUser.length} vs sandbox ${sbUser.length} bytes`);
+        console.log(firstDiff(stripVolatile(prodUser), stripVolatile(sbUser)).join('\n'));
       } else {
         console.log(`   USER identical — ${prodUser.length} bytes`);
       }

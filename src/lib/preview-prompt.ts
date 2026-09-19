@@ -407,6 +407,11 @@ function rowMatchesTeam(rowName: string, teamName: string): boolean {
  * Guards: if all points are zero (data corruption) or we can't find either
  * fixture team in the table, returns [] so nothing is emitted.
  */
+/** Competition points awarded for a win (0 when the comp isn't points-based). */
+function winsPoints(league: string): number {
+  return COMP_RULES[league]?.winsPoints ?? 0;
+}
+
 function buildDerivedFacts(
   league: string,
   table: LeagueTableRow[],
@@ -442,6 +447,41 @@ function buildDerivedFacts(
     }
     if (posBits.length > 0) {
       facts.push(`  • LADDER POSITION (use this exact ordinal for each team; do not restate it as any other number): ${posBits.join('; ')}.`);
+    }
+  }
+
+  // ── Provisional ladder: games in hand ─────────────────────────────────────
+  // A round is rarely complete when a preview is written (and previews now
+  // generate ~20 min after the previous game). Rather than delay or hedge
+  // vaguely, state what is actually known: whose figures are still to move,
+  // and which rivals could pass the teams in view once they play. Computed
+  // from the played counts in the table — no round metadata needed.
+  {
+    const maxPlayed = Math.max(...sorted.map(r => r.played));
+    const inHand    = sorted.filter(r => r.played < maxPlayed);
+    if (inHand.length > 0 && winsPoints(league) > 0) {
+      facts.push(`  • PROVISIONAL LADDER: ${inHand.length} of ${sorted.length} teams have a game in hand — the round is not complete, so these positions can still change. Describe any ladder position as it stands with matches still to come; never as settled, locked or guaranteed.`);
+
+      // Who can actually pass the teams in view once the round finishes.
+      const perWin = winsPoints(league);
+      for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
+        if (!row) continue;
+        const movers = sorted.filter(r => {
+          if (r.name === row.name) return false;
+          const gamesInHand = maxPlayed - r.played;
+          if (gamesInHand <= 0) return false;
+          const ceiling = (r.points ?? 0) + gamesInHand * perWin;
+          return r.position > row.position && ceiling >= (row.points ?? 0);
+        });
+        if (movers.length > 0) {
+          const list = movers.slice(0, 3)
+            .map(m => `${m.name} (${ordinalSuffix(m.position)}, ${m.points} pt${m.points === 1 ? '' : 's'}, ${maxPlayed - m.played} in hand)`)
+            .join('; ');
+          facts.push(`  • ${name}'s ${ordinalSuffix(row.position)} is not yet secure this round — could be passed by: ${list}.`);
+        } else if (inHand.length > 0) {
+          facts.push(`  • ${name} cannot be passed by anyone below them once the round completes — their ${ordinalSuffix(row.position)} holds regardless of the remaining results.`);
+        }
+      }
     }
   }
 

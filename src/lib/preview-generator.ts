@@ -1058,6 +1058,31 @@ export function validateSeriesClaims(output: AIPreview, prompt: string): string[
   return violations;
 }
 
+/**
+ * Provisional-ladder finality. When the data block says the round is
+ * incomplete (teams with a game in hand), a position is a snapshot, not a
+ * settlement — "Brisbane sit second" is fine, "Brisbane have locked up second"
+ * is not. Rejects finality verbs applied to a ladder position while results
+ * are outstanding; the derived facts supply the honest framing instead.
+ */
+export function validateProvisionalLadder(output: AIPreview, prompt: string): string[] {
+  if (!/PROVISIONAL LADDER:/.test(prompt)) return [];
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const finalRe = /\b(?:lock(?:ed)?(?: up| in| away)?|secur(?:e|ed|ing)|clinch(?:ed|ing)?|seal(?:ed|ing)?|guarantee(?:d)?|confirm(?:ed)?|assur(?:e|ed)|cement(?:ed)?|wrapp?(?:ed)? up|book(?:ed)?)\b[^.]{0,40}\b(?:\d{1,2}(?:st|nd|rd|th)|first|second|third|fourth|fifth|sixth|seventh|eighth|top[- ]?(?:two|four|five|six|eight|\d+)|minor premiership|the (?:ladder|table) lead|top spot)\b|\b(?:\d{1,2}(?:st|nd|rd|th)|top[- ]?(?:two|four|five|six|eight|\d+))\b[^.]{0,30}\b(?:is|are|was|were) (?:now )?(?:locked|secured|sealed|guaranteed|confirmed|assured|safe)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const m of factual.matchAll(finalRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`settled-position claim "${m[0].slice(0, 60)}" — the round is incomplete (teams still have games in hand); state the position as it stands with matches to come, not as locked or secured`);
+  }
+  return violations;
+}
+
 const PLAYER_NAME_SAFE_WORDS = new Set([
   'premier', 'league', 'champions', 'europa', 'conference', 'cup', 'final',
   'finals', 'series', 'grand', 'super', 'rugby', 'football', 'soccer',
@@ -1259,6 +1284,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateVenueFormClaims(v, prompt),
     ...validateDoubleChance(v, prompt),
     ...validateSeriesClaims(v, prompt),
+    ...validateProvisionalLadder(v, prompt),
   ];
 }
 
