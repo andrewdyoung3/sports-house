@@ -9,6 +9,7 @@ import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
 import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS, F1_CONSTRUCTOR_TEAMS, F1_CONSTRUCTOR_FEED_ALIASES } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
+import { TrackMap } from '@/components/schedule/track-map';
 import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components/schedule/finals-bracket';
 import { COMP_RULES } from '@/lib/competition-rules';
 import { cn, ordinal } from '@/lib/utils';
@@ -483,7 +484,8 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
   const [driverStandings, setDriverStandings] = useState<StandingRow[] | null>(null);
   const [constructorStandings, setConstructorStandings] = useState<StandingRow[] | null>(null);
   const [loadingStandings, setLoadingStandings] = useState(true);
-  const [imgError, setImgError] = useState(false);
+  // (circuit image state retired — the map moved into the TrackMap modal,
+  //  which owns its own load/fallback handling.)
   const [gridData, setGridData] = useState<PreviewContext['f1QualifyingGrid'] | null>(null);
 
   // ── AI race preview state ─────────────────────────────────────────────────
@@ -656,15 +658,22 @@ function F1ExpandPanel({ game, className, onCollapse }: { game: ScheduleEntry; c
         </button>
       )}
 
-      {/* Circuit map */}
-      {circuit && !imgError && (
-        <div className="rounded-xl overflow-hidden">
-          <img
-            src={circuit.mapUrl}
-            alt={`${circuit.name} circuit map`}
-            className="w-full h-auto object-contain"
-            onError={() => setImgError(true)}
+      {/* Circuit map — a button rather than an always-on image: the modal adds
+          the real racing-line geometry, numbered corners, pit-loss timing and
+          the circuit facts alongside F1's official annotated artwork. */}
+      {circuitId && (
+        <div className="sh-bracket-bar">
+          <TrackMap
+            circuitId={circuitId}
+            year={new Date(game.date).getFullYear()}
+            accent={team.primaryColor}
+            mapUrl={circuit?.mapUrl}
           />
+          {circuit && (
+            <span className="sh-bracket-caption">
+              {circuit.length} · {circuit.laps} laps · {circuit.drsZones} DRS zone{circuit.drsZones === 1 ? '' : 's'}
+            </span>
+          )}
         </div>
       )}
 

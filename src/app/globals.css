@@ -546,6 +546,40 @@
 }
 .sh-chip-add:hover { color: var(--text) !important; border-color: var(--accent) !important; }
 
+/* ── Track map (F1 circuit modal) ── */
+.sh-track-body { overflow: auto; padding: 14px 16px 18px; }
+.sh-track-svg {
+  display: block; width: 100%; max-width: 620px; margin: 0 auto;
+  height: auto; max-height: 56vh;
+}
+.sh-track-facts {
+  display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.sh-track-fact {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 78px; padding: 6px 10px; border-radius: 9px;
+  background: var(--surface); border: 1px solid var(--border);
+}
+.sh-track-fact-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.sh-track-fact-value { font-size: 15px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; }
+.sh-track-fact-hint { font-size: 8.5px; color: var(--text-3); }
+.sh-track-note { font-size: 12px; color: var(--text-2); margin-top: 10px; line-height: 1.5; text-align: center; }
+.sh-track-note strong { color: var(--text); font-weight: 700; }
+.sh-track-source { font-size: 10.5px; color: var(--text-3); margin-top: 10px; line-height: 1.45; text-align: center; font-style: italic; }
+
+.sh-track-official { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.sh-track-official img {
+  display: block; width: 100%; max-width: 620px; margin: 0 auto; height: auto;
+  border-radius: 10px; background: var(--surface);
+}
+.sh-track-official figcaption {
+  font-size: 10.5px; color: var(--text-3); text-align: center; margin-top: 6px; line-height: 1.4;
+}
+
 /* ── Collapsible filter panes (My teams / Competitions) ── */
 .sh-pane-head {
   display: flex; align-items: center; justify-content: space-between; width: 100%;
