@@ -658,6 +658,15 @@ function TeamFilterPill({
   );
 }
 
+/** Competition pill colour — prefers the badge foreground, falling back to its
+ *  background when that is white/near-white (so PL resolves to purple, F1 red). */
+function leagueBrandAccent(leagueId: string): string {
+  const meta = LEAGUE_BADGE[leagueId];
+  const c = (meta?.color ?? '').toLowerCase();
+  const whiteish = c === '#fff' || c === '#ffffff';
+  return (whiteish ? meta?.bg : meta?.color) ?? meta?.bg ?? '#9b6bff';
+}
+
 // ─── Followed teams widget ────────────────────────────────────────────────────
 
 // Step 8 — reskinned to .sh-card.sh-following (mirrors the schedule's FollowedTeamsWidget).
@@ -734,6 +743,9 @@ export default function ResultsPage() {
   const prefsVersion = usePrefsVersion(); // bumps when followed teams change (e.g. post-sign-in merge)
 
   const [activeTeamId,   setActiveTeamId]   = useState<string>('all');
+  /** Competition filter — set by a competition pill, cleared by any team pill. */
+  const [activeLeagueId, setActiveLeagueId] = useState<string | null>(null);
+  const [followedLeagues, setFollowedLeagues] = useState<string[]>([]);
   const [hoveredDateKey, setHoveredDateKey] = useState<string | null>(null);
   const [expandedId,     setExpandedId]     = useState<string | null>(null);
   const [everExpandedIds, setEverExpandedIds] = useState<Set<string>>(new Set());
@@ -809,6 +821,7 @@ export default function ResultsPage() {
     // those users. Leagues already covered by a followed team are still
     // fetched: the follow means "all of it", not "the ones I have a team in".
     const leaguesToFetch = getFollowedLeagues();
+    setFollowedLeagues(leaguesToFetch);
 
     if (teamsToFetch.length === 0 && leaguesToFetch.length === 0) { setLoading(false); return; }
 
@@ -843,9 +856,12 @@ export default function ResultsPage() {
   }, [prefsVersion]);
 
   const filteredResults = useMemo<ResultEntry[]>(() => {
+    // A competition filter is league-wide: it includes results that arrived via a
+    // followed TEAM in that competition, not only the competition-sourced rows.
+    if (activeLeagueId) return allResults.filter(r => r.team.league === activeLeagueId);
     if (activeTeamId === 'all') return allResults;
     return allResults.filter(r => r.team.id === activeTeamId);
-  }, [allResults, activeTeamId]);
+  }, [allResults, activeTeamId, activeLeagueId]);
 
   // Group by date in user timezone (reverse-chronological)
   const groupedByDate = useMemo(() => {
@@ -914,14 +930,14 @@ export default function ResultsPage() {
               Single group (My Teams) only — results has no comp or view-toggle filters.
               Horizontal scroll preserved (overrides .sh-chips flex-wrap:wrap) so a
               large followed-teams list scrolls rather than stretching the column. */}
-          {!loading && teams.length > 1 && (
+          {!loading && teams.length + followedLeagues.length > 1 && (
             <div className="sh-filters sh-card">
               <p className="text-[9px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: 'var(--text-3)' }}>My Teams</p>
               <div className="sh-chips">
                 <TeamFilterPill
                   label="All"
-                  active={activeTeamId === 'all'}
-                  onClick={() => setActiveTeamId('all')}
+                  active={activeTeamId === 'all' && !activeLeagueId}
+                  onClick={() => { setActiveTeamId('all'); setActiveLeagueId(null); }}
                 />
                 {teams.map(team => (
                   <TeamFilterPill
@@ -930,11 +946,34 @@ export default function ResultsPage() {
                     logoUrl={TEAM_LOGOS[team.id]}
                     logoFilter={TEAM_LOGO_FILTERS[team.id]}
                     primaryColor={team.primaryColor}
-                    active={activeTeamId === team.id}
-                    onClick={() => setActiveTeamId(team.id)}
+                    active={!activeLeagueId && activeTeamId === team.id}
+                    onClick={() => { setActiveTeamId(team.id); setActiveLeagueId(null); }}
                   />
                 ))}
               </div>
+
+              {/* A followed competition is ONE pill for the whole competition —
+                  never expanded into its teams or drivers. Following F1 means
+                  following the championship, so the pill is "F1", not 20 drivers. */}
+              {followedLeagues.length > 0 && (
+                <>
+                  <p className="text-[9px] font-semibold uppercase tracking-widest mb-1.5 mt-2.5" style={{ color: 'var(--text-3)' }}>Competitions</p>
+                  <div className="sh-chips">
+                    {followedLeagues.map(leagueId => (
+                      <TeamFilterPill
+                        key={leagueId}
+                        label={LEAGUE_BADGE[leagueId]?.label ?? leagueId.toUpperCase()}
+                        primaryColor={leagueBrandAccent(leagueId)}
+                        active={activeLeagueId === leagueId}
+                        onClick={() => {
+                          setActiveLeagueId(prev => prev === leagueId ? null : leagueId);
+                          setActiveTeamId('all');
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -944,7 +983,11 @@ export default function ResultsPage() {
           ) : filteredResults.length === 0 ? (
             <div className="text-center py-20" style={{ color: 'var(--text-3)' }}>
               <Trophy className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No results yet for this team.</p>
+              <p className="text-sm">
+                {activeLeagueId
+                  ? `No results yet for ${LEAGUE_BADGE[activeLeagueId]?.label ?? activeLeagueId.toUpperCase()}.`
+                  : 'No results yet for this team.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-8">
