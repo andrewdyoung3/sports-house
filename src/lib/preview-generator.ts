@@ -1134,11 +1134,13 @@ export function validateResultDirection(output: AIPreview, prompt: string): stri
     ...(output.keyInsights ?? []),
   ].join('  ');
   const NAME = String.raw`((?:the\s+)?[A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){0,2})`;
+  // GAP = up to three lowercase filler words ("a loss LAST WEEK against Hawthorn").
+  const GAP = String.raw`(?:\s+[a-z'’-]+){0,3}`;
   const claimRe = new RegExp(
-    String.raw`\b(lost to|fell to|(?:were |was )?beaten by|(?:were |was )?defeated by|went down to|loss(?:es)? (?:to|against)|defeats? (?:to|against|by)|defeated|overcame|got past|accounted for|saw off|edged|thrashed|toppled|wins? (?:over|against)|victor(?:y|ies) (?:over|against))\s+${NAME}(?:(?:,|\s+and)\s+${NAME})?`,
+    String.raw`\b(lost${GAP} to|fell${GAP} to|(?:were |was )?beaten${GAP} by|(?:were |was )?defeated${GAP} by|went down${GAP} to|loss(?:es)?${GAP} (?:to|against)|defeats?${GAP} (?:to|against|by)|defeated|overcame|got past|accounted for|saw off|edged|thrashed|toppled|wins?${GAP} (?:over|against)|victor(?:y|ies)${GAP} (?:over|against))\s+${NAME}(?:(?:,|\s+and)\s+${NAME})?`,
     'g',
   );
-  const lossVerb = /^(lost to|fell to|(?:were |was )?beaten by|(?:were |was )?defeated by|went down to|loss(?:es)? |defeats? )/;
+  const lossVerb = /^(lost\b|fell\b|(?:were |was )?beaten\b|(?:were |was )?defeated\b.*\bby$|went down\b|loss(?:es)?\b|defeats?\b)/;
   const lookup = (raw: string): Set<'W' | 'L' | 'D'> | undefined => {
     const n = raw.replace(/^the\s+/i, '').replace(/[.,'’]+$/, '').toLowerCase();
     for (const [key, set] of facts.byOpponent) {
@@ -1149,7 +1151,8 @@ export function validateResultDirection(output: AIPreview, prompt: string): stri
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of factual.matchAll(claimRe)) {
-    const claimed: 'W' | 'L' = lossVerb.test(m[1].toLowerCase()) ? 'L' : 'W';
+    const verb = m[1].toLowerCase();
+    const claimed: 'W' | 'L' = verb === 'defeated' ? 'W' : lossVerb.test(verb) ? 'L' : 'W';
     for (const name of [m[2], m[3]].filter(Boolean) as string[]) {
       const recorded = lookup(name);
       if (!recorded || recorded.has(claimed)) continue;
@@ -1243,6 +1246,43 @@ export function validateVenueDimensions(output: AIPreview, prompt: string): stri
     if (seen.has(hit)) continue;
     seen.add(hit);
     violations.push(`venue-dimension claim "${m[0].slice(0, 60)}" — ground dimensions are not in the data; do not characterise the size or shape of the playing surface`);
+  }
+  return violations;
+}
+
+/**
+ * Decider-only guards, both fed by the honours/path blocks:
+ *  - RARITY: "unprecedented third-straight flag" was written against a block
+ *    listing Brisbane's own 2001–03 three-peat. Nothing in the data ranks a
+ *    result against history, so rarity framing is always unsourced.
+ *  - PATH: with PATH PARITY stated, any "tougher / longer / more tortuous
+ *    path" comparison is invented.
+ */
+export function validateDeciderClaims(output: AIPreview, prompt: string): string[] {
+  const factual = [
+    output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
+    ...(output.keyInsights ?? []),
+  ].join('  ');
+  const violations: string[] = [];
+  if (/CLUB HONOURS/.test(prompt)) {
+    const rarityRe = /\b(?:unprecedented|never before|(?:for the )?first time (?:since|in)\b[^.]{0,20}|first (?:club|team|side) (?:in|to|since)|first since\b|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
+    const seen = new Set<string>();
+    for (const m of factual.matchAll(rarityRe)) {
+      const hit = m[0].toLowerCase().trim();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`rarity claim "${m[0].trim().slice(0, 50)}" — the data ranks nothing against history; state the honours facts as given, never how rare a result would be`);
+    }
+  }
+  if (/PATH PARITY: both sides took the SAME route/.test(prompt)) {
+    const pathRe = /\b(?:tougher|harder|longer|more (?:tortuous|arduous|difficult|demanding|gruelling|grueling|taxing|circuitous)|easier|smoother|shorter|more direct|less demanding)\b[^.]{0,40}\b(?:path|route|road|journey|passage|run)\b|\b(?:path|route|road|journey)\b[^.]{0,30}\b(?:tougher|harder|longer|more (?:tortuous|arduous|difficult|demanding|gruelling|grueling)|easier|smoother|shorter|more direct)\b/gi;
+    const seen = new Set<string>();
+    for (const m of factual.matchAll(pathRe)) {
+      const hit = m[0].toLowerCase();
+      if (seen.has(hit)) continue;
+      seen.add(hit);
+      violations.push(`path comparison "${m[0].slice(0, 60)}" — FINALS PATH states both sides took the same route; neither path was tougher or longer`);
+    }
   }
   return violations;
 }
@@ -1479,6 +1519,7 @@ export function collectViolations(v: AIPreview, prompt: string): string[] {
     ...validateResultDirection(v, prompt),
     ...validateHeadToHeadClaims(v, prompt),
     ...validateVenueDimensions(v, prompt),
+    ...validateDeciderClaims(v, prompt),
   ];
 }
 

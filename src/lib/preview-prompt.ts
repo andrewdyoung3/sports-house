@@ -1861,7 +1861,7 @@ export function buildDataBlock(
             ].filter((pair): pair is readonly [string, NonNullable<ReturnType<typeof clubHonours>>] => pair[1] !== null)
              .map(([name, h]) => `  • ${describeHonours(league, name, h)}`);
             if (honourLines.length > 0) {
-              lines.push(`CLUB HONOURS (premiership record to the end of ${HONOURS_THROUGH[league]} — the ONLY verified history for this decider; use these numbers exactly, add nothing else from memory: no other years, finals, streaks or "last met in" claims):`);
+              lines.push(`CLUB HONOURS (premiership record to the end of ${HONOURS_THROUGH[league]} — the ONLY verified history for this decider; use these numbers exactly, add nothing else from memory: no other years, finals, streaks or "last met in" claims, and NEVER rank a result against history — no "unprecedented", "first since", "first club to", or comparisons with other clubs' records):`);
               lines.push(...honourLines);
               lines.push('');
             }

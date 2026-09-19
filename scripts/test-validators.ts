@@ -35,6 +35,7 @@ import {
   validateResultDirection,
   validateHeadToHeadClaims,
   validateVenueDimensions,
+  validateDeciderClaims,
 } from '@/lib/preview-generator';
 import { buildDataBlock } from '@/lib/preview-prompt';
 import { buildReviewDataBlock } from '@/lib/review-prompt';
@@ -724,6 +725,30 @@ expect('invented F1 driver in spotlight is rejected',
     rd('Brisbane lost to the Hawks.').length === 0);
   expect('bare "beat" is not checked (conditional usage)',
     rd('If Brisbane beat Geelong they go through.').length === 0);
+  expect('live catch #2: "a loss last week against Hawthorn" rejected (filler words between noun and preposition)',
+    rd('Brisbane, despite a loss last week against Hawthorn, are the team to beat.').length > 0);
+  expect('"were beaten last week by Sydney" passes',
+    rd('Brisbane were beaten last week by Sydney.').length === 0);
+  expect('"win last round over Hawthorn" passes',
+    rd('The win last round over Hawthorn was emphatic.').length === 0);
+
+  const DECIDER = 'FINALS PATH:\n  • PATH PARITY: both sides took the SAME route (3 finals, identical win/loss sequence) — neither side\'s path was tougher.\nCLUB HONOURS (…):\n  • Brisbane Lions: 5 premierships (2001–03, 2024, 2025)\n';
+  const dc = (t: string, p = DECIDER) => validateDeciderClaims(preview({ context: t }), p);
+  console.log('validateDeciderClaims:');
+  expect('live catch: "unprecedented third-straight flag" rejected',
+    dc('Brisbane seek an unprecedented third-straight flag.').length > 0);
+  expect('"first time since" rejected',
+    dc('A flag for the first time since the club\'s early years.').length > 0);
+  expect('live catch: "path through September has been more tortuous" rejected under PATH PARITY',
+    dc('Fremantle\'s path through September has been more tortuous.').length > 0);
+  expect('"tougher route" rejected under PATH PARITY',
+    dc('Brisbane navigated a tougher route to the decider.').length > 0);
+  expect('honours facts stated plainly pass',
+    dc('A win makes it three in a row for Brisbane; Fremantle are chasing a first flag.').length === 0);
+  expect('path comparison allowed when no PATH PARITY line (routes actually differed)',
+    dc('Brisbane took the longer route.', 'FINALS PATH:\n  • x\n').length === 0);
+  expect('rarity guard silent without CLUB HONOURS',
+    dc('An unprecedented run.', 'FINALS PATH:\n  • x\n').length === 0);
 
   const NO_H2H = 'FIXTURE: Brisbane Lions vs Fremantle\n' + FORM;
   const H2H = NO_H2H + 'HEAD-TO-HEAD (the sides have met ONCE this season — no trend exists; no scores, years or dates are given): Brisbane Lions lost in that single meeting.\n';

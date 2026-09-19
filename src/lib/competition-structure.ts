@@ -224,6 +224,13 @@ export function buildFinalsPathFacts(
   if (oppPath)  facts.push(`${opponentName}'s finals so far: ${oppPath}.`);
 
   if (round.decider) {
+    // Route parity, stated outright: a model given two identical "lost the
+    // QF, then won twice" lines still invented a "tougher path" for one side.
+    const shape = (path: string | null | undefined) => path ? path.match(/\b(lost|beat)\b/g)?.join('-') ?? null : null;
+    const tShape = shape(teamPath), oShape = shape(oppPath);
+    if (tShape && oShape && tShape === oShape) {
+      facts.push(`PATH PARITY: both sides took the SAME route (${tShape.split('-').length} finals, identical win/loss sequence) — neither side's path was tougher, longer, or more direct than the other's.`);
+    }
     facts.push('Both sides won Preliminary Finals to reach the Grand Final. The Grand Final venue is fixed — a home-ground label here does not mean higher seeding.');
     facts.push('The winner is the premier.');
     return facts;
