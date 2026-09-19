@@ -739,8 +739,12 @@ expect('invented F1 driver in spotlight is rejected',
     dc('Brisbane seek an unprecedented third-straight flag.').length > 0);
   expect('negated rarity passes ("not unprecedented for this club" echoes the block)',
     dc('A third straight flag is not unprecedented for this club.').length === 0);
-  expect('"first time since" rejected',
+  expect('"first time since" without a sourced year rejected',
     dc('A flag for the first time since the club\'s early years.').length > 0);
+  expect('"first Grand Final since 2013" passes when 2013 is in the block',
+    dc('Fremantle\'s first Grand Final since 2013.', DECIDER + '  • Fremantle: most recent decider was 2013\n').length === 0);
+  expect('"first three-peat since 1930" rejected (year not in the block)',
+    dc('The first three-peat since 1930.').length > 0);
   expect('live catch: "path through September has been more tortuous" rejected under PATH PARITY',
     dc('Fremantle\'s path through September has been more tortuous.').length > 0);
   expect('"tougher route" rejected under PATH PARITY',

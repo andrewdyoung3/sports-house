@@ -1265,13 +1265,20 @@ export function validateDeciderClaims(output: AIPreview, prompt: string): string
   ].join('  ');
   const violations: string[] = [];
   if (/CLUB HONOURS/.test(prompt)) {
-    const rarityRe = /(?<!\b(?:not|hardly|far from|nothing)\s)\b(?:unprecedented|never before|(?:for the )?first time (?:since|in)\b[^.]{0,20}|first (?:club|team|side) (?:in|to|since)|first since\b|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
+    const rarityRe = /(?<!\b(?:not|hardly|far from|nothing)\s)\b(?:unprecedented|never before|(?:for the )?first(?: [\w-]+){0,3} (?:time )?since\b(?: [\w–-]+){0,4}|first (?:club|team|side) (?:in|to|since)|record[- ]breaking|history[- ]making|rarest|rarely (?:seen|achieved)|only (?:the )?\w+ (?:club|team|side) (?:in|to|ever))\b/gi;
+    // "first Grand Final since 2013" is the club's own sourced record when the
+    // year is in the block — that is exactly the sentence the honours exist for.
+    const promptYears = new Set([...prompt.matchAll(/\b(?:19|20)\d{2}\b/g)].map(y => y[0]));
     const seen = new Set<string>();
     for (const m of factual.matchAll(rarityRe)) {
       const hit = m[0].toLowerCase().trim();
       if (seen.has(hit)) continue;
+      const sinceYear = hit.match(/\bsince\b.*?\b((?:19|20)\d{2})\b/);
+      if (sinceYear && promptYears.has(sinceYear[1])) continue;
       seen.add(hit);
-      violations.push(`rarity claim "${m[0].trim().slice(0, 50)}" — the data ranks nothing against history; state the honours facts as given, never how rare a result would be`);
+      const at = factual.indexOf(m[0]);
+      const ctx = factual.slice(Math.max(0, at - 40), at + m[0].length + 40).trim();
+      violations.push(`rarity claim "${m[0].trim().slice(0, 50)}" (in: "…${ctx}…") — the data ranks nothing against history; state the honours facts as given (a "first since <year>" is fine only when that year is in CLUB HONOURS), never how rare a result would be`);
     }
   }
   if (/PATH PARITY: both sides took the SAME route/.test(prompt)) {
