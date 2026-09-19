@@ -548,6 +548,14 @@ expect('invented F1 driver in spotlight is rejected',
   const vc = (context: string) => validateRegisterCrutches(preview({ context }), '');
   expect('"affirms their status" rejected', vc('A win that affirms their status as the premier side.').length > 0);
   expect('"validates their dominance" rejected', vc('It validates their dominance this season.').length > 0);
+  expect('GF audit: "will be pivotal" rejected', vc('The battle to control the corridor will be pivotal.').length > 0);
+  expect('GF audit: "looms large" rejected', vc('The contest around the ruck rotations looms large.').length > 0);
+  expect('GF audit tautology: "the side winning the midfield battle wins the contest" rejected',
+    vc('Contest dominance will dictate transitions—the side winning the midfield battle wins the contest.').length > 0);
+  expect('GF audit tautology: "will dictate where this is won" rejected',
+    vc('The ability of either side to disrupt the other will dictate where this is won.').length > 0);
+  expect('directional claim passes ("Brisbane win more clearances")',
+    vc('Brisbane win more clearances and turn them into scores faster than Fremantle.').length === 0);
   const RINT_P = 'SPORT: International Rugby Union Test match. ...\n';
   expect('rugby "two-goal difference" rejected (unit error)',
     validateSportRegister(preview({ context: 'A two-goal difference in a 48-46 thriller.' }), RINT_P).length > 0);

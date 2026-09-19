@@ -478,7 +478,7 @@ export function validateRegisterCrutches(output: AIPreview, prompt: string): str
   void prompt;
   const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
     .filter(Boolean).join('  ');
-  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\bwill be (?:crucial|critical|paramount|vital|non-negotiable)\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\b(?:confirms?|affirms?|validates?|cements?|solidif(?:y|ies)) (?:their|its|his|her) (?:status|resilience|credentials|readiness|dominance)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
+  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\b(?:will be|is|looms as) (?:crucial|critical|paramount|vital|pivotal|non-negotiable)\b|\blooms large\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\b(?:confirms?|affirms?|validates?|cements?|solidif(?:y|ies)) (?:their|its|his|her) (?:status|resilience|credentials|readiness|dominance)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of text.matchAll(crutchRe)) {
@@ -486,6 +486,16 @@ export function validateRegisterCrutches(output: AIPreview, prompt: string): str
     if (seen.has(hit)) continue;
     seen.add(hit);
     violations.push(`register crutch "${m[0]}" — never announce what matters; make the comparative case directly (e.g. "X tackle harder and win more of the ball")`);
+  }
+  // Tautologies (GF audit): "the side winning the midfield wins the contest",
+  // "the ability to disrupt the other will dictate where this is won" — a
+  // sentence whose conclusion restates its premise says nothing about THESE teams.
+  const tautologyRe = /\b(?:the|whichever|whoever) (?:side|team|club)(?: that| which| who)? (?:wins?|winning|controls?|controlling|dominates?|dominating|owns?|owning|prevails? in|prevailing in)\b[^.]{0,50}\b(?:will |should |likely )?(?:wins?|takes?|claims?|decides?|dictates?|controls?) (?:the|this) (?:contest|game|match|decider|grand final|premiership|flag|day)\b|\b(?:will|could|should) dictate (?:where|how) (?:this|the) (?:game |contest |match |one |grand final |decider )?is (?:won|decided)\b/gi;
+  for (const m of text.matchAll(tautologyRe)) {
+    const hit = m[0].toLowerCase();
+    if (seen.has(hit)) continue;
+    seen.add(hit);
+    violations.push(`tautology "${m[0].slice(0, 70)}" — the conclusion restates the premise; say WHICH side is better placed to win that battle and why, from the data`);
   }
   return violations;
 }
