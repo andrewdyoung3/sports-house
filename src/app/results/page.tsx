@@ -933,7 +933,15 @@ export default function ResultsPage() {
         </div>
 
         {/* Right sidebar */}
-        <aside className="hidden lg:block sticky top-20 space-y-4 mt-0">
+        <aside
+          /* Sticky sidebars taller than the viewport hide their lower content:
+             the element stays pinned, so the bottom never scrolls into view.
+             Cap the height to the visible area and give it its own scroll
+             context, so the filter panes below the calendar + league table
+             stay reachable fully expanded. */
+          className="hidden lg:block sticky top-20 space-y-4 mt-0
+                     max-h-[calc(100vh-5.5rem)] overflow-y-auto overscroll-contain pb-4 pr-0.5"
+        >
           {!loading && (
             <ResultsCalendar
               results={filteredResults}
