@@ -528,7 +528,12 @@ function ScheduleRow({
            width/height give intrinsic dimensions so the browser reserves space; the
            CSS height + w-auto still govern the displayed size, and the UA-mapped
            aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
-      {teamLogoUrl && (
+      {/* F1 rows carry NO left team watermark: the "team" is the championship
+          entity, so it duplicated the right-hand league mark. Every other
+          league keeps its crest here. (The .sh-fix path above handles all
+          non-F1 leagues; this branch is F1-only in practice, but the guard
+          keeps it correct if the split ever changes.) */}
+      {teamLogoUrl && !isF1 && (
         <img loading="lazy" decoding="async"
           src={teamLogoUrl}
           alt=""
