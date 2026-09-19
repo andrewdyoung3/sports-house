@@ -13,6 +13,7 @@
  * Run: npx tsx scripts/test-team-ink.ts   (also part of `npm run test`)
  */
 
+import { readFileSync } from 'fs';
 import { TEAMS } from '@/lib/teams';
 import { contrastColor } from '@/lib/utils';
 import {
@@ -131,6 +132,48 @@ console.log('── contrastColor picks the better of black/white for FILLS ─�
   expect('deep navy still takes white',                             contrastColor('#0c2340') === '#ffffff');
   expect('bright yellow still takes black',                         contrastColor('#ffd200') === '#000000');
   expect('invalid hex falls back to white',                         contrastColor('not-a-hex') === '#ffffff');
+}
+
+console.log('── theme token parity in globals.css ──');
+{
+  // The bug this guards: `.sh-theme` re-declares the DARK palette locally, so any
+  // token it sets beats the light value inherited from [data-theme='light'] on
+  // <html>. A token added to .sh-theme without a matching reset in
+  // [data-theme='light'] .sh-theme therefore keeps its dark value in light mode.
+  // Found live via the mobile calendar sheet; the same gap had left W/L pips on
+  // the dark green (1.96:1 on the light card) and the fallback accent at 3.40:1.
+  const css = readFileSync('src/app/globals.css', 'utf8');
+  const block = (re: RegExp) => css.match(re)?.[1] ?? '';
+  const darkBlock  = block(/\n\.sh-theme \{([\s\S]*?)\n\}/);
+  const lightBlock = block(/\[data-theme='light'\] \.sh-theme \{([\s\S]*?)\n\}/);
+  expect('both .sh-theme blocks found', darkBlock.length > 0 && lightBlock.length > 0);
+
+  const names = (b: string) => new Set([...b.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(m => m[1]));
+  // Exempt tokens that are theme-agnostic by nature: geometry, and values wholly
+  // derived from other tokens (color-mix/var) which re-resolve per theme.
+  const EXEMPT = new Set(['--radius', '--radius-lg', '--bg-grad']);
+  const lightNames = names(lightBlock);
+  const unreset = [...names(darkBlock)].filter(t =>
+    !lightNames.has(t) && !EXEMPT.has(t)
+    && !new RegExp(`${t}:\\s*(var|color-mix)`).test(darkBlock));
+  expect('every literal .sh-theme token has a light reset', unreset.length === 0);
+  unreset.forEach(t => console.log(`      missing light reset: ${t}`));
+
+  // The specific values the gap was hiding.
+  expect('light .sh-theme resets --win',  /--win:\s*#147a44/.test(lightBlock));
+  expect('light .sh-theme resets --loss', /--loss:\s*#bb2c48/.test(lightBlock));
+  expect('light .sh-theme resets the fallback --accent', /--accent:\s*#6d3ee0/.test(lightBlock));
+  expect('light .sh-theme resets --modal-bg', /--modal-bg:\s*#f4f1f8/.test(lightBlock));
+
+  // Overlay surfaces must come from a token, never an arbitrary Tailwind value:
+  // [data-theme='light'] overrides match on class names (.bg-black\\/20) and can
+  // never reach bg-[#0e0e18], which is how the calendar sheet stayed dark.
+  const sheets = ['src/app/schedule/page.tsx', 'src/app/results/page.tsx'];
+  for (const f of sheets) {
+    const src = readFileSync(f, 'utf8');
+    expect(`${f.split('/').slice(-2).join('/')} sheet uses .sh-sheet, not an arbitrary bg`,
+      src.includes('sh-sheet') && !/bg-\[#[0-9a-f]{6}\]/i.test(src));
+  }
 }
 
 console.log('── accentVars shape ──');

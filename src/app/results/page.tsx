@@ -970,11 +970,10 @@ export default function ResultsPage() {
               ResultsCalendar's .sh-card tokens resolve outside the page wrapper. */}
           <div
             className={[
-              'sh-theme fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
+              'sh-theme sh-sheet fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
               'transition-transform duration-[420ms] ease-out',
               calendarVisible ? 'translate-y-0' : 'translate-y-full',
             ].join(' ')}
-            style={{ borderTopColor: 'var(--border)' }}
           >
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm font-semibold" style={{ color: 'var(--text-2)' }}>Calendar</p>

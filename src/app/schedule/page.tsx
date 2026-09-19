@@ -1613,7 +1613,7 @@ export default function SchedulePage() {
             aria-modal="true"
             aria-label="Calendar"
             className={[
-              'fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl border-t border-white/10 bg-[#0e0e18] px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
+              'sh-sheet fixed bottom-0 left-0 right-0 z-50 lg:hidden rounded-t-2xl px-4 pt-4 pb-8 max-h-[85vh] overflow-y-auto',
               'transition-transform duration-[420ms] ease-out',
               calendarVisible ? 'translate-y-0' : 'translate-y-full',
             ].join(' ')}
