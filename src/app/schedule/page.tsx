@@ -1282,6 +1282,14 @@ export default function SchedulePage() {
   // Out-of-season copy for a league pill whose fixture list came back empty.
   const outOfSeason = isLeagueMode && activeLeagueId ? outOfSeasonMessage(activeLeagueId) : null;
 
+  // The sidebar stacks calendar → league table → filter panes. With the table
+  // present the column runs past the viewport, and a sticky column simply hides
+  // whatever sits below the fold (page scrolling moves the feed, not the pinned
+  // sidebar). So: pin it only while it is short enough to fit; when the table is
+  // showing, let it scroll with the page so the panes are always reachable.
+  const showSideTable = !activeLoading && !!standings && standings.length > 0
+    && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null || heroExpanded);
+
   // Filters card (My teams / Competitions panes) — rendered in the RIGHT
   // sidebar on desktop (under the calendar) and inline on mobile, so it is
   // built once here and placed twice below.
@@ -1529,13 +1537,12 @@ export default function SchedulePage() {
 
         {/* ── Right column: sticky sidebar ── */}
         <aside
-          /* Sticky sidebars taller than the viewport hide their lower content:
-             the element stays pinned, so the bottom never scrolls into view.
-             Cap the height to the visible area and give it its own scroll
-             context, so the filter panes below the calendar + league table
-             stay reachable fully expanded. */
-          className="hidden lg:block sticky top-20 space-y-4 mt-0
-                     max-h-[calc(100vh-5.5rem)] overflow-y-auto overscroll-contain pb-4 pr-0.5"
+          className={cn(
+            'hidden lg:block space-y-4 mt-0 pb-4',
+            // Short column → pin it. Tall column (league table showing) → let it
+            // scroll with the page, so the filter panes below are reachable.
+            showSideTable ? '' : 'sticky top-20',
+          )}
         >
 
           {/* Calendar */}
@@ -1552,7 +1559,7 @@ export default function SchedulePage() {
           )}
 
           {/* League standings — shown in league-browse mode, when a team is selected, or when a card is expanded. */}
-          {!activeLoading && standings && standings.length > 0 && (isLeagueMode || activeTeamId !== 'all' || expandedId !== null || heroExpanded) && (
+          {showSideTable && (
             <LeagueTableSh
               league={standingsTableLeague as SportKey}
               rows={standings}
