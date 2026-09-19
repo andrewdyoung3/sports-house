@@ -121,7 +121,7 @@ export function describeHonours(league: string, teamName: string, h: ClubHonours
       const next = h.streak + 1;
       const precedent = h.priorRun
         ? (h.priorRun.length >= next
-          ? ` — NOT unprecedented for this club: they won ${h.priorRun.length} straight in ${h.priorRun.span}`
+          ? `, REPEATING the club's own ${h.priorRun.span} run of ${h.priorRun.length} — so it is NOT unprecedented and must never be called that; say "a third straight flag, as in ${h.priorRun.span}"`
           : ` — their longest run to date is ${h.priorRun.length} (${h.priorRun.span})`)
         : '';
       parts.push(h.streak >= 2

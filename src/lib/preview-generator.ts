@@ -1278,7 +1278,12 @@ export function validateDeciderClaims(output: AIPreview, prompt: string): string
       seen.add(hit);
       const at = factual.indexOf(m[0]);
       const ctx = factual.slice(Math.max(0, at - 40), at + m[0].length + 40).trim();
-      violations.push(`rarity claim "${m[0].trim().slice(0, 50)}" (in: "…${ctx}…") — the data ranks nothing against history; state the honours facts as given (a "first since <year>" is fine only when that year is in CLUB HONOURS), never how rare a result would be`);
+      // When the block itself names the precedent, hand the model the exact substitute.
+      const precedent = prompt.match(/REPEATING the club's own (\S+) run of (\d+)/);
+      const fix = precedent
+        ? ` CLUB HONOURS says this club already did it (${precedent[2]} straight in ${precedent[1]}) — write "as in ${precedent[1]}" instead of any rarity word.`
+        : '';
+      violations.push(`rarity claim "${m[0].trim().slice(0, 50)}" (in: "…${ctx}…") — the data ranks nothing against history; state the honours facts as given (a "first since <year>" is fine only when that year is in CLUB HONOURS), never how rare a result would be.${fix}`);
     }
   }
   if (/PATH PARITY: both sides took the SAME route/.test(prompt)) {
