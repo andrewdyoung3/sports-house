@@ -97,6 +97,7 @@ export async function fetchAFLPreview(
   let teamRecentForm: GameResult[] | undefined;
   let opponentRecentForm: GameResult[] | undefined;
   let headToHead: HeadToHeadMeeting[] | undefined;
+  let roundState: import('@/types').RoundState | undefined;
   let teamVenueRecord: VenueRecord | undefined;
   let opponentVenueRecord: VenueRecord | undefined;
 
@@ -157,6 +158,32 @@ export async function fetchAFLPreview(
         };
       });
     if (meetings.length > 0) headToHead = meetings;
+
+    // ── Round state: which matches of the CURRENT round are still unplayed ──
+    // Counted from the feed's own round identity, never inferred from played
+    // counts (byes make those differ permanently — a completed round would
+    // look incomplete). The "current round" is the latest round with any
+    // completed match; if it still has unplayed matches, the ladder is mid-round.
+    {
+      const withRound = aflGames.filter(g => g.round != null && g.hteam && g.ateam);
+      const rounds = [...new Set(withRound.map(g => Number(g.round)))].sort((a, b) => a - b);
+      const currentRound = [...rounds].reverse()
+        .find(r => withRound.some(g => Number(g.round) === r && Number(g.complete) >= 100));
+      if (currentRound !== undefined) {
+        const inRound = withRound.filter(g => Number(g.round) === currentRound);
+        const remaining = inRound.filter(g => Number(g.complete) < 100);
+        if (remaining.length > 0) {
+          const playing = new Set(inRound.flatMap(g => [String(g.hteam), String(g.ateam)]));
+          roundState = {
+            roundName: String(inRound[0].roundname ?? `Round ${currentRound}`),
+            total: inRound.length,
+            played: inRound.length - remaining.length,
+            remaining: remaining.map(g => ({ home: String(g.hteam), away: String(g.ateam) })),
+            byes: Object.values(SQUIGGLE_NAME).filter(n => !playing.has(n)),
+          };
+        }
+      }
+    }
 
     // ── Season record at THIS fixture's venue (grounds venue-form claims and
     //    feeds the angle engine's venue-fortress detector; no extra fetch) ──
@@ -275,6 +302,7 @@ export async function fetchAFLPreview(
     teamRecentForm,
     opponentRecentForm,
     headToHead,
+    roundState,
     teamVenueRecord,
     opponentVenueRecord,
   };

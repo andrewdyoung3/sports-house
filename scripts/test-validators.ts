@@ -660,7 +660,7 @@ expect('invented F1 driver in spotlight is rejected',
 // ─── validateProvisionalLadder — mid-round positions aren't settled ────────────
 
 {
-  const PROV = 'DERIVED FACTS:\n  • PROVISIONAL LADDER: 4 of 18 teams have a game in hand — the round is not complete.\n';
+  const PROV = 'DERIVED FACTS:\n  • Round 21 is still being played: 6 of 9 matches decided, still to come — Carlton v Essendon. On a bye this round: Gold Coast.\n';
   const DONE = 'DERIVED FACTS:\n  • LADDER POSITION: Brisbane Lions — 2nd of 18.\n';
   const pl = (t: string, p: string) => validateProvisionalLadder(preview({ context: t }), p);
   console.log('validateProvisionalLadder:');

@@ -180,6 +180,19 @@ export interface PressNote {
   published?: string;
 }
 
+/** Unplayed matches in the round the ladder currently reflects. */
+export interface RoundState {
+  /** Feed's own label, e.g. "Round 21". */
+  roundName: string;
+  /** Matches in the round, and how many have a result. */
+  total: number;
+  played: number;
+  /** Still to play, home v away as the feed names them. */
+  remaining: Array<{ home: string; away: string }>;
+  /** Teams with a bye this round (named so they are never read as "yet to play"). */
+  byes: string[];
+}
+
 /** A team's completed-game record at one venue this season. */
 export interface VenueRecord {
   venue: string;
@@ -256,6 +269,13 @@ export interface PreviewContext {
    */
   teamRecentForm?: GameResult[];
   opponentRecentForm?: GameResult[];
+  /**
+   * State of the round the LADDER currently reflects — only set when the feed
+   * identifies rounds per match (so the unplayed matches can actually be
+   * counted). Never inferred from differing played counts: byes make those
+   * differ permanently, which would mark completed rounds as incomplete.
+   */
+  roundState?: RoundState;
   /** Season win-loss record at THIS fixture's venue (AFL: from Squiggle games). */
   teamVenueRecord?: VenueRecord;
   opponentVenueRecord?: VenueRecord;

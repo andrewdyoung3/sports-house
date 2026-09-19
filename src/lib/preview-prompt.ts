@@ -419,6 +419,7 @@ function buildDerivedFacts(
   opponentName: string,
   played?: number,
   totalRounds?: number,
+  roundState?: import('@/types').RoundState,
 ): string[] {
   if (table.length === 0) return [];
   const sorted = [...table].sort((a, b) => a.position - b.position);
@@ -450,39 +451,16 @@ function buildDerivedFacts(
     }
   }
 
-  // ── Provisional ladder: games in hand ─────────────────────────────────────
-  // A round is rarely complete when a preview is written (and previews now
-  // generate ~20 min after the previous game). Rather than delay or hedge
-  // vaguely, state what is actually known: whose figures are still to move,
-  // and which rivals could pass the teams in view once they play. Computed
-  // from the played counts in the table — no round metadata needed.
-  {
-    const maxPlayed = Math.max(...sorted.map(r => r.played));
-    const inHand    = sorted.filter(r => r.played < maxPlayed);
-    if (inHand.length > 0 && winsPoints(league) > 0) {
-      facts.push(`  • PROVISIONAL LADDER: ${inHand.length} of ${sorted.length} teams have a game in hand — the round is not complete, so these positions can still change. Describe any ladder position as it stands with matches still to come; never as settled, locked or guaranteed.`);
-
-      // Who can actually pass the teams in view once the round finishes.
-      const perWin = winsPoints(league);
-      for (const [name, row] of [[teamName, teamRow], [opponentName, oppRow]] as [string, LeagueTableRow | undefined][]) {
-        if (!row) continue;
-        const movers = sorted.filter(r => {
-          if (r.name === row.name) return false;
-          const gamesInHand = maxPlayed - r.played;
-          if (gamesInHand <= 0) return false;
-          const ceiling = (r.points ?? 0) + gamesInHand * perWin;
-          return r.position > row.position && ceiling >= (row.points ?? 0);
-        });
-        if (movers.length > 0) {
-          const list = movers.slice(0, 3)
-            .map(m => `${m.name} (${ordinalSuffix(m.position)}, ${m.points} pt${m.points === 1 ? '' : 's'}, ${maxPlayed - m.played} in hand)`)
-            .join('; ');
-          facts.push(`  • ${name}'s ${ordinalSuffix(row.position)} is not yet secure this round — could be passed by: ${list}.`);
-        } else if (inHand.length > 0) {
-          facts.push(`  • ${name} cannot be passed by anyone below them once the round completes — their ${ordinalSuffix(row.position)} holds regardless of the remaining results.`);
-        }
-      }
-    }
+  // ── Mid-round ladder state (only when the feed identifies rounds) ────────
+  // Emitted from counted fixtures, so it states facts rather than hedging:
+  // which matches of this round are still to come, and who is on a bye. It is
+  // OPTIONAL material — the model is told it may be used where it matters, not
+  // that every preview must discuss how the table could move.
+  if (roundState && roundState.remaining.length > 0) {
+    const fixtures = roundState.remaining.slice(0, 5)
+      .map(m => `${m.home} v ${m.away}`).join('; ');
+    facts.push(`  • ${roundState.roundName} is still being played: ${roundState.played} of ${roundState.total} matches decided, still to come — ${fixtures}${roundState.remaining.length > 5 ? ' and others' : ''}. Ladder positions above are current but not final for the round.${roundState.byes.length > 0 ? ` On a bye this round: ${roundState.byes.join(', ')} (they are NOT yet to play).` : ''}`);
+    facts.push('  • Use the unfinished round only if it bears on this fixture (a position that could shift, a rival playing later). It is context available to you, NOT a point every preview must make.');
   }
 
   // ── Head-to-head gap ──────────────────────────────────────────────────────
@@ -1877,7 +1855,7 @@ export function buildDataBlock(
           }
 
           // Derived standings arithmetic — pre-computed so the model never has to
-          const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds);
+          const derivedFacts = buildDerivedFacts(league, context.leagueTable, teamName, opponentName, played, totalRounds, context.roundState);
           if (derivedFacts.length > 0) {
             lines.push(...derivedFacts);
             lines.push('');

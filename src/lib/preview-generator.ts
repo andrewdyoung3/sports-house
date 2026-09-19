@@ -1059,14 +1059,15 @@ export function validateSeriesClaims(output: AIPreview, prompt: string): string[
 }
 
 /**
- * Provisional-ladder finality. When the data block says the round is
- * incomplete (teams with a game in hand), a position is a snapshot, not a
- * settlement — "Brisbane sit second" is fine, "Brisbane have locked up second"
- * is not. Rejects finality verbs applied to a ladder position while results
- * are outstanding; the derived facts supply the honest framing instead.
+ * Mid-round finality. When the data block reports the round still being
+ * played (counted from the feed's own round identity — never inferred from
+ * played counts, which byes confound), a ladder position is a snapshot, not a
+ * settlement: "Brisbane sit second" is fine, "Brisbane have locked up second"
+ * is not. Says nothing about whether the preview SHOULD discuss the round —
+ * that is optional material, not a required talking point.
  */
 export function validateProvisionalLadder(output: AIPreview, prompt: string): string[] {
-  if (!/PROVISIONAL LADDER:/.test(prompt)) return [];
+  if (!/ is still being played: \d+ of \d+ matches decided/.test(prompt)) return [];
   const factual = [
     output.context, output.tacticalBattle, output.playerSpotlight, output.verdict,
     ...(output.keyInsights ?? []),
