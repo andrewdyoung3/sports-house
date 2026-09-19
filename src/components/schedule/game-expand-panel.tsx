@@ -7,7 +7,7 @@ import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 import type { StandingRow } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { REAL_DATA_LEAGUES } from '@/lib/teams';
-import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
+import { F1_CIRCUITS, isF1ConstructorTeam, getF1ConstructorName, F1_DRIVER_IDS, F1_CONSTRUCTOR_TEAMS, F1_CONSTRUCTOR_FEED_ALIASES } from '@/lib/f1-data';
 import { F1StartingGrid } from '@/components/schedule/f1-starting-grid';
 import { FinalsBracket, FinalsBracketPanel, isFinalsFixture } from '@/components/schedule/finals-bracket';
 import { COMP_RULES } from '@/lib/competition-rules';
@@ -190,6 +190,13 @@ const AI_PREVIEW_DAYS = 14;
  */
 function f1ConstructorTeam(name: string | undefined) {
   if (!name) return undefined;
+  // Feed spellings first ("RB F1 Team", "Audi", "Cadillac F1 Team" — none of
+  // which match our display names by containment).
+  const aliasId = F1_CONSTRUCTOR_FEED_ALIASES[name.trim().toLowerCase()];
+  if (aliasId) {
+    const byAlias = F1_CONSTRUCTOR_TEAMS.find(t => t.id === aliasId);
+    if (byAlias) return byAlias;
+  }
   const exact = F1_CONSTRUCTOR_TEAMS.find(t => t.name === name || t.division === name);
   if (exact) return exact;
   const norm = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');

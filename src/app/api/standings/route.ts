@@ -339,6 +339,9 @@ const F1_ERGAST_CONSTRUCTOR_TO_TEAM_ID: Record<string, string> = {
   'rb':          'f1-team-racingbulls',
   'haas':        'f1-team-haas',
   'sauber':      'f1-team-sauber',
+  // 2026 grid: Sauber became the Audi works team; Cadillac joined as the 11th.
+  'audi':        'f1-team-sauber',
+  'cadillac':    'f1-team-cadillac',
 };
 
 async function fetchF1ConstructorStandings(): Promise<StandingRow[]> {

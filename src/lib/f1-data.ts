@@ -550,8 +550,38 @@ export const F1_CONSTRUCTOR_TEAMS: Team[] = [
   { id: 'f1-team-williams',    name: 'Williams',         shortName: 'Williams',    abbreviation: 'WIL', league: 'f1', sport: 'other', city: 'Grove',          country: 'United Kingdom', primaryColor: '#64C4FF', secondaryColor: '#041E42', venue: '', division: 'Williams' },
   { id: 'f1-team-racingbulls', name: 'Racing Bulls',     shortName: 'Racing Bulls',abbreviation: 'RCB', league: 'f1', sport: 'other', city: 'Faenza',         country: 'Italy',          primaryColor: '#6692FF', secondaryColor: '#CC1E4A', venue: '', division: 'Racing Bulls' },
   { id: 'f1-team-haas',        name: 'Haas F1 Team',    shortName: 'Haas',        abbreviation: 'HAS', league: 'f1', sport: 'other', city: 'Kannapolis',     country: 'United States',  primaryColor: '#B6BABD', secondaryColor: '#E8002D', venue: '', division: 'Haas' },
-  { id: 'f1-team-sauber',      name: 'Kick Sauber',      shortName: 'Kick Sauber', abbreviation: 'SAU', league: 'f1', sport: 'other', city: 'Hinwil',         country: 'Switzerland',    primaryColor: '#52E252', secondaryColor: '#000000', venue: '', division: 'Kick Sauber' },
+  // 2026: the Sauber entry becomes the Audi works team. The ID is deliberately
+  // unchanged so existing followers keep their subscription; name/colours are
+  // Audi's. Colour is Audi's corporate red — update if the livery differs.
+  { id: 'f1-team-sauber',      name: 'Audi',             shortName: 'Audi',        abbreviation: 'AUD', league: 'f1', sport: 'other', city: 'Hinwil',         country: 'Switzerland',    primaryColor: '#BB0A30', secondaryColor: '#000000', venue: '', division: 'Audi' },
+  // 2026: Cadillac joins as the 11th team.
+  { id: 'f1-team-cadillac',    name: 'Cadillac',         shortName: 'Cadillac',    abbreviation: 'CAD', league: 'f1', sport: 'other', city: 'Indianapolis',   country: 'United States',  primaryColor: '#C8A45C', secondaryColor: '#000000', venue: '', division: 'Cadillac F1 Team' },
 ];
+
+/**
+ * Constructor names EXACTLY as the standings feeds spell them → our team id.
+ * Ergast/Jolpi uses "RB F1 Team", "Haas F1 Team", "Alpine F1 Team", "Red Bull",
+ * and from 2026 "Audi" and "Cadillac F1 Team" — none of which match our display
+ * names by containment. Keys are lowercased; lookup normalises the same way.
+ */
+export const F1_CONSTRUCTOR_FEED_ALIASES: Record<string, string> = {
+  'red bull':                     'f1-team-redbull',
+  'red bull racing':              'f1-team-redbull',
+  'rb':                           'f1-team-racingbulls',
+  'rb f1 team':                   'f1-team-racingbulls',
+  'racing bulls':                 'f1-team-racingbulls',
+  'visa cash app rb':             'f1-team-racingbulls',
+  'alpine f1 team':               'f1-team-alpine',
+  'haas f1 team':                 'f1-team-haas',
+  'moneygram haas f1 team':       'f1-team-haas',
+  'aston martin aramco':          'f1-team-astonmartin',
+  'audi':                         'f1-team-sauber',
+  'kick sauber':                  'f1-team-sauber',
+  'sauber':                       'f1-team-sauber',
+  'stake f1 team kick sauber':    'f1-team-sauber',
+  'cadillac':                     'f1-team-cadillac',
+  'cadillac f1 team':             'f1-team-cadillac',
+};
 
 /** Returns the constructor name from a team entity (works for both driver and constructor teams) */
 export function getF1ConstructorName(team: Team): string | undefined {

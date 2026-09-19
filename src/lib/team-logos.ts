@@ -340,6 +340,8 @@ export const TEAM_LOGOS: Record<string, string> = {
   'f1-team-williams':    'https://media.formula1.com/content/dam/fom-website/teams/2025/williams-logo.png',
   'f1-team-racingbulls': 'https://media.formula1.com/content/dam/fom-website/teams/2025/racing-bulls-logo.png',
   'f1-team-haas':        'https://media.formula1.com/content/dam/fom-website/teams/2025/haas-logo.png',
-  'f1-team-sauber':      'https://media.formula1.com/content/dam/fom-website/teams/2025/kick-sauber-logo.png',
+  // 2026: Audi works team (entry id kept from the Sauber era).
+  'f1-team-cadillac':  'https://r2.thesportsdb.com/images/media/team/badge/6pggtc1705864697.png',
+  'f1-team-sauber':      'https://r2.thesportsdb.com/images/media/team/badge/y1ykvg1567179174.png',
 
 };
