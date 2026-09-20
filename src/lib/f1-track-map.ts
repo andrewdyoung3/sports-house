@@ -35,6 +35,8 @@ export const MV_CIRCUIT_KEYS: Record<string, number> = {
   baku:              144,
   marina_bay:         61,  // Singapore
   americas:            9,  // Austin
+  red_bull_ring:      19,  // Spielberg — added 2026-09-20; its absence cost the
+                           // Austrian round both its map and its facts.
   rodriguez:          65,  // Mexico City
   interlagos:         14,
   las_vegas:         152,
@@ -63,7 +65,37 @@ export interface TrackGeometry {
 }
 
 const cache = new Map<string, { at: number; geo: TrackGeometry | null }>();
-const TTL_MS = 24 * 60 * 60_000; // circuit geometry is static within a season
+
+/**
+ * Re-sampling cadence. Geometry for the ASKED-FOR season is static — a layout
+ * is fixed once the season's entry exists — so it is held for a day.
+ *
+ * The other two outcomes are provisional and are re-checked far more often, so
+ * the map corrects itself without a deploy:
+ *  - a PRIOR season's layout served as a stand-in: the current-season entry
+ *    usually appears in the weeks before a round, and re-sampling is what
+ *    swaps a provisional map for the real one.
+ *  - NOTHING found: a newly-added or returning circuit (Madrid, Sepang) may be
+ *    published mid-season. A day-long negative cache would hide it that long.
+ */
+const TTL_EXACT_MS       = 24 * 60 * 60_000;
+const TTL_PROVISIONAL_MS =  6 * 60 * 60_000;
+const TTL_MISSING_MS     =  3 * 60 * 60_000;
+
+function ttlFor(geo: TrackGeometry | null, askedYear: number): number {
+  if (!geo) return TTL_MISSING_MS;
+  return geo.year === askedYear ? TTL_EXACT_MS : TTL_PROVISIONAL_MS;
+}
+
+/**
+ * True when the served layout predates the race's season — the API answered
+ * with an older circuit shape because the race year's own is not published.
+ * A LATER layout is not provisional: it is at worst the same shape, and F1
+ * publishes next season's geometry ahead of the calendar.
+ */
+export function isProvisional(geo: TrackGeometry, askedYear: number): boolean {
+  return geo.year < askedYear;
+}
 
 /**
  * Geometry for one circuit, or null when we have no key for it (or the API is
@@ -76,9 +108,12 @@ export async function fetchTrackGeometry(circuitId: string, year: number): Promi
 
   const cacheKey = `${key}:${year}`;
   const hit = cache.get(cacheKey);
-  if (hit && Date.now() - hit.at < TTL_MS) return hit.geo;
+  if (hit && Date.now() - hit.at < ttlFor(hit.geo, year)) return hit.geo;
 
-  for (const y of [year, year - 1]) {
+  // Walk back a few seasons: a circuit returning after an absence, or a season
+  // whose entry has not been published yet, still has a usable shape. Anything
+  // older than the asked-for year is flagged provisional to the caller.
+  for (const y of [year, year - 1, year - 2, year - 3]) {
     try {
       const res = await fetch(`https://api.multiviewer.app/api/v1/circuits/${key}/${y}`, {
         headers: { 'User-Agent': 'SportsHouseMVP/1.0' },
@@ -103,7 +138,12 @@ export async function fetchTrackGeometry(circuitId: string, year: number): Promi
           })),
         rotation: Number(d.rotation ?? 0),
         pitLoss:  (d.pitLoss ?? undefined) as TrackGeometry['pitLoss'],
-        year:     y,
+        // The SEASON THE PAYLOAD REPORTS, not the season we asked for. The API
+        // answers any year with its nearest held layout and states which one
+        // that is, so this is the only honest basis for the provisional flag —
+        // echoing back `y` made every map look current, including ones drawn
+        // from a layout several seasons old.
+        year:     Number.isFinite(Number(d.year)) ? Number(d.year) : y,
       };
       cache.set(cacheKey, { at: Date.now(), geo });
       return geo;

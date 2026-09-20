@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
 import { TEAMS } from '@/lib/teams';
-import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+import { COUNTRY_TO_ABBR, canonicalCircuitId } from '@/lib/f1-data';
 import { fetchTimeout, aestDisplay, parseCricketFormat, espnMonthParams, fetchESPNScoreboard } from '@/lib/espn';
 import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS , dedupeSquiggleGames } from '@/lib/afl';
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, cricSeriesSearch, type CricMatch } from '@/lib/cricketdata';
@@ -813,7 +813,10 @@ export async function fetchF1Fixtures(lookbackDays = 0): Promise<UpcomingGame[]>
     const raceName  = race.raceName as string;
     const country   = (race.Circuit?.Location?.country as string) ?? '';
     const abbr      = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
-    const circuitId = race.Circuit?.circuitId ?? '';
+    // Normalised here so the map/facts lookups downstream cannot miss on an
+    // alias (the feed says 'vegas'/'villeneuve'; our tables say las_vegas/
+    // gilles_villeneuve).
+    const circuitId = canonicalCircuitId(race.Circuit?.circuitId);
 
     for (const session of F1_SESSIONS) {
       let sessionDate: Date;

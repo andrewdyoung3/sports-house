@@ -14,7 +14,7 @@
     "poll": "tsx scripts/poll-jobs.ts",
     "coverage": "tsx scripts/coverage-report.ts",
     "dump-prompt": "tsx scripts/dump-prompt.ts",
-    "test": "npm run test:validators && npm run test:team-ink && npm run test:result-dedupe && npm run test:prefs-sync && npm run test:structure && npm run test:angles && npm run test:rss && npm run test:lifecycle && npm run test:espn && npm run test:ratelimit && npm run test:team-coverage",
+    "test": "npm run test:validators && npm run test:team-ink && npm run test:result-dedupe && npm run test:prefs-sync && npm run test:f1-circuits && npm run test:structure && npm run test:angles && npm run test:rss && npm run test:lifecycle && npm run test:espn && npm run test:ratelimit && npm run test:team-coverage",
     "test:validators": "tsx scripts/test-validators.ts",
     "test:ratelimit": "tsx scripts/test-ai-review-ratelimit.ts",
     "test:structure": "tsx scripts/test-competition-structure.ts",
@@ -28,7 +28,9 @@
     "poll:reviews": "tsx scripts/poll-reviews.ts",
     "test:team-ink": "tsx scripts/test-team-ink.ts",
     "test:result-dedupe": "tsx scripts/test-result-dedupe.ts",
-    "test:prefs-sync": "tsx scripts/test-prefs-sync.ts"
+    "test:prefs-sync": "tsx scripts/test-prefs-sync.ts",
+    "f1:circuits": "tsx scripts/check-f1-circuits.ts",
+    "test:f1-circuits": "tsx scripts/test-f1-circuits.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

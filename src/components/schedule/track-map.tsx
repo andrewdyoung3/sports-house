@@ -60,7 +60,7 @@ function project(geo: TrackGeometry) {
 
 export function TrackMap({ circuitId, year, accent, mapUrl }: { circuitId: string; year: number; accent?: string; mapUrl?: string }) {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<{ geometry: TrackGeometry; facts: CircuitFacts | null } | null>(
+  const [data, setData] = useState<{ geometry: TrackGeometry; facts: CircuitFacts | null; provisional?: boolean; layoutYear?: number } | null>(
     geoCache.get(`${circuitId}:${year}`) ?? null,
   );
   const [failed, setFailed] = useState(false);
@@ -108,6 +108,21 @@ export function TrackMap({ circuitId, year, accent, mapUrl }: { circuitId: strin
               <div className="sh-track-body">
                 <TrackSVG geo={data.geometry} color={color} />
                 <TrackLegend color={color} />
+
+                {/* Provenance, always stated. The geometry feed publishes a
+                    circuit's shape once and does not reissue itevery season, so
+                    EVERY map here is drawn from the most recent published
+                    layout rather than the race year's own — naming that year
+                    is more useful than a warning banner that would appear on
+                    all of them equally. The library re-samples older layouts
+                    on a short cache, so a reissue is picked up without a
+                    deploy. */}
+                {data.layoutYear && (
+                  <p className={'sh-track-provenance' + (data.provisional ? ' is-provisional' : '')}>
+                    Layout as published for <strong>{data.layoutYear}</strong> — the most recent
+                    geometry available for this circuit. A change made since may not be shown.
+                  </p>
+                )}
 
                 {/* F1's own circuit artwork — this is where DRS zones and the
                     pit lane are annotated, by the series itself. */}

@@ -63,6 +63,26 @@ export interface F1Circuit {
 
 const F1_MAP_BASE = 'https://media.formula1.com/image/upload/f_auto,c_limit,q_auto,w_1320/content/dam/fom-website/2018-redesign-assets/Circuit%20maps%2016x9';
 
+/**
+ * Feed circuit id → our canonical id.
+ *
+ * Ergast/Jolpi names some circuits differently from our F1_CIRCUITS keys, and
+ * an unmatched id silently costs the round BOTH its track map and its circuit
+ * facts — the Las Vegas and Canadian rounds were rendering with neither.
+ * Normalise at the fixture source (canonicalCircuitId) so every consumer sees
+ * one id, rather than each lookup carrying its own alias table.
+ */
+export const F1_CIRCUIT_ALIASES: Record<string, string> = {
+  vegas:      'las_vegas',
+  villeneuve: 'gilles_villeneuve',
+};
+
+/** The canonical id for a feed-supplied circuit id (identity when unaliased). */
+export function canonicalCircuitId(id: string | undefined): string {
+  if (!id) return '';
+  return F1_CIRCUIT_ALIASES[id] ?? id;
+}
+
 export const F1_CIRCUITS: Record<string, F1Circuit> = {
   albert_park: {
     name: 'Albert Park Circuit',

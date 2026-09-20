@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { UpcomingGame } from '@/types';
 import { TEAM_LOGOS } from '@/lib/team-logos';
-import { COUNTRY_TO_ABBR } from '@/lib/f1-data';
+import { COUNTRY_TO_ABBR, canonicalCircuitId } from '@/lib/f1-data';
 import { fetchTimeout, parseCricketFormat, espnDateRange, espnMonthParams, aestDisplay, unknownTeam, fetchESPNScoreboard } from '@/lib/espn';
 import { SQUIGGLE_NAME, AFL_TEAM_BY_SQUIGGLE as AFL_TEAM, dedupeSquiggleGames } from '@/lib/afl';
 import { unstable_cache } from 'next/cache';
@@ -824,7 +824,10 @@ function buildF1Sessions(races: any[], teamId: string): UpcomingGame[] {
     const raceName  = race.raceName as string;
     const country   = (race.Circuit?.Location?.country as string) ?? '';
     const abbr      = COUNTRY_TO_ABBR[country] ?? country.slice(0, 3).toUpperCase();
-    const circuitId = race.Circuit?.circuitId ?? '';
+    // Normalised here so the map/facts lookups downstream cannot miss on an
+    // alias (the feed says 'vegas'/'villeneuve'; our tables say las_vegas/
+    // gilles_villeneuve).
+    const circuitId = canonicalCircuitId(race.Circuit?.circuitId);
 
     for (const session of F1_FIXTURE_SESSIONS) {
       let sessionDate: Date;

@@ -584,6 +584,15 @@
 .sh-track-note strong { color: var(--text); font-weight: 700; }
 .sh-track-source { font-size: 10.5px; color: var(--text-3); margin-top: 10px; line-height: 1.45; text-align: center; font-style: italic; }
 
+/* Layout provenance. Shown on every map, because every map is drawn from the
+   most recent PUBLISHED layout rather than the race year's own — so this is a
+   statement of source, not a warning, and is styled to read as a caption. */
+.sh-track-provenance {
+  margin: 10px auto 0; max-width: 46em; text-align: center;
+  font-size: 10.5px; line-height: 1.5; color: var(--text-3);
+}
+.sh-track-provenance strong { color: var(--text-2); font-weight: 700; }
+
 .sh-track-legend {
   display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center;
   margin-top: 10px;
