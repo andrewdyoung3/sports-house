@@ -11,7 +11,7 @@
  */
 
 import { readFileSync } from 'fs';
-import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
+import { getDistinctFollowed, generationIdsFor, followsNothing } from '@/lib/followed-teams-server';
 import { fetchLeagueFixtures } from '@/lib/league-fixtures';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { TEAMS } from '@/lib/teams';
@@ -53,12 +53,16 @@ async function main() {
     (globalThis as any).WebSocket = ws;
   }
 
-  const followedIds = await getDistinctFollowedTeamIds();
-  if (followedIds.size === 0) {
-    console.log('No followed teams found (admin client not configured or no users).');
+  const followed = await getDistinctFollowed();
+  if (followsNothing(followed)) {
+    console.log('No follows found (admin client not configured or no users).');
     return;
   }
-  console.log(`\nFollowed teams: ${followedIds.size}  Lookahead: ${LOOKAHEAD_DAYS}d\n`);
+  // Expanded exactly as the heartbeat expands it, so the report measures the
+  // set that generation actually walks — competitions included.
+  const followedIds = new Set(generationIdsFor(followed));
+  console.log(`\nFollowed: ${followed.teamIds.size} teams + ${followed.leagueIds.size} competitions `
+    + `→ ${followedIds.size} generation ids  Lookahead: ${LOOKAHEAD_DAYS}d\n`);
 
   const now         = Date.now();
   const lookaheadMs = LOOKAHEAD_DAYS * 86400_000;

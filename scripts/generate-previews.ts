@@ -17,11 +17,12 @@
 
 import { readFileSync, appendFileSync } from 'fs';
 import { acquireLock, releaseLock } from '@/lib/generation-lock';
-import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
+import { getDistinctFollowed, generationIdsFor, followsF1, followsNothing } from '@/lib/followed-teams-server';
 import { fetchLeagueFixtures } from '@/lib/league-fixtures';
 import { generateAndStorePreview } from '@/lib/preview-generator';
 import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { TEAMS } from '@/lib/teams';
+import { isF1RaceSession } from '@/lib/f1-data';
 import {
   decideForTeam,
   LOOKAHEAD_DAYS,
@@ -97,19 +98,19 @@ async function main() {
       process.exit(0);
     }
 
-    const followedIds = await getDistinctFollowedTeamIds();
-    // F1 followable entities are drivers/constructors with `f1_*` ids, but every
-    // F1 fixture carries the synthetic teamId `f1-championship` — following ANY
-    // F1 entity means the championship fixtures are wanted. The identity
-    // translation below (f1_* → f1-championship) is the same pattern as SOO rep
-    // teams: display ids differ from the generation identity.
-    const hasF1Fans   = Array.from(followedIds).some(id => id.startsWith('f1'));
-    const failOpen    = followedIds.size === 0;
+    // Teams AND whole-competition follows. generationIdsFor() does the identity
+    // translation (f1_* → f1-championship) and expands a followed competition to
+    // every team in it, so the pipeline covers that competition's whole round.
+    const followed  = await getDistinctFollowed();
+    const hasF1Fans = followsF1(followed);
+    const failOpen  = followsNothing(followed);
 
     if (failOpen) {
-      log(`${FORCE ? '[force] ' : ''}no followed teams found — generating all fixtures`);
+      log(`${FORCE ? '[force] ' : ''}no follows found — generating all fixtures`);
     } else {
-      log(`${FORCE ? '[force] ' : ''}followed teams: ${followedIds.size} ids, hasF1Fans=${hasF1Fans}`);
+      log(`${FORCE ? '[force] ' : ''}followed: ${followed.teamIds.size} teams, `
+        + `${followed.leagueIds.size} competitions [${Array.from(followed.leagueIds).join(',') || '-'}], `
+        + `hasF1Fans=${hasF1Fans}`);
     }
 
     // ── 1. Fetch all fixtures (with lookback) and tag by league ──────────────
@@ -122,7 +123,13 @@ async function main() {
         log(`fetch-fail league=${league} err=${err instanceof Error ? err.message : err}`);
         continue;
       }
-      for (const f of fixtures) allFixtures.push({ ...f, league });
+      for (const f of fixtures) {
+        // F1 weekends are 5–6 fixtures but only the race-tier ones deserve a
+        // preview. Without this, following F1 generates an FP1 preview and five
+        // times the work per round. Same rule the schedule shows by default.
+        if (league === 'f1' && !isF1RaceSession(f.competition)) continue;
+        allFixtures.push({ ...f, league });
+      }
     }
 
     const now         = Date.now();
@@ -134,8 +141,12 @@ async function main() {
     // generation identity (fixtures never carry f1_* ids).
     const allTeamIds: string[] = failOpen
       ? Array.from(new Set(allFixtures.map(f => f.teamId)))
-      : Array.from(new Set(Array.from(followedIds).map(
-          id => id.startsWith('f1_') ? 'f1-championship' : id)));
+      : generationIdsFor(followed);
+    if (!failOpen && followed.leagueIds.size > 0) {
+      // Worth logging: a followed competition multiplies the candidate list, and
+      // the fixture-id dedup below is what keeps it to one generation per match.
+      log(`  competition follows expand the candidate set to ${allTeamIds.length} generation ids`);
+    }
 
     const processedGameIds = new Set<string>();
 

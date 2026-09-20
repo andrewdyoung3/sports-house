@@ -17,7 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { appendFileSync } from 'fs';
-import { getDistinctFollowedTeamIds } from '@/lib/followed-teams-server';
+import { getDistinctFollowed, generationIdsFor, followsNothing } from '@/lib/followed-teams-server';
 import { acquireLock, releaseLock } from '@/lib/generation-lock';
 import { secretsMatch } from '@/lib/request-guards';
 
@@ -246,20 +246,24 @@ export async function GET(req: NextRequest) {
 
   try {
   // Gather all recently-finished games in parallel
-  const [aflJobs, nrlJobs, eplJobs, sruJobs, followedIds] = await Promise.all([
+  const [aflJobs, nrlJobs, eplJobs, sruJobs, followed] = await Promise.all([
     fetchRecentAFL(),
     fetchRecentESPN('rugby-league/3',     'nrl'),
     fetchRecentESPN('soccer/eng.1',       'epl'),
     fetchRecentESPN('rugby/242041',       'super_rugby'),
-    getDistinctFollowedTeamIds(),
+    getDistinctFollowed(),
   ]);
+  // Same expansion the preview heartbeat uses: a followed competition covers
+  // every team in it, so its whole round gets reviewed, not just the matches
+  // involving a separately-followed club.
+  const followedIds = new Set(generationIdsFor(followed));
 
   const allJobs = [...aflJobs, ...nrlJobs, ...eplJobs, ...sruJobs];
   log(`found ${allJobs.length} recently-finished games`);
 
   // ── Filter to followed teams only ──────────────────────────────────────────
   // Fail-open: if admin client is unconfigured (empty set), process all jobs.
-  const filteredJobs = followedIds.size === 0
+  const filteredJobs = followsNothing(followed)
     ? allJobs
     : allJobs.filter(job =>
         (job.teamId     != null && followedIds.has(job.teamId))     ||

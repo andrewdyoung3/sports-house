@@ -11,6 +11,26 @@ import type { Team } from '@/types';
 
 // ─── F1 Championship Team (single followable entity) ──────────────────────────
 
+/**
+ * F1 race-tier sessions — the ones worth a preview or a result.
+ *
+ * A grand prix weekend is 5–6 fixtures (FP1/FP2/FP3, qualifying, sometimes a
+ * sprint, then the race), but only the race-tier ones are events in their own
+ * right. The schedule has always shown races + sprints by default and hidden
+ * the support sessions behind the "all sessions" preference; the preview
+ * pipeline is server-side and global, so it follows that same default —
+ * otherwise following F1 generates an FP1 preview and five times the work per
+ * round for artefacts almost nobody sees.
+ *
+ * ('Sprint Qualifying' is qualifying-tier; a plain 'Sprint' is a race.)
+ */
+export const F1_SUPPORT_SESSION_RE = /^(Practice|Qualifying|Sprint Qualifying)/;
+
+/** True for a race-tier F1 session (race or sprint), or any non-F1 competition label. */
+export function isF1RaceSession(competition: string | undefined): boolean {
+  return !F1_SUPPORT_SESSION_RE.test(competition ?? '');
+}
+
 export const F1_CHAMPIONSHIP_TEAM: Team = {
   id: 'f1-championship',
   name: 'Formula 1',

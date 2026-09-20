@@ -14,6 +14,7 @@ import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { cn, contrastColor, formatTimeInZone, datekeyInZone, smoothScrollTo, ordinal, dedupeChannels } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
+import { isF1RaceSession } from '@/lib/f1-data';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { NextGameHero } from '@/components/schedule/next-game-hero';
@@ -1166,9 +1167,9 @@ export default function SchedulePage() {
     return source.filter(g => {
       if (!isLeagueMode && activeTeamId !== 'all' && g.team.id !== activeTeamId) return false;
       // F1 defaults to races + sprints only; 'all' adds qualifying + practice.
-      // ('Sprint Qualifying' is qualifying-tier; plain 'Sprint' is a race.)
+      // Rule shared with the preview pipeline — see isF1RaceSession.
       if (f1Sessions !== 'all' && g.team.league === 'f1'
-          && /^(Practice|Qualifying|Sprint Qualifying)/.test(g.competition ?? '')) return false;
+          && !isF1RaceSession(g.competition)) return false;
       return true;
     });
     // leagueCacheVersion: deliberate recompute trigger for the leagueCacheRef read above.

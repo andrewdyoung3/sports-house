@@ -21,6 +21,9 @@
  */
 
 import { readFileSync } from 'fs';
+import { TEAMS } from '@/lib/teams';
+import { generationIdsFor, followsF1, followsNothing } from '@/lib/followed-teams-server';
+import { isF1RaceSession } from '@/lib/f1-data';
 
 let passed = 0;
 let failed = 0;
@@ -96,6 +99,78 @@ console.log('── a competition edit behaves like a team edit ──');
   // different bug (an unrelated edit clobbering competition follows).
   expect('saveFollowedTeams does not overwrite the league cache',
     !/writeLocalLeagues\(/.test(save));
+}
+
+console.log('── a followed competition generates the whole competition ──');
+{
+  const sets = (teams: string[], leagues: string[]) =>
+    ({ teamIds: new Set(teams), leagueIds: new Set(leagues) });
+
+  const aflClubs = TEAMS.filter(t => t.league === 'afl').length;
+  const aflIds = generationIdsFor(sets([], ['afl']));
+  expect('an AFL competition follow expands to every AFL club',
+    aflIds.length === aflClubs && aflIds.includes('afl-lions') && aflIds.includes('afl-dockers'));
+  expect('it does not leak teams from other competitions',
+    aflIds.every(id => TEAMS.find(t => t.id === id)?.league === 'afl'));
+
+  // F1 fixtures all carry the synthetic teamId, so every kind of F1 follow must
+  // resolve to it — otherwise a championship follower generates nothing.
+  expect('an F1 competition follow resolves to the championship identity',
+    generationIdsFor(sets([], ['f1'])).join() === 'f1-championship');
+  expect('an F1 driver follow resolves the same way',
+    generationIdsFor(sets(['f1_ver'], [])).join() === 'f1-championship');
+  expect('a driver AND the championship collapse to one id',
+    generationIdsFor(sets(['f1_ver', 'f1_ham'], ['f1'])).join() === 'f1-championship');
+
+  expect('a team already covered by its competition is not duplicated',
+    generationIdsFor(sets(['afl-lions'], ['afl'])).length === aflClubs);
+  expect('team and competition follows union rather than replace',
+    generationIdsFor(sets(['nrl-broncos'], ['afl'])).length === aflClubs + 1);
+  expect('non-F1 team ids pass through untranslated',
+    generationIdsFor(sets(['afl-lions'], [])).join() === 'afl-lions');
+
+  expect('F1 is detected from a competition follow (not just drivers)',
+    followsF1(sets([], ['f1'])) && followsF1(sets(['f1_ham'], [])));
+  expect('F1 is not falsely detected', !followsF1(sets(['afl-lions'], ['afl'])));
+  // Fail-open drives "generate everything", so a competition-only follower must
+  // NOT look like an empty follow set.
+  expect('a competition-only follower does not read as following nothing',
+    !followsNothing(sets([], ['f1'])) && followsNothing(sets([], [])));
+}
+
+console.log('── an F1 weekend generates the race, not every session ──');
+{
+  expect('the race is previewable', isF1RaceSession('Race'));
+  expect('a sprint is race-tier too', isF1RaceSession('Sprint'));
+  expect('practice is not', !isF1RaceSession('Practice 1') && !isF1RaceSession('Practice 3'));
+  expect('qualifying is not', !isF1RaceSession('Qualifying'));
+  expect('sprint qualifying is qualifying-tier, not a race', !isF1RaceSession('Sprint Qualifying'));
+  expect('a missing label is treated as previewable (non-F1 leagues)', isF1RaceSession(undefined));
+
+  // The pipeline must apply it, or a followed F1 competition generates an FP1
+  // preview and ~5x the work per round.
+  const gen = readFileSync('scripts/generate-previews.ts', 'utf8');
+  expect('generate-previews filters support sessions out of the candidate set',
+    /league === 'f1' && !isF1RaceSession\(/.test(gen));
+  // And the schedule must read the SAME rule, not a second inline regex.
+  const sched = readFileSync('src/app/schedule/page.tsx', 'utf8');
+  expect('the schedule uses the shared rule, not its own copy',
+    /isF1RaceSession\(/.test(sched) && !/\/\^\(Practice\|Qualifying/.test(sched));
+}
+
+console.log('── every consumer expands follows the same way ──');
+{
+  // Three call sites walk the followed set; if one forgets the expansion, a
+  // competition follow silently covers less than the others.
+  for (const f of [
+    'scripts/generate-previews.ts',
+    'src/app/api/cron/poll-reviews/route.ts',
+    'scripts/coverage-report.ts',
+  ]) {
+    const src2 = readFileSync(f, 'utf8');
+    expect(`${f.split('/').pop()} uses the shared expansion`,
+      /generationIdsFor\(/.test(src2) && !/getDistinctFollowedTeamIds\(/.test(src2));
+  }
 }
 
 console.log('── the migration exists and is idempotent ──');
