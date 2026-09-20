@@ -36,10 +36,13 @@ export interface WatermarkSpec {
 
 export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Competitions (override the league mark for cup/rep fixtures) ──
-  // 0.56 + 119%: the starball read far stronger than every other mark on a row
-  // (it was the highest opacity in this file at 0.68); now level with its UEFA
-  // siblings below. 119% = the 140% row default less 15%.
-  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.56, blend: 'screen', height: '119%' },
+  // 0.15 = the EPL league mark's opacity, set by eye rather than by arithmetic.
+  // Equal numbers do NOT read equal across these marks: the EPL mark is `mono`
+  // (flattened to a single ink by brightness(0) invert(1)) while the starball
+  // keeps its full-colour art under a 'screen' blend, which lightens it against
+  // the dark card. Matching the number was the visible fix; if it still reads
+  // hot, dropping the blend is the next lever, not a lower opacity.
+  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.15, blend: 'screen', height: '119%' },
   'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', opacity: 0.56, blend: 'screen' },
   'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.56, blend: 'screen' },
   'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, blend: 'screen', height: '78%' },
