@@ -36,7 +36,10 @@ export interface WatermarkSpec {
 
 export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Competitions (override the league mark for cup/rep fixtures) ──
-  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.68, blend: 'screen' },
+  // 0.56 + 119%: the starball read far stronger than every other mark on a row
+  // (it was the highest opacity in this file at 0.68); now level with its UEFA
+  // siblings below. 119% = the 140% row default less 15%.
+  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.56, blend: 'screen', height: '119%' },
   'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', opacity: 0.56, blend: 'screen' },
   'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.56, blend: 'screen' },
   'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, blend: 'screen', height: '78%' },
@@ -48,7 +51,8 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Leagues ──
   'league:afl':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', opacity: 0.16 },
   'league:nrl':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png', opacity: 0.27, height: '98%' },
-  'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true },
+  // 119% = the 140% row default less 15%, matching the Champions League trim.
+  'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true, height: '119%' },
   'league:super_rugby': { url: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', opacity: 0.18, height: '110%' },
   'league:rugby_int':   { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png', opacity: 0.13, mono: true, height: '78%' },
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15 },
