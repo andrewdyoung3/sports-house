@@ -897,7 +897,7 @@
   .sh-hero-team-name { font-size: clamp(26px, 7vw, 36px); letter-spacing: -0.8px; }
   /* TeamBadge sizes itself with INLINE width/height, so the hero's larger
      desktop crest needs an explicit mobile override (hence !important). */
-  .sh-hero-team > :first-child { width: 42px !important; height: 42px !important; }
+  .sh-hero-team > :first-child { width: 63px !important; height: 63px !important; }
   .sh-hero-team { gap: 10px; }
   /* Soften the logo watermark so the smaller title stays legible */
   .sh-hero-wm-logo { opacity: 0.13; }
