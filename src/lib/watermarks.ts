@@ -92,7 +92,13 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // League mark above so an EPL row and a UCL row size alike.
   'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true, height: '125%', padRight: '22.6%'},
   'league:super_rugby': { url: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', opacity: 0.18, height: '110%', padRight: '14.3%'},
-  'league:rugby_int':   { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png', opacity: 0.13, mono: true, height: '78%', padRight: '6.4%'},
+  // ESPN's generic rugby icon is a solid silhouette; `mono` flattened it into a
+  // featureless grey ellipse (user-reported). Locally drawn replacement whose
+  // seam and lacing are TRANSPARENT, so they survive the mono treatment.
+  // Named series (Rugby Championship, Six Nations above) still win via
+  // 'comp:' — this only shows for fixtures ESPN files as
+  // "international-test-match", which carry no series metadata to badge with.
+  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.15, mono: true, height: '82%', padRight: '0%'},
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15, padRight: '29.6%'},
   // F1 rows show ONLY this mark (no team watermark — the championship entity
   // IS the league). The old 96px was a centre-anchor correction for this wide

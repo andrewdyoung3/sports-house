@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Generic rugby-union watermark.
+
+  Replaces ESPN's icon (a solid silhouette that the `mono` treatment flattened
+  into a featureless grey ellipse — see the card for Wallabies v South Africa).
+  Used only when a fixture belongs to no named competition: ESPN files most
+  internationals under "international-test-match" with no series metadata, so
+  a specific badge genuinely is not available for them.
+
+  Served locally on purpose — two competition marks in this app already 404
+  from their CDN, and a fallback that can disappear is not a fallback.
+
+  Drawn so every detail is a HOLE rather than a second colour: the `mono`
+  filter collapses all fill colours to one ink, so seam and lacing survive as
+  transparency while the mark still adapts to light and dark.
+
+  The viewBox is the rotated ball's tight bounding box, so padRight is 0% and
+  the mark positions by its visible art like every other watermark.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 280" width="372" height="280" role="img" aria-label="Rugby ball">
+  <g transform="rotate(-25 186 140)">
+    <path fill="#000000" fill-rule="evenodd" d="
+      M-10 140 A196 124 0 1 0 382 140 A196 124 0 1 0 -10 140 Z
+      M14 132 H102 V148 H14 Z
+      M262 132 H358 V148 H262 Z
+      M110 104 H126 V176 H110 Z
+      M142 98 H158 V182 H142 Z
+      M174 95 H190 V185 H174 Z
+      M206 98 H222 V182 H206 Z
+      M238 104 H254 V176 H238 Z
+    "/>
+  </g>
+</svg>
