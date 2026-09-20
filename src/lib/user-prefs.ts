@@ -1,12 +1,19 @@
 'use client';
 
 /**
- * Client-side followed-teams store.
+ * Client-side followed-teams AND followed-competitions store.
  *
  * Persistence model: **localStorage is an instant read-through cache for the ACTIVE
  * identity; Supabase (per-identity user_prefs row + RLS) is the durable source of
- * truth.** Two independent team spaces — guest (anonymous, device-local) and account
+ * truth.** Two independent spaces — guest (anonymous, device-local) and account
  * (signed-in, synced across devices).
+ *
+ * Teams (user_prefs.team_ids) and competitions (user_prefs.league_ids, migration
+ * 0005) travel together through every path below — one upsert, one reconcile, one
+ * guest backup. They used to diverge, with competitions device-local only, which
+ * silently dropped them on sign-in, on a new device, or on a different origin
+ * while teams returned intact. That hit F1 hardest: a championship follow is
+ * usually a user's ONLY F1 follow, so losing it looked like losing the sport.
  *   • Reads stay SYNCHRONOUS (localStorage) → no loading flash, works offline.
  *   • Writes go to localStorage immediately, then push to the CURRENT identity's row.
  *   • `reconcileActiveIdentity()` (see components/providers/prefs-sync) RELOADS the
@@ -42,11 +49,19 @@ const ACTIVE_IS_ANON_KEY = 'sports-house:active-anon';
 /** Fired whenever the active followed-teams cache changes (identity reload, edit, restore). */
 export const PREFS_UPDATED_EVENT = 'sporthouse:prefs-updated';
 /**
- * Followed LEAGUES (whole-competition follows). Device-local v1 — deliberately
- * not in the Supabase row (that schema stores team ids; a leagues column is a
- * migration for later). Stored as league ids ('afl', 'epl', …).
+ * Followed LEAGUES (whole-competition follows), as league ids ('afl', 'f1', …).
+ * Synced exactly like teams: localStorage is the read-through cache, the
+ * user_prefs.league_ids column (migration 0005) is the durable source of truth.
+ *
+ * These were device-local until a user lost their F1 follow: teams came back
+ * from the account row on sign-in while competitions — which for F1 is usually
+ * the ONLY follow — silently did not. Every path that moves teams between
+ * identities now moves leagues with them.
  */
 const LEAGUES_KEY = 'sports-house:leagues';
+/** Device-local backup of the GUEST competition follows — the leagues twin of
+ *  GUEST_BACKUP_KEY, with the same write rule (guest/anon edits only). */
+const GUEST_LEAGUES_BACKUP_KEY = 'sports-house:guest-leagues';
 
 /**
  * React hook: a counter that increments whenever the active followed-teams cache
@@ -115,6 +130,26 @@ function writeGuestBackup(ids: string[]): void {
   if (typeof window !== 'undefined') localStorage.setItem(GUEST_BACKUP_KEY, JSON.stringify(ids));
 }
 
+/** Write the local league cache only (no push) — the leagues twin of writeLocal. */
+function writeLocalLeagues(ids: string[]): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(LEAGUES_KEY, JSON.stringify(ids));
+}
+
+function readGuestLeaguesBackup(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(GUEST_LEAGUES_BACKUP_KEY) ?? '[]');
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGuestLeaguesBackup(ids: string[]): void {
+  if (typeof window !== 'undefined') localStorage.setItem(GUEST_LEAGUES_BACKUP_KEY, JSON.stringify(ids));
+}
+
 /** 'true' | 'false' | null (null = not yet reconciled this device). */
 function getActiveIsAnon(): string | null {
   return typeof window === 'undefined' ? null : localStorage.getItem(ACTIVE_IS_ANON_KEY);
@@ -178,16 +213,26 @@ export function setF1SessionPref(pref: F1SessionPref): void {
   } catch { /* device-local only */ }
 }
 
-/** Toggle a whole-league follow and return the updated id list. */
+/**
+ * Toggle a whole-competition follow and return the updated id list.
+ *
+ * Mirrors saveFollowedTeams exactly: local cache first (so the UI is instant),
+ * the guest backup when the active identity is anonymous, then a fire-and-forget
+ * push to the current identity's row.
+ */
 export function toggleFollowedLeague(leagueId: string): string[] {
   const current = getFollowedLeagues();
   const updated = current.includes(leagueId)
     ? current.filter(id => id !== leagueId)
     : [...current, leagueId];
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(LEAGUES_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
-  }
+  if (typeof window === 'undefined') return updated;
+
+  writeLocalLeagues(updated);
+  // Same rule as the teams backup: guest edits only (null = pre-reconcile = guest),
+  // so a signed-in edit can never pollute the guest space.
+  if (getActiveIsAnon() !== 'false') writeGuestLeaguesBackup(updated);
+  window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
+  void pushToSupabase(getFollowedTeams().map(t => t.id), updated);
   return updated;
 }
 
@@ -251,16 +296,33 @@ export async function ensureSession(): Promise<void> {
  * "active-browser-wins" cross-identity push that could clobber a foreign row is gone;
  * identity changes are handled by reconcileActiveIdentity's REPLACE, never a push.)
  */
-async function pushToSupabase(teamIds: string[]): Promise<void> {
+async function pushToSupabase(teamIds: string[], leagueIds: string[] = getFollowedLeagues()): Promise<void> {
   const sb = await getSupabaseBrowser();
   if (!sb) return;
   try {
     const userId = await ensureUserId();
     if (!userId) return;
-    await sb.from('user_prefs').upsert(
-      { user_id: userId, team_ids: teamIds, updated_at: new Date().toISOString() },
+    // Teams and leagues share one row and one upsert: a split write could fail
+    // between the two and leave an identity following teams but no competitions.
+    const row = { user_id: userId, team_ids: teamIds, updated_at: new Date().toISOString() };
+    const { error } = await sb.from('user_prefs').upsert(
+      { ...row, league_ids: leagueIds },
       { onConflict: 'user_id' },
     );
+    if (!error) return;
+
+    // Deploy-order safety net: if this build reaches a database where migration
+    // 0005 has not run yet, the unknown league_ids column would fail the whole
+    // upsert and silently stop syncing TEAMS as well. Fall back to the pre-0005
+    // shape so team sync survives; competition follows stay device-local until
+    // the migration lands.
+    if (/league_ids/i.test(error.message)) {
+      console.warn('[user-prefs] user_prefs.league_ids missing — run migration 0005; syncing teams only');
+      const { error: fallbackError } = await sb.from('user_prefs').upsert(row, { onConflict: 'user_id' });
+      if (fallbackError) console.error('[user-prefs] Supabase push failed', fallbackError.message);
+      return;
+    }
+    console.error('[user-prefs] Supabase push failed', error.message);
   } catch (err) {
     // Network/RLS error — localStorage already holds the value, so the UX is unaffected.
     console.error('[user-prefs] Supabase push failed', err);
@@ -271,6 +333,10 @@ async function pushToSupabase(teamIds: string[]): Promise<void> {
 function rehydrate(ids: string[]): Team[] {
   return ids.map(id => TEAMS.find(t => t.id === id)).filter((t): t is Team => Boolean(t));
 }
+
+/** Order-insensitive equality for league id lists — the leagues twin of sameIds. */
+const sameLeagues = (a: string[], b: string[]): boolean =>
+  [...a].sort().join(',') === [...b].sort().join(',');
 
 const sameIds = (a: Team[], b: Team[]): boolean => {
   const ka = a.map(t => t.id).sort().join(',');
@@ -310,21 +376,32 @@ export async function reconcileActiveIdentity(): Promise<void> {
     const userId  = session.user.id;
     const isAnon  = session.user.is_anonymous ?? false;
 
-    const { data, error } = await sb
+    let { data, error } = await sb
       .from('user_prefs')
-      .select('team_ids')
+      .select('team_ids, league_ids')
       .eq('user_id', userId)
       .maybeSingle();
+    // Same pre-0005 tolerance as the push path — read teams rather than nothing.
+    if (error && /league_ids/i.test(error.message)) {
+      ({ data, error } = await sb
+        .from('user_prefs')
+        .select('team_ids')
+        .eq('user_id', userId)
+        .maybeSingle());
+    }
     if (error) { console.error('[user-prefs] load failed', error.message); return; }
-    const remoteTeams = rehydrate((data?.team_ids as string[] | undefined) ?? []);
+    const remoteTeams   = rehydrate((data?.team_ids as string[] | undefined) ?? []);
+    const remoteLeagues = (data?.league_ids as string[] | undefined) ?? [];
 
     if (!isAnon) {
       // PERMANENT — REPLACE the cache with the account row (no merge, no push).
       if (getActiveIsAnon() === 'true') {
         // anon→permanent transition: preserve the outgoing guest picks for sign-out.
         writeGuestBackup(getFollowedTeams().map(t => t.id));
+        writeGuestLeaguesBackup(getFollowedLeagues());
       }
-      writeLocal(remoteTeams); // replace, even if empty (empty account → empty list)
+      writeLocal(remoteTeams);         // replace, even if empty (empty account → empty list)
+      writeLocalLeagues(remoteLeagues); // competitions follow the same REPLACE rule
       setActiveIsAnon(false);
       window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
       return;
@@ -332,18 +409,27 @@ export async function reconcileActiveIdentity(): Promise<void> {
 
     // ANONYMOUS — Phase-1 reconcile (same identity throughout → safe to push local→row).
     setActiveIsAnon(true);
-    const localTeams = getFollowedTeams();
-    if (remoteTeams.length === 0) {
-      if (localTeams.length > 0) await pushToSupabase(localTeams.map(t => t.id)); // migrate up
+    const localTeams   = getFollowedTeams();
+    const localLeagues = getFollowedLeagues();
+    // Teams and leagues are reconciled as ONE preference set. Branching on teams
+    // alone would drop a competition-only follower's picks: with no teams, the
+    // "local is empty" branch would overwrite their leagues with the remote row.
+    const remoteEmpty = remoteTeams.length === 0 && remoteLeagues.length === 0;
+    const localEmpty  = localTeams.length === 0 && localLeagues.length === 0;
+
+    if (remoteEmpty) {
+      if (!localEmpty) await pushToSupabase(localTeams.map(t => t.id), localLeagues); // migrate up
       return;
     }
-    if (localTeams.length === 0) {
-      writeLocal(remoteTeams); // restore down
+    if (localEmpty) {
+      writeLocal(remoteTeams);          // restore down
+      writeLocalLeagues(remoteLeagues);
       window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
       return;
     }
-    if (!sameIds(localTeams, remoteTeams)) {
-      await pushToSupabase(localTeams.map(t => t.id)); // active browser wins (SAME anon identity)
+    if (!sameIds(localTeams, remoteTeams) || !sameLeagues(localLeagues, remoteLeagues)) {
+      // active browser wins (SAME anon identity)
+      await pushToSupabase(localTeams.map(t => t.id), localLeagues);
     }
   } catch (err) {
     console.error('[user-prefs] reconcile failed', err);
@@ -362,8 +448,10 @@ export async function reconcileActiveIdentity(): Promise<void> {
  * own row is left untouched — its teams return on the next sign-in (loaded fresh).
  */
 export async function restoreGuestSession(): Promise<void> {
-  const guest = rehydrate(readGuestBackup());
-  writeLocal(guest);          // replace account teams with guest picks (no backup → empty)
+  const guest        = rehydrate(readGuestBackup());
+  const guestLeagues = readGuestLeaguesBackup();
+  writeLocal(guest);                    // replace account teams with guest picks (no backup → empty)
+  writeLocalLeagues(guestLeagues);      // and the guest competition follows
   setActiveIsAnon(true);
   window.dispatchEvent(new Event(PREFS_UPDATED_EVENT));
 
@@ -373,5 +461,5 @@ export async function restoreGuestSession(): Promise<void> {
   if (error) { console.error('[user-prefs] re-anon after sign-out failed', error.message); return; }
   // Write the restored guest picks to the fresh anon row (its SIGNED_IN also triggers
   // reconcileActiveIdentity, which is idempotent with this write).
-  await pushToSupabase(guest.map(t => t.id));
+  await pushToSupabase(guest.map(t => t.id), guestLeagues);
 }
