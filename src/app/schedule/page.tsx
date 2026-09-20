@@ -449,15 +449,15 @@ function ScheduleRow({
             <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px', columnGap: '10px' }}>
               {/* Home + away are separate nowrap units so long pairings wrap
                   at the separator instead of shrinking the type. Crests sit
-                  left of each name (user request) at 24px. */}
+                  left of each name (user request) at 36px. */}
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
-                <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={24} logoFilter={teamLogoFilter} />
+                <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={36} logoFilter={teamLogoFilter} />
                 <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
                 {teamPosition !== undefined && <span style={posStyle}>({ordinal(teamPosition)})</span>}
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
                 <span className="sh-fix-sep">{game.isHome ? 'vs' : 'at'}</span>
-                <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={24} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
+                <TeamBadge logoUrl={game.opponentLogoUrl} abbreviation={game.opponentAbbr} primaryColor={game.opponentColor} size={36} logoFilter={TEAM_LOGO_FILTERS[game.opponentId ?? '']} />
                 <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
                 {opponentPosition !== undefined && <span style={posStyle}>({ordinal(opponentPosition)})</span>}
               </span>
