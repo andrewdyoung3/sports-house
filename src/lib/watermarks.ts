@@ -42,7 +42,8 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // keeps its full-colour art under a 'screen' blend, which lightens it against
   // the dark card. Matching the number was the visible fix; if it still reads
   // hot, dropping the blend is the next lever, not a lower opacity.
-  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.15, blend: 'screen', height: '119%' },
+  // Height: 140% row default −15%, then +5% → 125% (net ~11% under default).
+  'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.15, blend: 'screen', height: '125%' },
   'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', opacity: 0.56, blend: 'screen' },
   'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.56, blend: 'screen' },
   'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, blend: 'screen', height: '78%' },
@@ -54,8 +55,9 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Leagues ──
   'league:afl':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/afl.png', opacity: 0.16 },
   'league:nrl':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nrl.png', opacity: 0.27, height: '98%' },
-  // 119% = the 140% row default less 15%, matching the Champions League trim.
-  'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true, height: '119%' },
+  // 125% = the 140% row default −15%, then +5%. Kept in step with the Champions
+  // League mark above so an EPL row and a UCL row size alike.
+  'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true, height: '125%' },
   'league:super_rugby': { url: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', opacity: 0.18, height: '110%' },
   'league:rugby_int':   { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png', opacity: 0.13, mono: true, height: '78%' },
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15 },
