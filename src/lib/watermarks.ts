@@ -46,8 +46,10 @@ export interface WatermarkSpec {
   right?: string;
 }
 
-/** Default gap between a mark's right edge and the card's, in px. */
-export const WM_RIGHT_INSET = '18px';
+/** Default gap between a mark's right edge and the card's, in px.
+ *  No mark overrides it, so this alone positions every watermark on the
+ *  schedule and results cards. */
+export const WM_RIGHT_INSET = '10px';
 
 export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Competitions (override the league mark for cup/rep fixtures) ──
