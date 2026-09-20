@@ -8,7 +8,7 @@ import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-re
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
-import { competitionWatermark } from '@/lib/watermarks';
+import { competitionWatermark, WM_RIGHT_INSET } from '@/lib/watermarks';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -345,11 +345,11 @@ function ScheduleRow({
   const leagueLogoFilter   = wm?.filter;
   const leagueLogoHeight   = wm?.height;
   const leagueLogoMaxWidth = wm?.maxWidth;
-  // Logo center alignment: translateX(50%) self-measures the logo's rendered width and shifts it
-  // rightward by half, so `right: 49px` becomes the CENTER anchor — works for any aspect ratio.
-  const LOGO_CENTER_RIGHT = '49px';
+  // Right-edge anchoring: the mark's right edge sits WM_RIGHT_INSET inside the
+  // card and transform-origin:right keeps the desktop 1.3x scale expanding
+  // leftward, so no mark can be clipped whatever the card height.
   // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
-  const leagueLogoRight = wm?.right ?? LOGO_CENTER_RIGHT;
+  const leagueLogoRight = wm?.right ?? WM_RIGHT_INSET;
 
   // Three-tier opponent name: (1) raw API string when ≤14 chars; (2) our team.name
   // when shorter than the API string (e.g. "Greater Western Sydney" → "GWS Giants");
@@ -415,7 +415,7 @@ function ScheduleRow({
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async"
             src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className={"absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center max-lg:scale-[0.7] lg:scale-[1.3]" + (wm?.mono ? ' sh-wm-mono' : '')}
+            className={"absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right max-lg:scale-[0.7] lg:scale-[1.3]" + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
               right: leagueLogoRight, height: leagueLogoHeight ?? '140%',
               ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}),
@@ -530,7 +530,7 @@ function ScheduleRow({
           width={100}
           height={100}
           className={[
-            'absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center',
+            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right',
             // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
             team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
           ].join(' ')}

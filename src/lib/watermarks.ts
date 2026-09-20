@@ -30,12 +30,24 @@ export interface WatermarkSpec {
   /** Monochrome mark: white-forced on dark, ink-forced in light (CSS .sh-wm-mono). */
   mono?: boolean;
   /**
-   * Distance from the card's right edge to the mark's CENTRE (the renderers
-   * translateX(50%) off this anchor). Default '49px'. Raise it to pull a wide
-   * mark left so its right half is not clipped by the card edge.
+   * INSET from the card's right edge to the mark's RIGHT EDGE. Default
+   * WM_RIGHT_INSET.
+   *
+   * This used to anchor the mark's CENTRE, which meant every mark hung half
+   * its width off the card and relied on overflow:hidden to crop it — fine as
+   * a deliberate bleed until the card grew (the crest enlargement did exactly
+   * that) and heights are percentages of card height, so the overhang grew
+   * with it. The Premier League mark ended up ~43px off the edge. Anchoring
+   * the right edge instead, with transform-origin at right so the 1.3x desktop
+   * scale expands LEFTWARD, makes clipping impossible at any card height.
+   *
+   * Raise it only to pull a specific mark further in.
    */
   right?: string;
 }
+
+/** Default gap between a mark's right edge and the card's, in px. */
+export const WM_RIGHT_INSET = '18px';
 
 export const WATERMARKS: Record<string, WatermarkSpec> = {
   // ── Competitions (override the league mark for cup/rep fixtures) ──
@@ -65,9 +77,9 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   'league:rugby_int':   { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-rugby.png', opacity: 0.13, mono: true, height: '78%' },
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15 },
   // F1 rows show ONLY this mark (no team watermark — the championship entity
-  // IS the league). 140% height, anchored further in from the right edge so the
-  // wide wordmark sits fully inside the card instead of being clipped.
-  'league:f1':          { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',  opacity: 0.15, height: '140%', right: '96px' },
+  // IS the league). The old 96px was a centre-anchor correction for this wide
+  // wordmark; right-edge anchoring makes it unnecessary.
+  'league:f1':          { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',  opacity: 0.15, height: '140%' },
   'league:bbl':         { url: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png', opacity: 0.18, height: '105%' },
   'league:cricket_int': { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png', opacity: 0.13, mono: true, height: '78%' },
 };
