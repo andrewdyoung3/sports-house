@@ -583,6 +583,27 @@
 .sh-track-note strong { color: var(--text); font-weight: 700; }
 .sh-track-source { font-size: 10.5px; color: var(--text-3); margin-top: 10px; line-height: 1.45; text-align: center; font-style: italic; }
 
+/* Competition watermark on a fixture/result card.
+ *
+ * Replaces four near-identical Tailwind strings across schedule + results.
+ * Two things it has to get right:
+ *   - the RIGHT EDGE is the anchor (transform-origin: right), so the
+ *     responsive scale expands leftward and nothing is ever clipped;
+ *   - --wm-padx shifts the mark right by the transparent padding baked into
+ *     its own file, so it is the VISIBLE art that sits --wm-right from the
+ *     edge. The scale is applied BEFORE that shift in the transform list, so
+ *     the percentage rides the element's SCALED width and stays correct at
+ *     both breakpoints (a px nudge would drift by the scale factor).
+ */
+.sh-wm-comp {
+  position: absolute; top: 50%; right: var(--wm-right, 10px);
+  width: auto; object-fit: contain;
+  pointer-events: none; user-select: none;
+  transform-origin: right center;
+  transform: translateY(-50%) scale(var(--wm-scale, 0.7)) translateX(var(--wm-padx, 0%));
+}
+@media (min-width: 1024px) { .sh-wm-comp { --wm-scale: 1.3; } }
+
 /* Layout provenance. Shown on every map, because every map is drawn from the
    most recent PUBLISHED layout rather than the race year's own — so this is a
    statement of source, not a warning, and is styled to read as a caption. */

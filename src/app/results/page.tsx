@@ -259,6 +259,7 @@ function ResultRow({
   // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
   // Right edge sits WM_RIGHT_INSET inside the card; see watermarks.ts.
   const leagueLogoRight = wm?.right ?? WM_RIGHT_INSET;
+  const leagueLogoPadRight = wm?.padRight ?? '0%';
 
   // ── Step 8 — F1 gate: keep the original render for F1 results ─────────────────
   // The two-team .sh-fix path below handles all other leagues (AFL, NRL, EPL, cricket…).
@@ -287,12 +288,13 @@ function ResultRow({
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className={"absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right" + (wm?.mono ? ' sh-wm-mono' : '')}
+            className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
-              right: leagueLogoRight, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
+              '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
+              height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
               ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
               ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-            }}
+            } as React.CSSProperties}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
         )}
         <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
@@ -364,12 +366,13 @@ function ResultRow({
       {leagueLogoUrl && (
         <img loading="lazy" decoding="async"
           src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-          className="absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right max-lg:scale-[0.7] lg:scale-[1.3]"
+          className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
           style={{
-            right: leagueLogoRight, height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
+            '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
+            height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
             ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
             ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-          }}
+          } as React.CSSProperties}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}

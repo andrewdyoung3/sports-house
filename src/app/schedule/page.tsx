@@ -350,6 +350,8 @@ function ScheduleRow({
   // leftward, so no mark can be clipped whatever the card height.
   // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
   const leagueLogoRight = wm?.right ?? WM_RIGHT_INSET;
+  // Shift by the file's own transparent right padding — see watermarks.ts.
+  const leagueLogoPadRight = wm?.padRight ?? '0%';
 
   // Three-tier opponent name: (1) raw API string when ≤14 chars; (2) our team.name
   // when shorter than the API string (e.g. "Greater Western Sydney" → "GWS Giants");
@@ -415,14 +417,15 @@ function ScheduleRow({
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async"
             src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className={"absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right max-lg:scale-[0.7] lg:scale-[1.3]" + (wm?.mono ? ' sh-wm-mono' : '')}
+            className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
             style={{
-              right: leagueLogoRight, height: leagueLogoHeight ?? '140%',
+              '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
+              height: leagueLogoHeight ?? '140%',
               ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}),
               opacity: leagueLogoOpacity,
               ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
               ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-            }}
+            } as React.CSSProperties}
             onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         )}
@@ -529,12 +532,10 @@ function ScheduleRow({
           aria-hidden="true"
           width={100}
           height={100}
-          className={[
-            'absolute top-1/2 -translate-y-1/2 w-auto object-contain pointer-events-none select-none origin-right',
-            // Reduce league watermark by 30% on mobile — F1 logo left as-is (already right size)
-            team.league !== 'f1' ? 'max-lg:scale-[0.7] lg:scale-[1.3]' : '',
-          ].join(' ')}
-          style={{ right: leagueLogoRight, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) }}
+          className="sh-wm-comp"
+          // F1 rows keep the mark unscaled (it is already the right size); the
+          // shared class scales other leagues per breakpoint.
+          style={{ '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight, '--wm-scale': 1, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) } as React.CSSProperties}
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       )}
