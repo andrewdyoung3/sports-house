@@ -173,6 +173,45 @@ console.log('── every consumer expands follows the same way ──');
   }
 }
 
+console.log('── every surface renders competition follows ──');
+{
+  // A competition follow must be visible wherever a team follow is. The
+  // dashboard was the last holdout: its unit was the team, so an F1-only
+  // follower got "No teams yet" and an empty feed.
+  const surfaces: Array<[string, string, RegExp]> = [
+    ['dashboard', 'src/app/dashboard/page.tsx', /CompetitionFeedCard/],
+    ['schedule',  'src/app/schedule/page.tsx',  /followedLeagueIds/],
+    ['results',   'src/app/results/page.tsx',   /followedLeagues/],
+  ];
+  for (const [label, file, marker] of surfaces) {
+    const page = readFileSync(file, 'utf8');
+    expect(`${label} reads competition follows`, /getFollowedLeagues\(/.test(page));
+    expect(`${label} renders them`, marker.test(page));
+  }
+
+  const dash = readFileSync('src/app/dashboard/page.tsx', 'utf8');
+  expect('the dashboard empty state counts BOTH follow spaces',
+    /teams\.length === 0 && leagues\.length === 0/.test(dash));
+  expect('a competition can be unfollowed from the dashboard',
+    /toggleFollowedLeague\(/.test(dash));
+
+  // One definition of a competition's colour, not a third copy.
+  const card = readFileSync('src/components/dashboard/competition-feed-card.tsx', 'utf8');
+  expect('the competition card uses the shared league brand',
+    /from '@\/lib\/league-brand'/.test(card));
+  const res = readFileSync('src/app/results/page.tsx', 'utf8');
+  expect('results imports the shared accent rather than redefining it',
+    /from '@\/lib\/league-brand'/.test(res) && !/function leagueBrandAccent/.test(res));
+
+  // The card must use competition-scoped endpoints, never a team's data
+  // presented as the competition's.
+  expect('the card reads whole-competition fixtures and results',
+    /league-fixtures\?league=/.test(card) && /scope=league/.test(card));
+  // Explaining the omission in a comment is fine; FETCHING it is not.
+  expect('the card does not pass one club\'s news off as the competition\'s',
+    !/fetch\(`\/api\/news/.test(card));
+}
+
 console.log('── the migration exists and is idempotent ──');
 {
   const sql = readFileSync('supabase/migrations/0005_user_prefs_league_ids.sql', 'utf8');

@@ -4,11 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Settings, LayoutGrid } from 'lucide-react';
 
-import { getFollowedTeams, saveFollowedTeams, PREFS_UPDATED_EVENT } from '@/lib/user-prefs';
+import { getFollowedTeams, saveFollowedTeams, getFollowedLeagues, toggleFollowedLeague, PREFS_UPDATED_EVENT } from '@/lib/user-prefs';
 import { LEAGUES } from '@/lib/teams';
 import { contrastColor } from '@/lib/utils';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { TeamFeedCard } from '@/components/dashboard/team-feed-card';
+import { CompetitionFeedCard } from '@/components/dashboard/competition-feed-card';
+import { leagueBrandAccent, leagueLabel } from '@/lib/league-brand';
+import { accentVars } from '@/lib/team-ink';
 import { SkeletonCard } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -16,6 +19,7 @@ import type { Team } from '@/types';
 
 export default function DashboardPage() {
   const [teams, setTeams]       = useState<Team[]>([]);
+  const [leagues, setLeagues]   = useState<string[]>([]);
   const [loading, setLoading]   = useState(true);
 
   // Load from localStorage after hydration (avoids SSR mismatch), then stay live:
@@ -23,7 +27,7 @@ export default function DashboardPage() {
   // cache and fires PREFS_UPDATED_EVENT, so the dashboard reflects the merged union
   // with NO manual reload.
   useEffect(() => {
-    const refresh = () => setTeams(getFollowedTeams());
+    const refresh = () => { setTeams(getFollowedTeams()); setLeagues(getFollowedLeagues()); };
     refresh();
     setLoading(false);
     window.addEventListener(PREFS_UPDATED_EVENT, refresh);
@@ -36,14 +40,16 @@ export default function DashboardPage() {
     saveFollowedTeams(updated);
   };
 
+  const handleUnfollowLeague = (leagueId: string) => setLeagues(toggleFollowedLeague(leagueId));
+
   // ── Empty state ────────────────────────────────────────────────────────────
 
-  if (!loading && teams.length === 0) {
+  if (!loading && teams.length === 0 && leagues.length === 0) {
     return (
       <EmptyState
         icon={LayoutGrid}
-        title="No teams yet"
-        body="Your dashboard is empty. Select the teams you follow and we'll build your personalised sports feed."
+        title="Nothing followed yet"
+        body="Your dashboard is empty. Follow teams or whole competitions and we'll build your personalised sports feed."
       />
     );
   }
@@ -69,6 +75,7 @@ export default function DashboardPage() {
           <p className="text-sm mt-1" style={{ color: 'var(--text-3)' }}>
             Following {teams.length} team{teams.length !== 1 ? 's' : ''} across{' '}
             {leagueGroups.length} league{leagueGroups.length !== 1 ? 's' : ''}
+            {leagues.length > 0 && <> · {leagues.length} whole competition{leagues.length !== 1 ? 's' : ''}</>}
           </p>
         </div>
         <Link href="/onboarding">
@@ -84,6 +91,33 @@ export default function DashboardPage() {
         {/* Sidebar — team navigator (hidden on mobile) */}
         <aside className="hidden lg:block w-52 shrink-0">
           <div className="sticky top-24 space-y-6">
+            {leagues.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>
+                  Competitions
+                </p>
+                <ul className="space-y-0.5">
+                  {leagues.map(leagueId => (
+                    <li key={leagueId}>
+                      <a
+                        href={`#competition-${leagueId}`}
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-sm hover:text-white/85 hover:bg-white/[0.06] transition-all"
+                        style={{ ...accentVars(leagueBrandAccent(leagueId)), color: 'var(--text-2)' }}
+                      >
+                        <span
+                          className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-black shrink-0"
+                          style={{ backgroundColor: leagueBrandAccent(leagueId), color: contrastColor(leagueBrandAccent(leagueId)) }}
+                        >
+                          {leagueLabel(leagueId).slice(0, 2)}
+                        </span>
+                        <span className="truncate">{LEAGUES.find(l => l.id === leagueId)?.name ?? leagueId}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {leagueGroups.map(({ league, teams: lt }) => (
               <div key={league.id}>
                 <p className="text-[10px] font-bold uppercase tracking-widest mb-2 flex items-center gap-1" style={{ color: 'var(--text-3)' }}>
@@ -131,11 +165,18 @@ export default function DashboardPage() {
             // Loading skeletons
             Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} />)
           ) : (
-            teams.map(team => (
-              <div key={team.id} id={`team-${team.id}`}>
-                <TeamFeedCard team={team} onUnfollow={handleUnfollow} />
-              </div>
-            ))
+            <>
+              {leagues.map(leagueId => (
+                <div key={leagueId} id={`competition-${leagueId}`}>
+                  <CompetitionFeedCard leagueId={leagueId} onUnfollow={handleUnfollowLeague} />
+                </div>
+              ))}
+              {teams.map(team => (
+                <div key={team.id} id={`team-${team.id}`}>
+                  <TeamFeedCard team={team} onUnfollow={handleUnfollow} />
+                </div>
+              ))}
+            </>
           )}
         </div>
       </div>

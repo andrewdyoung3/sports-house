@@ -11,6 +11,7 @@ import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
+import { leagueBrandAccent } from '@/lib/league-brand';
 import { resultMatchKey } from '@/lib/result-match-key';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
@@ -656,15 +657,6 @@ function TeamFilterPill({
       {label}
     </button>
   );
-}
-
-/** Competition pill colour — prefers the badge foreground, falling back to its
- *  background when that is white/near-white (so PL resolves to purple, F1 red). */
-function leagueBrandAccent(leagueId: string): string {
-  const meta = LEAGUE_BADGE[leagueId];
-  const c = (meta?.color ?? '').toLowerCase();
-  const whiteish = c === '#fff' || c === '#ffffff';
-  return (whiteish ? meta?.bg : meta?.color) ?? meta?.bg ?? '#9b6bff';
 }
 
 // ─── Followed teams widget ────────────────────────────────────────────────────
