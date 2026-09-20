@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Chequered flag — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Detail is carried by
+  TRANSPARENT holes, never a second fill: the `mono` treatment collapses every
+  colour to one ink, so anything drawn in a lighter shade would vanish. The
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 240" width="360" height="240" role="img" aria-label="Chequered flag">
+  <g>
+    <path fill="#000000" fill-rule="evenodd" d="
+      M0.0 0.0 H360.0 V240.0 H0.0 Z
+      M0.0 0.0 H40.0 V40.0 H0.0 Z
+      M80.0 0.0 H120.0 V40.0 H80.0 Z
+      M160.0 0.0 H200.0 V40.0 H160.0 Z
+      M240.0 0.0 H280.0 V40.0 H240.0 Z
+      M320.0 0.0 H360.0 V40.0 H320.0 Z
+      M40.0 40.0 H80.0 V80.0 H40.0 Z
+      M120.0 40.0 H160.0 V80.0 H120.0 Z
+      M200.0 40.0 H240.0 V80.0 H200.0 Z
+      M280.0 40.0 H320.0 V80.0 H280.0 Z
+      M0.0 80.0 H40.0 V120.0 H0.0 Z
+      M80.0 80.0 H120.0 V120.0 H80.0 Z
+      M160.0 80.0 H200.0 V120.0 H160.0 Z
+      M240.0 80.0 H280.0 V120.0 H240.0 Z
+      M320.0 80.0 H360.0 V120.0 H320.0 Z
+      M40.0 120.0 H80.0 V160.0 H40.0 Z
+      M120.0 120.0 H160.0 V160.0 H120.0 Z
+      M200.0 120.0 H240.0 V160.0 H200.0 Z
+      M280.0 120.0 H320.0 V160.0 H280.0 Z
+      M0.0 160.0 H40.0 V200.0 H0.0 Z
+      M80.0 160.0 H120.0 V200.0 H80.0 Z
+      M160.0 160.0 H200.0 V200.0 H160.0 Z
+      M240.0 160.0 H280.0 V200.0 H240.0 Z
+      M320.0 160.0 H360.0 V200.0 H320.0 Z
+      M40.0 200.0 H80.0 V240.0 H40.0 Z
+      M120.0 200.0 H160.0 V240.0 H120.0 Z
+      M200.0 200.0 H240.0 V240.0 H200.0 Z
+      M280.0 200.0 H320.0 V240.0 H280.0 Z
+    "/>
+  </g>
+</svg>

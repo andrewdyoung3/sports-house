@@ -8,7 +8,6 @@ import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-re
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
-import { competitionWatermark, WM_RIGHT_INSET } from '@/lib/watermarks';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -22,6 +21,8 @@ import { NextGameHeroSh } from '@/components/schedule/next-game-hero-sh';
 import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
 import { SportBall } from '@/components/schedule/sport-ball';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
+import { CompetitionWatermark } from '@/components/schedule/competition-watermark';
+import { competitionWatermark } from '@/lib/watermarks';
 
 // PERF-1: the expand panel (~1.8k lines incl. F1/cricket/AI sub-views) only
 // renders after a fixture is expanded (everExpandedIds). Loaded lazily to keep
@@ -338,20 +339,7 @@ function ScheduleRow({
   const teamLogoFilter = TEAM_LOGO_FILTERS[team.id];
   // All watermark art + tuning comes from src/lib/watermarks.ts — the single
   // source both pages share (badge maps keep only colours/labels).
-  const wm = competitionWatermark(baseComp, team.league);
-  const leagueLogoUrl      = wm?.url;
-  const leagueLogoOpacity  = wm?.opacity ?? 0.18;
-  const leagueLogoBlend    = wm?.blend;
-  const leagueLogoFilter   = wm?.filter;
-  const leagueLogoHeight   = wm?.height;
-  const leagueLogoMaxWidth = wm?.maxWidth;
-  // Right-edge anchoring: the mark's right edge sits WM_RIGHT_INSET inside the
-  // card and transform-origin:right keeps the desktop 1.3x scale expanding
-  // leftward, so no mark can be clipped whatever the card height.
   // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
-  const leagueLogoRight = wm?.right ?? WM_RIGHT_INSET;
-  // Shift by the file's own transparent right padding — see watermarks.ts.
-  const leagueLogoPadRight = wm?.padRight ?? '0%';
 
   // Three-tier opponent name: (1) raw API string when ≤14 chars; (2) our team.name
   // when shorter than the API string (e.g. "Greater Western Sydney" → "GWS Giants");
@@ -413,22 +401,8 @@ function ScheduleRow({
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
-        {/* Competition logo watermark */}
-        {leagueLogoUrl && (
-          <img loading="lazy" decoding="async"
-            src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
-            style={{
-              '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
-              height: leagueLogoHeight ?? '140%',
-              ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}),
-              opacity: leagueLogoOpacity,
-              ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
-              ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-            } as React.CSSProperties}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        )}
+        {/* Competition logo watermark — falls back to the sport ball on a dead CDN. */}
+        <CompetitionWatermark competition={baseComp} league={team.league} />
 
         {/* Text column: main row + sub row, so the sub aligns under names */}
         <div className="sh-fix-text">
@@ -525,20 +499,8 @@ function ScheduleRow({
            width/height give intrinsic dimensions so the browser reserves space; the
            CSS height + w-auto still govern the displayed size, and the UA-mapped
            aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
-      {leagueLogoUrl && (
-        <img loading="lazy" decoding="async"
-          src={leagueLogoUrl}
-          alt=""
-          aria-hidden="true"
-          width={100}
-          height={100}
-          className="sh-wm-comp"
-          // F1 rows keep the mark unscaled (it is already the right size); the
-          // shared class scales other leagues per breakpoint.
-          style={{ '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight, '--wm-scale': 1, height: leagueLogoHeight ?? '140%', ...(leagueLogoMaxWidth ? { maxWidth: leagueLogoMaxWidth } : {}), opacity: leagueLogoOpacity, ...(leagueLogoBlend ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}), ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}) } as React.CSSProperties}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-      )}
+      {/* F1 mark is already card-sized — no responsive scale. */}
+      <CompetitionWatermark competition={baseComp} league={team.league} scale={1} />
 
       {/* ── Team badge — oversized with neon glow ── */}
       <div

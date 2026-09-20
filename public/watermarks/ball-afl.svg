@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Australian rules ball — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
+  MASK so intersecting detail (lacing across a seam) stays cut out instead of
+  toggling back to solid, and so seams can be STROKED rather than outlined.
+  Everything is one ink plus transparency, because the `mono` treatment
+  collapses all colours — a second shade would disappear. The viewBox is the
+  artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 232" width="372" height="232" role="img" aria-label="Australian rules ball">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="232">
+      <rect width="372" height="232" fill="#000"/>
+      <g fill="#fff" stroke="none">
+        <ellipse cx="186.0" cy="116.0" rx="178" ry="106"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path d="M36.0 116.0 H336.0" stroke-width="14"/>
+        <path d="M98.0 86.0 V146.0" stroke-width="11"/>
+        <path d="M142.0 86.0 V146.0" stroke-width="11"/>
+        <path d="M230.0 86.0 V146.0" stroke-width="11"/>
+        <path d="M274.0 86.0 V146.0" stroke-width="11"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="372" height="232" fill="#000000" mask="url(#m)" transform="rotate(-12 186.0 116.0)"/>
+</svg>

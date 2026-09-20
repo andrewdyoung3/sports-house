@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Ice-hockey puck — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
+  MASK so intersecting detail (lacing across a seam) stays cut out instead of
+  toggling back to solid, and so seams can be STROKED rather than outlined.
+  Everything is one ink plus transparency, because the `mono` treatment
+  collapses all colours — a second shade would disappear. The viewBox is the
+  artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 232" width="340" height="232" role="img" aria-label="Ice-hockey puck">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="340" height="232">
+      <rect width="340" height="232" fill="#000"/>
+      <g fill="#fff" stroke="none">
+        <path d="M26 86 A144 62 0 0 1 314 86 L314 150 A144 62 0 0 1 26 150 Z"/>
+        <ellipse cx="170" cy="86" rx="144" ry="62"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path d="M26 86 A144 62 0 0 0 314 86" stroke-width="11"/>
+        <ellipse cx="170" cy="86" rx="96" ry="40" stroke-width="10"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="340" height="232" fill="#000000" mask="url(#m)"/>
+</svg>

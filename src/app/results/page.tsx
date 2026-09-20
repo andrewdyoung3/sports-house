@@ -7,7 +7,6 @@ import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { getFollowedTeams, getFollowedLeagues, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { competitionWatermark, WM_RIGHT_INSET } from '@/lib/watermarks';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
@@ -16,6 +15,7 @@ import { resultMatchKey } from '@/lib/result-match-key';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
+import { CompetitionWatermark } from '@/components/schedule/competition-watermark';
 import type { Team, GameResult, SportKey } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -249,17 +249,7 @@ function ResultRow({
 
   // League / competition watermark metadata (kept for visual layering inside .sh-fix)
   const baseComp = result.competition?.startsWith('State of Origin') ? 'State of Origin' : result.competition;
-  const wm = competitionWatermark(baseComp, team.league);
-  const leagueLogoUrl     = wm?.url;
-  const leagueLogoOpacity = wm?.opacity ?? 0.18;
-  const leagueLogoBlend   = wm?.blend;
-  const leagueLogoFilter  = wm?.filter;
-  const leagueLogoHeight  = wm?.height;
-  const leagueLogoMaxWidth = wm?.maxWidth;
   // Per-mark override (watermarks.ts) — wide marks pull left to avoid clipping.
-  // Right edge sits WM_RIGHT_INSET inside the card; see watermarks.ts.
-  const leagueLogoRight = wm?.right ?? WM_RIGHT_INSET;
-  const leagueLogoPadRight = wm?.padRight ?? '0%';
 
   // ── Step 8 — F1 gate: keep the original render for F1 results ─────────────────
   // The two-team .sh-fix path below handles all other leagues (AFL, NRL, EPL, cricket…).
@@ -286,17 +276,8 @@ function ResultRow({
       >
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
-        {leagueLogoUrl && (
-          <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
-            style={{
-              '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
-              height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
-              ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
-              ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-            } as React.CSSProperties}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        )}
+        {/* F1 mark is already card-sized — no responsive scale. */}
+        <CompetitionWatermark competition={baseComp} league={team.league} scale={1} />
         <div className="relative shrink-0 z-10 self-center" style={{ filter: `drop-shadow(0 0 16px ${team.primaryColor}66)` }}>
           <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={52} logoFilter={teamLogoFilter} />
         </div>
@@ -362,20 +343,8 @@ function ResultRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      {/* League/competition logo watermark — absolute, unaffected by the flex layout */}
-      {leagueLogoUrl && (
-        <img loading="lazy" decoding="async"
-          src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-          className={'sh-wm-comp' + (wm?.mono ? ' sh-wm-mono' : '')}
-          style={{
-            '--wm-right': leagueLogoRight, '--wm-padx': leagueLogoPadRight,
-            height: leagueLogoHeight ?? '140%', opacity: leagueLogoOpacity,
-            ...(leagueLogoBlend  ? { mixBlendMode: leagueLogoBlend as 'screen' } : {}),
-            ...(leagueLogoFilter ? { filter: leagueLogoFilter } : {}),
-          } as React.CSSProperties}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-      )}
+      {/* Competition watermark — falls back to the sport ball on a dead CDN. */}
+      <CompetitionWatermark competition={baseComp} league={team.league} />
 
       {/* Feature badge: left column (direct flex item on the article) */}
       <span className="sh-fix-badge-f">

@@ -77,8 +77,10 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // hot, dropping the blend is the next lever, not a lower opacity.
   // Height: 140% row default −15%, then +5% → 125% (net ~11% under default).
   'comp:Champions League':  { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png',    opacity: 0.15, blend: 'screen', height: '125%', padRight: '2%'},
-  'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2572.png', opacity: 0.56, blend: 'screen' },
-  'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2579.png', opacity: 0.56, blend: 'screen' },
+  // 2572/2579 both 404'd; ESPN's own scoreboard API names these ids. Opacity
+  // brought into line with the Champions League mark (they share the treatment).
+  'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2310.png', opacity: 0.15, blend: 'screen', height: '125%', padRight: '18.2%' },
+  'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/20296.png', opacity: 0.15, blend: 'screen', height: '125%', padRight: '19.8%' },
   'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, blend: 'screen', height: '78%', padRight: '23%'},
   'comp:EFL Cup':           { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',   opacity: 0.22, blend: 'screen', height: '78%', padRight: '17.8%'},
   'comp:Rugby Championship': { url: 'https://r2.thesportsdb.com/images/media/league/badge/dy0n4c1716684531.png', opacity: 0.20, height: '96%', padRight: '1.2%'},
@@ -106,6 +108,44 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   'league:f1':          { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/f1.png',  opacity: 0.15, height: '140%', padRight: '4.6%'},
   'league:bbl':         { url: 'https://r2.thesportsdb.com/images/media/league/badge/yko7ny1546635346.png', opacity: 0.18, height: '105%', padRight: '9.4%'},
   'league:cricket_int': { url: 'https://a.espncdn.com/redesign/assets/img/icons/ESPN-icon-cricket.png', opacity: 0.13, mono: true, height: '78%', padRight: '5.6%'},
+};
+
+/**
+ * Generic per-sport marks, used when a competition/league logo fails to LOAD.
+ *
+ * Every mark above points at a remote CDN, and those do rot: the Europa League
+ * and Conference League badges both 404 today, which left their cards with no
+ * background art at all. A sport ball is always a truthful stand-in — it says
+ * what game this is without claiming to be a badge we could not fetch.
+ *
+ * Local files, deliberately: a fallback that can itself 404 is not a fallback.
+ * Each is drawn so its detail is transparency rather than a second colour, so
+ * the `mono` treatment keeps it legible in both themes, and each viewBox is the
+ * artwork's tight bounding box so padRight is 0%.
+ */
+const SPORT_FALLBACKS: Record<string, string> = {
+  afl:         '/watermarks/ball-afl.svg',
+  nrl:         '/watermarks/rugby-union.svg',
+  super_rugby: '/watermarks/rugby-union.svg',
+  rugby_int:   '/watermarks/rugby-union.svg',
+  epl:         '/watermarks/ball-football.svg',
+  nba:         '/watermarks/ball-basketball.svg',
+  nfl:         '/watermarks/ball-gridiron.svg',
+  mlb:         '/watermarks/ball-baseball.svg',
+  nhl:         '/watermarks/puck-hockey.svg',
+  f1:          '/watermarks/flag-motorsport.svg',
+  bbl:         '/watermarks/ball-cricket.svg',
+  cricket_int: '/watermarks/ball-cricket.svg',
+};
+
+/** The sport-ball stand-in for a league, or undefined if we have none. */
+export function sportFallbackMark(league: string): string | undefined {
+  return SPORT_FALLBACKS[league];
+}
+
+/** Presentation for a fallback mark — it is our own art, so one setting fits all. */
+export const SPORT_FALLBACK_SPEC: Required<Pick<WatermarkSpec, 'opacity' | 'height' | 'padRight' | 'mono'>> = {
+  opacity: 0.15, height: '86%', padRight: '0%', mono: true,
 };
 
 /** Competition-first watermark lookup for a fixture row. */

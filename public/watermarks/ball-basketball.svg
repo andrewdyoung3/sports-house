@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Basketball — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
+  MASK so intersecting detail (lacing across a seam) stays cut out instead of
+  toggling back to solid, and so seams can be STROKED rather than outlined.
+  Everything is one ink plus transparency, because the `mono` treatment
+  collapses all colours — a second shade would disappear. The viewBox is the
+  artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Basketball">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="372">
+      <rect width="372" height="372" fill="#000"/>
+      <g fill="#fff" stroke="none">
+        <circle cx="186" cy="186" r="180"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path d="M186 6 V366" stroke-width="15"/>
+        <path d="M6 186 H366" stroke-width="15"/>
+        <path d="M186 6 C -12 76, -12 296, 186 366" stroke-width="16"/>
+        <path d="M186 6 C 384 76, 384 296, 186 366" stroke-width="16"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="372" height="372" fill="#000000" mask="url(#m)"/>
+</svg>

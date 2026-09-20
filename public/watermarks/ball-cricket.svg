@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cricket ball — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Detail is carried by
+  TRANSPARENT holes, never a second fill: the `mono` treatment collapses every
+  colour to one ink, so anything drawn in a lighter shade would vanish. The
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Cricket ball">
+  <g>
+    <path fill="#000000" fill-rule="evenodd" d="
+      M6.0 186.0 A180.0 180.0 0 1 0 366.0 186.0 A180.0 180.0 0 1 0 6.0 186.0 Z
+      M14.0 177.0 H358.0 V195.0 H14.0 Z
+      M45.0 160.0 H55.0 V177.0 H45.0 Z
+      M45.0 195.0 H55.0 V212.0 H45.0 Z
+      M79.0 160.0 H89.0 V177.0 H79.0 Z
+      M79.0 195.0 H89.0 V212.0 H79.0 Z
+      M113.0 160.0 H123.0 V177.0 H113.0 Z
+      M113.0 195.0 H123.0 V212.0 H113.0 Z
+      M147.0 160.0 H157.0 V177.0 H147.0 Z
+      M147.0 195.0 H157.0 V212.0 H147.0 Z
+      M181.0 160.0 H191.0 V177.0 H181.0 Z
+      M181.0 195.0 H191.0 V212.0 H181.0 Z
+      M215.0 160.0 H225.0 V177.0 H215.0 Z
+      M215.0 195.0 H225.0 V212.0 H215.0 Z
+      M249.0 160.0 H259.0 V177.0 H249.0 Z
+      M249.0 195.0 H259.0 V212.0 H249.0 Z
+      M283.0 160.0 H293.0 V177.0 H283.0 Z
+      M283.0 195.0 H293.0 V212.0 H283.0 Z
+      M317.0 160.0 H327.0 V177.0 H317.0 Z
+      M317.0 195.0 H327.0 V212.0 H317.0 Z
+    "/>
+  </g>
+</svg>

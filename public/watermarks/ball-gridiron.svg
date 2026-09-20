@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Gridiron football — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
+  MASK so intersecting detail (lacing across a seam) stays cut out instead of
+  toggling back to solid, and so seams can be STROKED rather than outlined.
+  Everything is one ink plus transparency, because the `mono` treatment
+  collapses all colours — a second shade would disappear. The viewBox is the
+  artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 232" width="372" height="232" role="img" aria-label="Gridiron football">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="232">
+      <rect width="372" height="232" fill="#000"/>
+      <g fill="#fff" stroke="none">
+        <path d="M8.0 116.0 C 10.0 -6.0, 362.0 -6.0, 364.0 116.0 C 362.0 238.0, 10.0 238.0, 8.0 116.0 Z"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path d="M122.0 116.0 H250.0" stroke-width="13"/>
+        <path d="M126.0 89.0 V143.0" stroke-width="11"/>
+        <path d="M156.0 89.0 V143.0" stroke-width="11"/>
+        <path d="M186.0 89.0 V143.0" stroke-width="11"/>
+        <path d="M216.0 89.0 V143.0" stroke-width="11"/>
+        <path d="M246.0 89.0 V143.0" stroke-width="11"/>
+        <path d="M58.0 78.0 V154.0" stroke-width="12"/>
+        <path d="M314.0 78.0 V154.0" stroke-width="12"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="372" height="232" fill="#000000" mask="url(#m)"/>
+</svg>

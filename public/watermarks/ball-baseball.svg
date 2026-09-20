@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Baseball — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
+  MASK so intersecting detail (lacing across a seam) stays cut out instead of
+  toggling back to solid, and so seams can be STROKED rather than outlined.
+  Everything is one ink plus transparency, because the `mono` treatment
+  collapses all colours — a second shade would disappear. The viewBox is the
+  artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Baseball">
+  <defs>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="372">
+      <rect width="372" height="372" fill="#000"/>
+      <g fill="#fff" stroke="none">
+        <circle cx="186" cy="186" r="180"/>
+      </g>
+      <g fill="none" stroke="#000" stroke-linecap="round">
+        <path d="M82 22 C 156 94, 156 278, 82 350" stroke-width="11"/>
+        <path d="M117 33 L84 55" stroke-width="7"/>
+        <path d="M133 63 L97 79" stroke-width="7"/>
+        <path d="M145 96 L107 107" stroke-width="7"/>
+        <path d="M153 131 L114 137" stroke-width="7"/>
+        <path d="M157 168 L117 170" stroke-width="7"/>
+        <path d="M157 204 L117 202" stroke-width="7"/>
+        <path d="M153 241 L114 235" stroke-width="7"/>
+        <path d="M145 276 L107 265" stroke-width="7"/>
+        <path d="M133 309 L97 293" stroke-width="7"/>
+        <path d="M117 339 L84 317" stroke-width="7"/>
+        <path d="M290 22 C 216 94, 216 278, 290 350" stroke-width="11"/>
+        <path d="M288 55 L255 33" stroke-width="7"/>
+        <path d="M275 79 L239 63" stroke-width="7"/>
+        <path d="M265 107 L227 96" stroke-width="7"/>
+        <path d="M258 137 L219 131" stroke-width="7"/>
+        <path d="M255 170 L215 168" stroke-width="7"/>
+        <path d="M255 202 L215 204" stroke-width="7"/>
+        <path d="M258 235 L219 241" stroke-width="7"/>
+        <path d="M265 265 L227 276" stroke-width="7"/>
+        <path d="M275 293 L239 309" stroke-width="7"/>
+        <path d="M288 317 L255 339" stroke-width="7"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="372" height="372" fill="#000000" mask="url(#m)"/>
+</svg>

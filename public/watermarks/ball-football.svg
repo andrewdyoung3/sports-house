@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Football — generic sport fallback
+
+  Part of the sport-ball fallback set (see watermarks.ts). Detail is carried by
+  TRANSPARENT holes, never a second fill: the `mono` treatment collapses every
+  colour to one ink, so anything drawn in a lighter shade would vanish. The
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Football">
+  <g>
+    <path fill="#000000" fill-rule="evenodd" d="
+      M6.0 186.0 A180.0 180.0 0 1 0 366.0 186.0 A180.0 180.0 0 1 0 6.0 186.0 Z
+      M186.0 244.0 L130.8 203.9 L151.9 139.1 L220.1 139.1 L241.2 203.9 Z
+      M186.0 18.0 L229.7 49.8 L213.0 101.2 L159.0 101.2 L142.3 49.8 Z
+      M345.8 134.1 L329.1 185.5 L275.0 185.5 L258.3 134.1 L302.0 102.3 Z
+      M284.7 321.9 L230.7 321.9 L214.0 270.5 L257.7 238.7 L301.5 270.5 Z
+      M87.3 321.9 L70.5 270.5 L114.3 238.7 L158.0 270.5 L141.3 321.9 Z
+      M26.2 134.1 L70.0 102.3 L113.7 134.1 L97.0 185.5 L42.9 185.5 Z
+      M248.1 112.4 L297.5 44.5 L286.1 36.3 L236.8 104.2 Z
+      M275.1 222.3 L355.0 248.3 L359.4 235.0 L279.5 209.0 Z
+      M179.0 282.0 L179.0 366.0 L193.0 366.0 L193.0 282.0 Z
+      M92.5 209.0 L12.6 235.0 L17.0 248.3 L96.9 222.3 Z
+      M135.2 104.2 L85.9 36.3 L74.5 44.5 L123.9 112.4 Z
+    "/>
+  </g>
+</svg>
