@@ -8,7 +8,7 @@ import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-re
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
-import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
+import { competitionWatermark } from '@/lib/watermarks';
 // mock-data intentionally NOT imported — schedule page only shows real API fixtures.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
@@ -411,18 +411,6 @@ function ScheduleRow({
         tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(game.id); } }}
       >
-        {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
-        <div className="sh-fix-wm" aria-hidden="true" style={teamWatermarkVars(team.id) as React.CSSProperties}>
-          {/* F1 rows NEVER render a team watermark — whatever the perspective
-              entity (championship or a followed driver), the right-side F1
-              badge + GP-name headline carry the identity; a second mark reads
-              as a duplicate. */}
-          {teamLogoUrl && !isF1 && teamLogoUrl !== leagueLogoUrl
-            ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            : team.shortName.toUpperCase()
-          }
-        </div>
-
         {/* Competition logo watermark */}
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async"
@@ -534,23 +522,6 @@ function ScheduleRow({
            width/height give intrinsic dimensions so the browser reserves space; the
            CSS height + w-auto still govern the displayed size, and the UA-mapped
            aspect-ratio:auto defers to each logo's natural ratio (no distortion). */}
-      {/* F1 rows carry NO left team watermark: the "team" is the championship
-          entity, so it duplicated the right-hand league mark. Every other
-          league keeps its crest here. (The .sh-fix path above handles all
-          non-F1 leagues; this branch is F1-only in practice, but the guard
-          keeps it correct if the split ever changes.) */}
-      {teamLogoUrl && !isF1 && (
-        <img loading="lazy" decoding="async"
-          src={teamLogoUrl}
-          alt=""
-          aria-hidden="true"
-          width={100}
-          height={100}
-          className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
-          style={{ right: '88px', opacity: 0.10 }}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-        />
-      )}
       {leagueLogoUrl && (
         <img loading="lazy" decoding="async"
           src={leagueLogoUrl}

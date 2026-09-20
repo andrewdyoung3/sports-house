@@ -4,12 +4,15 @@
  * of these values are what caused the drift this file retires (schedule and
  * results carried different EPL opacities within hours of each other).
  *
- * Three key spaces:
+ * Two key spaces:
  *   'comp:<name>'   — competition roundels (cups, SOO). Highest precedence.
  *   'league:<id>'   — league marks, used when the fixture has no comp entry.
- *   team crests     — sized by CSS defaults (globals.css --wm-team-* vars);
- *                     TEAM_WM_TUNING overrides per team id where a crest's
- *                     art needs it (very wide banner logos, faint art, …).
+ *
+ * Team crests are NOT watermarked. Cards used to carry a faded team logo (or
+ * the team's name in giant type) in a lane left of the league mark; that was
+ * removed (2026-09-20, user request) so a card's background art is only ever
+ * the competition it belongs to. The team is identified by its crest beside
+ * the name, which no longer competes with a second copy of itself.
  *
  * Tuning knobs: opacity (vs the card wash), height (% of card height —
  * wide wordmarks want ~140%, round roundels ~78-110%), maxWidth (cap wide
@@ -72,25 +75,4 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
 /** Competition-first watermark lookup for a fixture row. */
 export function competitionWatermark(comp: string | undefined, league: string): WatermarkSpec | undefined {
   return (comp ? WATERMARKS[`comp:${comp}`] : undefined) ?? WATERMARKS[`league:${league}`];
-}
-
-/** Per-team crest overrides for the LEFT (team) watermark. CSS defaults:
- *  94px / 0.17 desktop, 60px / 0.13 mobile (globals.css --wm-team-*). Add an
- *  entry here when a specific crest's art fights those defaults. */
-export interface TeamWmTune { height?: string; opacity?: number; maxWidth?: string; lightFilter?: string }
-export const TEAM_WM_TUNING: Record<string, TeamWmTune> = {
-  // White/gold crest art that vanishes on the light canvas → ink-forced there.
-  'rint-wallabies': { lightFilter: 'brightness(0)' },
-};
-
-/** CSS-variable style object for a row's team-watermark wrapper. */
-export function teamWatermarkVars(teamId: string): Record<string, string> | undefined {
-  const t = TEAM_WM_TUNING[teamId];
-  if (!t) return undefined;
-  const vars: Record<string, string> = {};
-  if (t.height)   vars['--wm-team-h']  = t.height;
-  if (t.opacity !== undefined) vars['--wm-team-o'] = String(t.opacity);
-  if (t.maxWidth) vars['--wm-team-mw'] = t.maxWidth;
-  if (t.lightFilter) vars['--wm-team-lf'] = t.lightFilter;
-  return vars;
 }

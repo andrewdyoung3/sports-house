@@ -7,7 +7,7 @@ import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react'
 import { getFollowedTeams, getFollowedLeagues, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
 import { TEAM_LOGOS, TEAM_LOGO_FILTERS } from '@/lib/team-logos';
-import { competitionWatermark, teamWatermarkVars } from '@/lib/watermarks';
+import { competitionWatermark } from '@/lib/watermarks';
 import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
@@ -286,12 +286,6 @@ function ResultRow({
       >
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: `linear-gradient(105deg, ${team.primaryColor}10 0%, transparent 40%)` }} />
-        {false && teamLogoUrl && ( /* F1 glass row: league badge only — team mark always duplicated it */
-          <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" width={100} height={100}
-            className="absolute top-1/2 -translate-y-1/2 h-[150%] w-auto object-contain pointer-events-none select-none"
-            style={{ right: '88px', opacity: 0.10 }}
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        )}
         {leagueLogoUrl && (
           <img loading="lazy" decoding="async" src={leagueLogoUrl} alt="" aria-hidden="true" width={100} height={100}
             className={"absolute top-1/2 -translate-y-1/2 translate-x-1/2 w-auto object-contain pointer-events-none select-none origin-center" + (wm?.mono ? ' sh-wm-mono' : '')}
@@ -367,15 +361,6 @@ function ResultRow({
       tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
     >
-      {/* Team watermark — logo inside wrapper when available, text fallback otherwise */}
-      <div className="sh-fix-wm" aria-hidden="true" style={teamWatermarkVars(team.id) as React.CSSProperties}>
-        {/* (F1 never reaches this path — the glass row above returns first.) */}
-        {teamLogoUrl && teamLogoUrl !== leagueLogoUrl
-          ? <img loading="lazy" decoding="async" src={teamLogoUrl} alt="" aria-hidden="true" draggable={false} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          : team.shortName.toUpperCase()
-        }
-      </div>
-
       {/* League/competition logo watermark — absolute, unaffected by the flex layout */}
       {leagueLogoUrl && (
         <img loading="lazy" decoding="async"

@@ -268,7 +268,6 @@
 
   /* watermark tints */
   --wm-color:     color-mix(in oklab, var(--accent) 7%, transparent);
-  --wm-color-fix: rgba(255,255,255,.03);
 }
 
 /* ── Base components (ported verbatim from the design's styles.css, above the
@@ -706,15 +705,6 @@
 }
 .sh-fix:hover { border-color: var(--border-strong); }
 .sh-fix.is-open { background: var(--surface-2); }
-.sh-fix-wm {
-  /* Team-crest lane sits LEFT of the league-mark lane (league mark centers
-     ~49px from the right edge and spans roughly the last 100px) — the two
-     watermarks overlapped when both lived at the right edge (user-flagged). */
-  position: absolute; right: 112px; top: 50%; transform: translateY(-50%);
-  font-family: var(--font-head); font-weight: 900; font-size: 92px;
-  letter-spacing: -4px; line-height: .8; white-space: nowrap;
-  color: var(--wm-color-fix, rgba(255,255,255,.028)); pointer-events: none; user-select: none; z-index: 0;
-}
 .sh-fix-main { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .sh-fix-teams { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
 .sh-fix-name { font-family: var(--font-head); font-weight: 700; font-size: 19px; letter-spacing: -0.3px; color: var(--text); white-space: nowrap; }
@@ -751,17 +741,6 @@
 }
 /* Remove the old margin-top on sh-fix-sub — gap on the parent replaces it. */
 .sh-theme .sh-fix-text .sh-fix-sub { margin-top: 0; }
-.sh-theme .sh-fix-wm {
-  font-size: 128px;
-  letter-spacing: -5px;
-  color: var(--fix-wm-color, color-mix(in oklab, var(--accent) 24%, transparent));
-}
-/* Card watermark — logo image inside the .sh-fix-wm wrapper. The wrapper's absolute
-   positioning is inherited; the img just needs sizing and opacity. */
-.sh-theme .sh-fix-wm > img {
-  height: var(--wm-team-h, 94px); width: auto; max-width: var(--wm-team-mw, 150px);
-  object-fit: contain; opacity: var(--wm-team-o, 0.17); display: block;
-}
 .sh-theme .sh-fix:hover {
   box-shadow:
     -3px 0 14px color-mix(in oklab, var(--accent) var(--fix-border-glow, 28%), transparent),
@@ -884,11 +863,6 @@
   }
   /* Smaller kickoff time so the time row is compact */
   .sh-fix-kick { font-size: 17px; }
-  /* Scale down the text watermark so it doesn't loom over the stacked content */
-  .sh-fix-wm { font-size: 72px; letter-spacing: -3px; right: 78px; }
-  /* Logo watermark inside the wrapper: a little smaller and more transparent */
-  .sh-theme .sh-fix-wm { --wm-team-h: 60px; --wm-team-o: 0.13; }
-
   /* Hero — allow the two team clusters to wrap when they don't fit one line.
      The away-team block + "@" fit together on line 1; the home-team block wraps
      to line 2. Short-name matches still stay on a single line. */
@@ -1201,7 +1175,7 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
   --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
   --shadow-card: 0 1px 2px rgba(40,25,70,.08);
   --shadow-hero: 0 24px 60px -28px color-mix(in oklab, var(--accent) 30%, transparent);
-  --wm-color: color-mix(in oklab, var(--accent) 9%, transparent); --wm-color-fix: rgba(25,19,37,0.04);
+  --wm-color: color-mix(in oklab, var(--accent) 9%, transparent);
 }
 /* Filtered logos (white-ified for dark) revert to their natural art. */
 [data-theme='light'] .sh-logo-filtered { filter: none !important; }
@@ -1283,5 +1257,3 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
    white-on-white in light mode. */
 .sh-wm-mono { filter: brightness(0) invert(1); }
 [data-theme='light'] .sh-wm-mono { filter: brightness(0); }
-/* Per-team crest light treatment (e.g. the white/gold Wallabies art). */
-[data-theme='light'] .sh-theme .sh-fix-wm > img { filter: var(--wm-team-lf, none); }
