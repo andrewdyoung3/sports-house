@@ -100,7 +100,7 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // Named series (Rugby Championship, Six Nations above) still win via
   // 'comp:' — this only shows for fixtures ESPN files as
   // "international-test-match", which carry no series metadata to badge with.
-  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.15, mono: true, height: '82%', padRight: '0%'},
+  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.34, mono: true, height: '88%', padRight: '0%'},
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15, padRight: '29.6%'},
   // F1 rows show ONLY this mark (no team watermark — the championship entity
   // IS the league). The old 96px was a centre-anchor correction for this wide
@@ -143,9 +143,15 @@ export function sportFallbackMark(league: string): string | undefined {
   return SPORT_FALLBACKS[league];
 }
 
-/** Presentation for a fallback mark — it is our own art, so one setting fits all. */
+/**
+ * Presentation for a fallback mark — it is our own art, so one setting fits all.
+ *
+ * Opacity sits well above the badge marks (0.34 vs ~0.15) because these are
+ * LINE ART: a badge is a solid plate of ink, whereas a ball is a few hairlines
+ * over a soft wash, so the same opacity would render it nearly invisible.
+ */
 export const SPORT_FALLBACK_SPEC: Required<Pick<WatermarkSpec, 'opacity' | 'height' | 'padRight' | 'mono'>> = {
-  opacity: 0.15, height: '86%', padRight: '0%', mono: true,
+  opacity: 0.34, height: '88%', padRight: '0%', mono: true,
 };
 
 /** Competition-first watermark lookup for a fixture row. */

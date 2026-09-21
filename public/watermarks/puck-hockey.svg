@@ -2,26 +2,30 @@
 <!--
   Ice-hockey puck — generic sport fallback
 
-  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
-  MASK so intersecting detail (lacing across a seam) stays cut out instead of
-  toggling back to solid, and so seams can be STROKED rather than outlined.
-  Everything is one ink plus transparency, because the `mono` treatment
-  collapses all colours — a second shade would disappear. The viewBox is the
-  artwork's tight bounding box, so padRight is 0%.
+  Sport-ball fallback (watermarks.ts), shown when a competition badge cannot be
+  fetched.
+
+  LINE ART with alpha shading, not a solid silhouette. The `mono` treatment is
+  brightness(0) invert(1): it flattens colour but leaves ALPHA untouched, so the
+  tonal work here survives and one file reads white on a dark card and ink on a
+  light one. Nothing depends on hue.
+
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 232" width="340" height="232" role="img" aria-label="Ice-hockey puck">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 267 157" width="267" height="157" role="img" aria-label="Ice-hockey puck">
   <defs>
-    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="340" height="232">
-      <rect width="340" height="232" fill="#000"/>
-      <g fill="#fff" stroke="none">
-        <path d="M26 86 A144 62 0 0 1 314 86 L314 150 A144 62 0 0 1 26 150 Z"/>
-        <ellipse cx="170" cy="86" rx="144" ry="62"/>
-      </g>
-      <g fill="none" stroke="#000" stroke-linecap="round">
-        <path d="M26 86 A144 62 0 0 0 314 86" stroke-width="11"/>
-        <ellipse cx="170" cy="86" rx="96" ry="40" stroke-width="10"/>
-      </g>
-    </mask>
+    <radialGradient id="sh" cx="34%" cy="26%" r="80%">
+      <stop offset="0%"   stop-color="#fff" stop-opacity="0.30"/>
+      <stop offset="58%"  stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0.04"/>
+    </radialGradient>
   </defs>
-  <rect width="340" height="232" fill="#000000" mask="url(#m)"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.5 51.5 L3.8 54.6 L4.6 57.8 L6.0 60.9 L7.9 63.9 L10.4 66.9 L13.4 69.9 L16.9 72.7 L20.9 75.5 L25.4 78.2 L30.4 80.7 L35.8 83.1 L41.6 85.4 L47.8 87.6 L54.4 89.6 L61.3 91.4 L68.5 93.1 L76.0 94.5 L83.8 95.8 L91.7 97.0 L99.9 97.9 L108.1 98.6 L116.5 99.1 L125.0 99.4 L133.5 99.5 L142.0 99.4 L150.5 99.1 L158.9 98.6 L167.1 97.9 L175.3 97.0 L183.2 95.8 L191.0 94.5 L198.5 93.1 L205.7 91.4 L212.6 89.6 L219.2 87.6 L225.4 85.4 L231.2 83.1 L236.6 80.7 L241.6 78.2 L246.1 75.5 L250.1 72.7 L253.6 69.9 L256.6 66.9 L259.1 63.9 L261.0 60.9 L262.4 57.8 L263.2 54.6 L263.5 51.5 L263.5 105.5 L263.2 108.6 L262.4 111.8 L261.0 114.9 L259.1 117.9 L256.6 120.9 L253.6 123.9 L250.1 126.7 L246.1 129.5 L241.6 132.2 L236.6 134.7 L231.2 137.1 L225.4 139.4 L219.2 141.6 L212.6 143.6 L205.7 145.4 L198.5 147.1 L191.0 148.5 L183.2 149.8 L175.3 151.0 L167.1 151.9 L158.9 152.6 L150.5 153.1 L142.0 153.4 L133.5 153.5 L125.0 153.4 L116.5 153.1 L108.1 152.6 L99.9 151.9 L91.7 151.0 L83.8 149.8 L76.0 148.5 L68.5 147.1 L61.3 145.4 L54.4 143.6 L47.8 141.6 L41.6 139.4 L35.8 137.1 L30.4 134.7 L25.4 132.2 L20.9 129.5 L16.9 126.7 L13.4 123.9 L10.4 120.9 L7.9 117.9 L6.0 114.9 L4.6 111.8 L3.8 108.6 L3.5 105.5 Z" fill="#fff" fill-opacity="0.13"/>
+    <ellipse cx="133.5" cy="51.5" rx="130" ry="48" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <path d="M3.5 105.5 L3.8 108.6 L4.6 111.8 L6.0 114.9 L7.9 117.9 L10.4 120.9 L13.4 123.9 L16.9 126.7 L20.9 129.5 L25.4 132.2 L30.4 134.7 L35.8 137.1 L41.6 139.4 L47.8 141.6 L54.4 143.6 L61.3 145.4 L68.5 147.1 L76.0 148.5 L83.8 149.8 L91.7 151.0 L99.9 151.9 L108.1 152.6 L116.5 153.1 L125.0 153.4 L133.5 153.5 L142.0 153.4 L150.5 153.1 L158.9 152.6 L167.1 151.9 L175.3 151.0 L183.2 149.8 L191.0 148.5 L198.5 147.1 L205.7 145.4 L212.6 143.6 L219.2 141.6 L225.4 139.4 L231.2 137.1 L236.6 134.7 L241.6 132.2 L246.1 129.5 L250.1 126.7 L253.6 123.9 L256.6 120.9 L259.1 117.9 L261.0 114.9 L262.4 111.8 L263.2 108.6 L263.5 105.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <path d="M3.5 51.5 L3.5 105.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <path d="M263.5 51.5 L263.5 105.5" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <ellipse cx="133.5" cy="51.5" rx="88.4" ry="32.64" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+  </g>
 </svg>

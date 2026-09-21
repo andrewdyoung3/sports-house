@@ -2,27 +2,30 @@
 <!--
   Basketball — generic sport fallback
 
-  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
-  MASK so intersecting detail (lacing across a seam) stays cut out instead of
-  toggling back to solid, and so seams can be STROKED rather than outlined.
-  Everything is one ink plus transparency, because the `mono` treatment
-  collapses all colours — a second shade would disappear. The viewBox is the
-  artwork's tight bounding box, so padRight is 0%.
+  Sport-ball fallback (watermarks.ts), shown when a competition badge cannot be
+  fetched.
+
+  LINE ART with alpha shading, not a solid silhouette. The `mono` treatment is
+  brightness(0) invert(1): it flattens colour but leaves ALPHA untouched, so the
+  tonal work here survives and one file reads white on a dark card and ink on a
+  light one. Nothing depends on hue.
+
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Basketball">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" width="360" height="360" role="img" aria-label="Basketball">
   <defs>
-    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="372">
-      <rect width="372" height="372" fill="#000"/>
-      <g fill="#fff" stroke="none">
-        <circle cx="186" cy="186" r="180"/>
-      </g>
-      <g fill="none" stroke="#000" stroke-linecap="round">
-        <path d="M186 6 V366" stroke-width="15"/>
-        <path d="M6 186 H366" stroke-width="15"/>
-        <path d="M186 6 C -12 76, -12 296, 186 366" stroke-width="16"/>
-        <path d="M186 6 C 384 76, 384 296, 186 366" stroke-width="16"/>
-      </g>
-    </mask>
+    <radialGradient id="sh" cx="34%" cy="26%" r="80%">
+      <stop offset="0%"   stop-color="#fff" stop-opacity="0.30"/>
+      <stop offset="58%"  stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0.04"/>
+    </radialGradient>
   </defs>
-  <rect width="372" height="372" fill="#000000" mask="url(#m)"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="180" cy="180" rx="170" ry="170" fill="url(#sh)" stroke="none"/>
+    <ellipse cx="180" cy="180" rx="170" ry="170" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <path d="M180.0 10.0 L180.0 350.0" fill="none" stroke="#fff" stroke-width="4.6" stroke-opacity="0.75"/>
+    <path d="M10.0 180.0 L350.0 180.0" fill="none" stroke="#fff" stroke-width="4.6" stroke-opacity="0.75"/>
+    <path d="M180.0 10.0 L170.8 14.4 L162.0 19.2 L153.6 24.3 L145.6 29.7 L138.0 35.4 L130.8 41.3 L123.9 47.6 L117.5 54.1 L111.4 60.8 L105.8 67.7 L100.5 74.9 L95.6 82.2 L91.1 89.8 L87.0 97.5 L83.3 105.3 L80.0 113.3 L77.1 121.3 L74.5 129.5 L72.4 137.8 L70.6 146.2 L69.3 154.6 L68.3 163.0 L67.7 171.5 L67.5 180.0 L67.7 188.5 L68.3 197.0 L69.3 205.4 L70.6 213.8 L72.4 222.2 L74.5 230.5 L77.1 238.7 L80.0 246.7 L83.3 254.7 L87.0 262.5 L91.1 270.2 L95.6 277.8 L100.5 285.1 L105.8 292.3 L111.4 299.2 L117.5 305.9 L123.9 312.4 L130.8 318.7 L138.0 324.6 L145.6 330.3 L153.6 335.7 L162.0 340.8 L170.8 345.6 L180.0 350.0" fill="none" stroke="#fff" stroke-width="4.6" stroke-opacity="0.75"/>
+    <path d="M180.0 10.0 L189.2 14.4 L198.0 19.2 L206.4 24.3 L214.4 29.7 L222.0 35.4 L229.2 41.3 L236.1 47.6 L242.5 54.1 L248.6 60.8 L254.2 67.7 L259.5 74.9 L264.4 82.2 L268.9 89.8 L273.0 97.5 L276.7 105.3 L280.0 113.3 L282.9 121.3 L285.5 129.5 L287.6 137.8 L289.4 146.2 L290.7 154.6 L291.7 163.0 L292.3 171.5 L292.5 180.0 L292.3 188.5 L291.7 197.0 L290.7 205.4 L289.4 213.8 L287.6 222.2 L285.5 230.5 L282.9 238.7 L280.0 246.7 L276.7 254.7 L273.0 262.5 L268.9 270.2 L264.4 277.8 L259.5 285.1 L254.2 292.3 L248.6 299.2 L242.5 305.9 L236.1 312.4 L229.2 318.7 L222.0 324.6 L214.4 330.3 L206.4 335.7 L198.0 340.8 L189.2 345.6 L180.0 350.0" fill="none" stroke="#fff" stroke-width="4.6" stroke-opacity="0.75"/>
+  </g>
 </svg>

@@ -2,28 +2,30 @@
 <!--
   Australian rules ball — generic sport fallback
 
-  Part of the sport-ball fallback set (see watermarks.ts). Rendered through a
-  MASK so intersecting detail (lacing across a seam) stays cut out instead of
-  toggling back to solid, and so seams can be STROKED rather than outlined.
-  Everything is one ink plus transparency, because the `mono` treatment
-  collapses all colours — a second shade would disappear. The viewBox is the
-  artwork's tight bounding box, so padRight is 0%.
+  Sport-ball fallback (watermarks.ts), shown when a competition badge cannot be
+  fetched.
+
+  LINE ART with alpha shading, not a solid silhouette. The `mono` treatment is
+  brightness(0) invert(1): it flattens colour but leaves ALPHA untouched, so the
+  tonal work here survives and one file reads white on a dark card and ink on a
+  light one. Nothing depends on hue.
+
+  viewBox is the artwork's tight bounding box, so padRight is 0%.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 232" width="372" height="232" role="img" aria-label="Australian rules ball">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 224" width="360" height="224" role="img" aria-label="Australian rules ball">
   <defs>
-    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="372" height="232">
-      <rect width="372" height="232" fill="#000"/>
-      <g fill="#fff" stroke="none">
-        <ellipse cx="186.0" cy="116.0" rx="178" ry="106"/>
-      </g>
-      <g fill="none" stroke="#000" stroke-linecap="round">
-        <path d="M36.0 116.0 H336.0" stroke-width="14"/>
-        <path d="M98.0 86.0 V146.0" stroke-width="11"/>
-        <path d="M142.0 86.0 V146.0" stroke-width="11"/>
-        <path d="M230.0 86.0 V146.0" stroke-width="11"/>
-        <path d="M274.0 86.0 V146.0" stroke-width="11"/>
-      </g>
-    </mask>
+    <radialGradient id="sh" cx="34%" cy="26%" r="80%">
+      <stop offset="0%"   stop-color="#fff" stop-opacity="0.30"/>
+      <stop offset="58%"  stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0.04"/>
+    </radialGradient>
   </defs>
-  <rect width="372" height="232" fill="#000000" mask="url(#m)" transform="rotate(-12 186.0 116.0)"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12.0 112.0 L12.9 105.7 L14.6 99.6 L17.0 93.8 L20.1 88.2 L24.0 83.0 L28.4 78.0 L33.5 73.3 L39.1 68.8 L45.3 64.6 L52.0 60.7 L59.1 57.1 L66.8 53.7 L74.8 50.6 L83.1 47.7 L91.9 45.2 L100.9 42.9 L110.2 40.9 L119.7 39.1 L129.5 37.6 L139.4 36.4 L149.4 35.5 L159.5 34.8 L169.8 34.4 L180.0 34.2 L190.2 34.4 L200.5 34.8 L210.6 35.5 L220.6 36.4 L230.5 37.6 L240.3 39.1 L249.8 40.9 L259.1 42.9 L268.1 45.2 L276.9 47.7 L285.2 50.6 L293.2 53.7 L300.9 57.1 L308.0 60.7 L314.7 64.6 L320.9 68.8 L326.5 73.3 L331.6 78.0 L336.0 83.0 L339.9 88.2 L343.0 93.8 L345.4 99.6 L347.1 105.7 L348.0 112.0 L348.0 112.0 L347.1 118.3 L345.4 124.4 L343.0 130.2 L339.9 135.8 L336.0 141.0 L331.6 146.0 L326.5 150.7 L320.9 155.2 L314.7 159.4 L308.0 163.3 L300.9 166.9 L293.2 170.3 L285.2 173.4 L276.9 176.3 L268.1 178.8 L259.1 181.1 L249.8 183.1 L240.3 184.9 L230.5 186.4 L220.6 187.6 L210.6 188.5 L200.5 189.2 L190.2 189.6 L180.0 189.8 L169.8 189.6 L159.5 189.2 L149.4 188.5 L139.4 187.6 L129.5 186.4 L119.7 184.9 L110.2 183.1 L100.9 181.1 L91.9 178.8 L83.1 176.3 L74.8 173.4 L66.8 170.3 L59.1 166.9 L52.0 163.3 L45.3 159.4 L39.1 155.2 L33.5 150.7 L28.4 146.0 L24.0 141.0 L20.1 135.8 L17.0 130.2 L14.6 124.4 L12.9 118.3 L12.0 112.0 Z" fill="#fff" fill-opacity="0.14" transform="rotate(-10 180.0 112.0)"/>
+    <path d="M12.0 112.0 L12.9 105.7 L14.6 99.6 L17.0 93.8 L20.1 88.2 L24.0 83.0 L28.4 78.0 L33.5 73.3 L39.1 68.8 L45.3 64.6 L52.0 60.7 L59.1 57.1 L66.8 53.7 L74.8 50.6 L83.1 47.7 L91.9 45.2 L100.9 42.9 L110.2 40.9 L119.7 39.1 L129.5 37.6 L139.4 36.4 L149.4 35.5 L159.5 34.8 L169.8 34.4 L180.0 34.2 L190.2 34.4 L200.5 34.8 L210.6 35.5 L220.6 36.4 L230.5 37.6 L240.3 39.1 L249.8 40.9 L259.1 42.9 L268.1 45.2 L276.9 47.7 L285.2 50.6 L293.2 53.7 L300.9 57.1 L308.0 60.7 L314.7 64.6 L320.9 68.8 L326.5 73.3 L331.6 78.0 L336.0 83.0 L339.9 88.2 L343.0 93.8 L345.4 99.6 L347.1 105.7 L348.0 112.0 L348.0 112.0 L347.1 118.3 L345.4 124.4 L343.0 130.2 L339.9 135.8 L336.0 141.0 L331.6 146.0 L326.5 150.7 L320.9 155.2 L314.7 159.4 L308.0 163.3 L300.9 166.9 L293.2 170.3 L285.2 173.4 L276.9 176.3 L268.1 178.8 L259.1 181.1 L249.8 183.1 L240.3 184.9 L230.5 186.4 L220.6 187.6 L210.6 188.5 L200.5 189.2 L190.2 189.6 L180.0 189.8 L169.8 189.6 L159.5 189.2 L149.4 188.5 L139.4 187.6 L129.5 186.4 L119.7 184.9 L110.2 183.1 L100.9 181.1 L91.9 178.8 L83.1 176.3 L74.8 173.4 L66.8 170.3 L59.1 166.9 L52.0 163.3 L45.3 159.4 L39.1 155.2 L33.5 150.7 L28.4 146.0 L24.0 141.0 L20.1 135.8 L17.0 130.2 L14.6 124.4 L12.9 118.3 L12.0 112.0 Z" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95" transform="rotate(-10 180.0 112.0)"/>
+    <path d="M55.7 112.0 L304.3 112.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75" transform="rotate(-10 180.0 112.0)"/>
+    <path d="M154.0 92.0 L154.0 132.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75" transform="rotate(-10 180.0 112.0)"/>
+    <path d="M180.0 92.0 L180.0 132.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75" transform="rotate(-10 180.0 112.0)"/>
+    <path d="M206.0 92.0 L206.0 132.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75" transform="rotate(-10 180.0 112.0)"/>
+  </g>
 </svg>

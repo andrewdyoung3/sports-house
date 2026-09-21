@@ -2,34 +2,54 @@
 <!--
   Cricket ball — generic sport fallback
 
-  Part of the sport-ball fallback set (see watermarks.ts). Detail is carried by
-  TRANSPARENT holes, never a second fill: the `mono` treatment collapses every
-  colour to one ink, so anything drawn in a lighter shade would vanish. The
+  Sport-ball fallback (watermarks.ts), shown when a competition badge cannot be
+  fetched.
+
+  LINE ART with alpha shading, not a solid silhouette. The `mono` treatment is
+  brightness(0) invert(1): it flattens colour but leaves ALPHA untouched, so the
+  tonal work here survives and one file reads white on a dark card and ink on a
+  light one. Nothing depends on hue.
+
   viewBox is the artwork's tight bounding box, so padRight is 0%.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 372" width="372" height="372" role="img" aria-label="Cricket ball">
-  <g>
-    <path fill="#000000" fill-rule="evenodd" d="
-      M6.0 186.0 A180.0 180.0 0 1 0 366.0 186.0 A180.0 180.0 0 1 0 6.0 186.0 Z
-      M14.0 177.0 H358.0 V195.0 H14.0 Z
-      M45.0 160.0 H55.0 V177.0 H45.0 Z
-      M45.0 195.0 H55.0 V212.0 H45.0 Z
-      M79.0 160.0 H89.0 V177.0 H79.0 Z
-      M79.0 195.0 H89.0 V212.0 H79.0 Z
-      M113.0 160.0 H123.0 V177.0 H113.0 Z
-      M113.0 195.0 H123.0 V212.0 H113.0 Z
-      M147.0 160.0 H157.0 V177.0 H147.0 Z
-      M147.0 195.0 H157.0 V212.0 H147.0 Z
-      M181.0 160.0 H191.0 V177.0 H181.0 Z
-      M181.0 195.0 H191.0 V212.0 H181.0 Z
-      M215.0 160.0 H225.0 V177.0 H215.0 Z
-      M215.0 195.0 H225.0 V212.0 H215.0 Z
-      M249.0 160.0 H259.0 V177.0 H249.0 Z
-      M249.0 195.0 H259.0 V212.0 H249.0 Z
-      M283.0 160.0 H293.0 V177.0 H283.0 Z
-      M283.0 195.0 H293.0 V212.0 H283.0 Z
-      M317.0 160.0 H327.0 V177.0 H317.0 Z
-      M317.0 195.0 H327.0 V212.0 H317.0 Z
-    "/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" width="360" height="360" role="img" aria-label="Cricket ball">
+  <defs>
+    <radialGradient id="sh" cx="34%" cy="26%" r="80%">
+      <stop offset="0%"   stop-color="#fff" stop-opacity="0.30"/>
+      <stop offset="58%"  stop-color="#fff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0.04"/>
+    </radialGradient>
+  </defs>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="180" cy="180" rx="170" ry="170" fill="url(#sh)" stroke="none"/>
+    <ellipse cx="180" cy="180" rx="170" ry="170" fill="none" stroke="#fff" stroke-width="6.5" stroke-opacity="0.95"/>
+    <path d="M28.0 174.0 L332.0 174.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75"/>
+    <path d="M28.0 186.0 L332.0 186.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.75"/>
+    <path d="M36.0 162.0 L42.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M36.0 198.0 L42.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M60.0 162.0 L66.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M60.0 198.0 L66.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M84.0 162.0 L90.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M84.0 198.0 L90.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M108.0 162.0 L114.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M108.0 198.0 L114.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M132.0 162.0 L138.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M132.0 198.0 L138.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M156.0 162.0 L162.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M156.0 198.0 L162.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M180.0 162.0 L186.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M180.0 198.0 L186.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M204.0 162.0 L210.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M204.0 198.0 L210.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M228.0 162.0 L234.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M228.0 198.0 L234.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M252.0 162.0 L258.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M252.0 198.0 L258.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M276.0 162.0 L282.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M276.0 198.0 L282.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M300.0 162.0 L306.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M300.0 198.0 L306.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M324.0 162.0 L330.0 173.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
+    <path d="M324.0 198.0 L330.0 187.0" fill="none" stroke="#fff" stroke-width="3.2" stroke-opacity="0.52"/>
   </g>
 </svg>
