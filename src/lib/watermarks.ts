@@ -123,9 +123,9 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
  * Each is a rendered 3D object (shaded body, panels, seams, curved brand text,
  * leather grain) in GREYSCALE + alpha — one file serves both themes without
  * the mono filter, see SPORT_FALLBACK_SPEC — and each viewBox is the artwork's
- * tight bounding box so padRight is 0%. Source of the renders: the g3d/marks
- * scripts kept outside the repo (a Python spheroid renderer); regenerate there
- * rather than hand-editing the ~150 KB path soup.
+ * tight bounding box so padRight is 0%. Rendered by tools/watermarks (a small
+ * Python spheroid renderer); regenerate there rather than hand-editing the
+ * ~150 KB path soup.
  */
 const SPORT_FALLBACKS: Record<string, string> = {
   afl:         '/watermarks/ball-afl.svg',
