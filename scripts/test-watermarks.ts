@@ -10,7 +10,7 @@
  * disk, and each mark must be positioned by its visible art.
  */
 
-import { existsSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { LEAGUES } from '@/lib/teams';
 import {
   WATERMARKS, competitionWatermark, sportFallbackMark,
@@ -37,10 +37,22 @@ console.log('\n── every league has a sport fallback, and it exists ──');
 
 console.log('── the fallback presentation is sane ──');
 {
-  expect('fallback is mono, so it adapts to both themes', SPORT_FALLBACK_SPEC.mono === true);
+  // The marks are shaded greyscale renders; mono would flatten the 3D to one ink.
+  expect('fallback is NOT mono (greyscale render serves both themes as-is)', SPORT_FALLBACK_SPEC.mono === false);
   expect('fallback needs no pad shift (tight viewBox)', SPORT_FALLBACK_SPEC.padRight === '0%');
   expect('fallback opacity sits in watermark range',
-    SPORT_FALLBACK_SPEC.opacity > 0.05 && SPORT_FALLBACK_SPEC.opacity < 0.35);
+    SPORT_FALLBACK_SPEC.opacity > 0.05 && SPORT_FALLBACK_SPEC.opacity <= 0.45);
+  // The mark files must be true greyscale — a colour would betray the theme trick.
+  for (const f of readdirSync('public/watermarks').filter(f => f.endsWith('.svg'))) {
+    const svg = readFileSync(`public/watermarks/${f}`, 'utf8');
+    const colours = [...new Set(svg.match(/#[0-9a-f]{3,6}\b/gi) ?? [])];
+    const chroma = colours.filter(c => {
+      const h = c.length === 4 ? c.slice(1).split('').map(x => x + x).join('') : c.slice(1);
+      const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+      return Math.max(r, g, b) - Math.min(r, g, b) > 48;
+    });
+    expect(`${f} is greyscale (found: ${chroma.join(', ') || 'none'})`, chroma.length === 0);
+  }
 }
 
 console.log('── competition marks are positioned by visible art ──');

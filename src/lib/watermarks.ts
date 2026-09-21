@@ -95,12 +95,13 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   'league:epl':         { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png', opacity: 0.15, mono: true, height: '125%', padRight: '22.6%'},
   'league:super_rugby': { url: 'https://r2.thesportsdb.com/images/media/league/badge/alpxhe1675871443.png', opacity: 0.18, height: '110%', padRight: '14.3%'},
   // ESPN's generic rugby icon is a solid silhouette; `mono` flattened it into a
-  // featureless grey ellipse (user-reported). Locally drawn replacement whose
-  // seam and lacing are TRANSPARENT, so they survive the mono treatment.
+  // featureless grey ellipse (user-reported). Locally rendered replacement —
+  // the same 3D ball the fallback uses, so it takes SPORT_FALLBACK_SPEC's
+  // presentation (greyscale, NOT mono; see that comment).
   // Named series (Rugby Championship, Six Nations above) still win via
   // 'comp:' — this only shows for fixtures ESPN files as
   // "international-test-match", which carry no series metadata to badge with.
-  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.34, mono: true, height: '88%', padRight: '0%'},
+  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.40, mono: false, height: '88%', padRight: '0%'},
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15, padRight: '29.6%'},
   // F1 rows show ONLY this mark (no team watermark — the championship entity
   // IS the league). The old 96px was a centre-anchor correction for this wide
@@ -119,9 +120,12 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
  * what game this is without claiming to be a badge we could not fetch.
  *
  * Local files, deliberately: a fallback that can itself 404 is not a fallback.
- * Each is drawn so its detail is transparency rather than a second colour, so
- * the `mono` treatment keeps it legible in both themes, and each viewBox is the
- * artwork's tight bounding box so padRight is 0%.
+ * Each is a rendered 3D object (shaded body, panels, seams, curved brand text,
+ * leather grain) in GREYSCALE + alpha — one file serves both themes without
+ * the mono filter, see SPORT_FALLBACK_SPEC — and each viewBox is the artwork's
+ * tight bounding box so padRight is 0%. Source of the renders: the g3d/marks
+ * scripts kept outside the repo (a Python spheroid renderer); regenerate there
+ * rather than hand-editing the ~150 KB path soup.
  */
 const SPORT_FALLBACKS: Record<string, string> = {
   afl:         '/watermarks/ball-afl.svg',
@@ -146,12 +150,19 @@ export function sportFallbackMark(league: string): string | undefined {
 /**
  * Presentation for a fallback mark — it is our own art, so one setting fits all.
  *
- * Opacity sits well above the badge marks (0.34 vs ~0.15) because these are
- * LINE ART: a badge is a solid plate of ink, whereas a ball is a few hairlines
- * over a soft wash, so the same opacity would render it nearly invisible.
+ * NOT mono, on purpose. The marks are shaded greyscale renders, and the mono
+ * filter (brightness(0) invert(1)) would crush every tone to one ink and throw
+ * the 3D away. Left as-is they are physically honest on both grounds with one
+ * file: on a dark card the lit body carries the form and the black panels sink
+ * into the card; on a light card the black panels and form shadow carry it and
+ * the lit body sinks into the paper.
+ *
+ * Opacity sits above the badge marks (0.40 vs ~0.15) because half of each
+ * mark's tonal range disappears into whichever ground it is on, so what is
+ * left has to work harder than a solid plate of ink does.
  */
 export const SPORT_FALLBACK_SPEC: Required<Pick<WatermarkSpec, 'opacity' | 'height' | 'padRight' | 'mono'>> = {
-  opacity: 0.34, height: '88%', padRight: '0%', mono: true,
+  opacity: 0.40, height: '88%', padRight: '0%', mono: false,
 };
 
 /** Competition-first watermark lookup for a fixture row. */
