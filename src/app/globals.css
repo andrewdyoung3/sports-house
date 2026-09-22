@@ -591,18 +591,36 @@
  *     responsive scale expands leftward and nothing is ever clipped;
  *   - --wm-padx shifts the mark right by the transparent padding baked into
  *     its own file, so it is the VISIBLE art that sits --wm-right from the
- *     edge. The scale is applied BEFORE that shift in the transform list, so
- *     the percentage rides the element's SCALED width and stays correct at
- *     both breakpoints (a px nudge would drift by the scale factor).
+ *     edge. A percentage of the element's own width, so it stays correct at
+ *     any rendered size (a px nudge would drift with the breakpoint factor).
+ *
+ * SIZE is a real height, not a transform scale. The tuned --wm-h is a
+ * percentage of card height, multiplied by the breakpoint factor --wm-k and
+ * then CAPPED so the mark can never overflow the card. The previous
+ * transform: scale(1.3) on desktop took every mark past the card's edges
+ * (140% × 1.3 = 182% of card height) and overflow:hidden cropped them to a
+ * slice — the AFL, NBA and Premier League marks all showed as clipped
+ * fragments on desktop. A transform is invisible to the box model, so no
+ * max-height could have caught it; a real height can be clamped.
+ *
+ * OPACITY/BLEND are per theme. The spec's opacity was tuned on the dark
+ * card; --wm-op-light overrides it in light, and the 'screen' blend that
+ * dissolves a dark plate INTO a dark card would dissolve everything into a
+ * white one (screen against white is white), so light drops it.
  */
 .sh-wm-comp {
   position: absolute; top: 50%; right: var(--wm-right, 10px);
+  height: min(calc(var(--wm-h, 100%) * var(--wm-k, 0.7)), 94%);
   width: auto; object-fit: contain;
+  opacity: var(--wm-op, 0.18);
   pointer-events: none; user-select: none;
   transform-origin: right center;
-  transform: translateY(-50%) scale(var(--wm-scale, 0.7)) translateX(var(--wm-padx, 0%));
+  transform: translate(var(--wm-padx, 0%), -50%);
 }
-@media (min-width: 1024px) { .sh-wm-comp { --wm-scale: 1.3; } }
+@media (min-width: 1024px) { .sh-wm-comp { --wm-k: 1; } }
+.sh-wm-screen { mix-blend-mode: screen; }
+[data-theme='light'] .sh-wm-comp   { opacity: var(--wm-op-light, var(--wm-op, 0.18)); }
+[data-theme='light'] .sh-wm-screen { mix-blend-mode: normal; }
 
 /* Layout provenance. Shown on every map, because every map is drawn from the
    most recent PUBLISHED layout rather than the race year's own — so this is a

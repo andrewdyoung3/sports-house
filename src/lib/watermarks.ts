@@ -14,15 +14,25 @@
  * the competition it belongs to. The team is identified by its crest beside
  * the name, which no longer competes with a second copy of itself.
  *
- * Tuning knobs: opacity (vs the card wash), height (% of card height —
- * wide wordmarks want ~140%, round roundels ~78-110%), maxWidth (cap wide
- * banners), blend ('screen' dissolves dark plates), filter (white-force
- * monochrome marks).
+ * Tuning knobs: opacity (vs the card wash; lightOpacity for the light card),
+ * height (% of card height BEFORE the breakpoint factor and the card cap —
+ * see .sh-wm-comp; wide wordmarks want ~140%, round roundels ~78-110%),
+ * maxWidth (cap wide banners), blend ('screen' dissolves dark plates on the
+ * dark card only), filter (white-force monochrome marks).
  */
 
 export interface WatermarkSpec {
   url: string;
   opacity?: number;
+  /**
+   * Opacity in the LIGHT theme, when the dark-tuned one does not carry over.
+   * Every `opacity` above was set by eye on the dark card; a colour plate
+   * that reads soft over near-black can read twice as strong over near-white
+   * (the FA Cup crest measures 0.056 vs 0.150 mean luminance shift), and our
+   * own greyscale renders are lit bodies that sink into a dark card but stand
+   * off a light one. Omitted = same as `opacity`.
+   */
+  lightOpacity?: number;
   height?: string;
   maxWidth?: string;
   blend?: string;
@@ -81,9 +91,11 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // brought into line with the Champions League mark (they share the treatment).
   'comp:Europa League':     { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2310.png', opacity: 0.15, blend: 'screen', height: '125%', padRight: '18.2%' },
   'comp:Conference League': { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/20296.png', opacity: 0.15, blend: 'screen', height: '125%', padRight: '19.8%' },
-  'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, blend: 'screen', height: '78%', padRight: '23%'},
+  'comp:FA Cup':            { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/40.png',   opacity: 0.24, lightOpacity: 0.10, blend: 'screen', height: '78%', padRight: '23%'},
   'comp:EFL Cup':           { url: 'https://a.espncdn.com/i/leaguelogos/soccer/500/41.png',   opacity: 0.22, blend: 'screen', height: '78%', padRight: '17.8%'},
-  'comp:Rugby Championship': { url: 'https://r2.thesportsdb.com/images/media/league/badge/dy0n4c1716684531.png', opacity: 0.20, height: '96%', padRight: '1.2%'},
+  // WHITE line art. `mono` is a no-op on the dark card (white → white) and is
+  // what keeps it from vanishing on the light one (white on white → ink).
+  'comp:Rugby Championship': { url: 'https://r2.thesportsdb.com/images/media/league/badge/dy0n4c1716684531.png', opacity: 0.20, mono: true, height: '96%', padRight: '1.2%'},
   'comp:Six Nations':        { url: 'https://r2.thesportsdb.com/images/media/league/badge/7h1wr91738670253.png', opacity: 0.20, height: '96%', padRight: '4.3%'},
   'comp:State of Origin':   { url: 'https://upload.wikimedia.org/wikipedia/en/thumb/0/0e/Ampol_State_Of_Origin_Logo_2026.svg/500px-Ampol_State_Of_Origin_Logo_2026.svg.png', opacity: 0.18, height: '98%', padRight: '0.6%'},
 
@@ -101,7 +113,7 @@ export const WATERMARKS: Record<string, WatermarkSpec> = {
   // Named series (Rugby Championship, Six Nations above) still win via
   // 'comp:' — this only shows for fixtures ESPN files as
   // "international-test-match", which carry no series metadata to badge with.
-  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.40, mono: false, height: '88%', padRight: '0%'},
+  'league:rugby_int':   { url: '/watermarks/rugby-union.svg', opacity: 0.30, lightOpacity: 0.22, mono: false, height: '88%', padRight: '0%'},
   'league:nba':         { url: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png', opacity: 0.15, padRight: '29.6%'},
   // F1 rows show ONLY this mark (no team watermark — the championship entity
   // IS the league). The old 96px was a centre-anchor correction for this wide
@@ -157,12 +169,16 @@ export function sportFallbackMark(league: string): string | undefined {
  * into the card; on a light card the black panels and form shadow carry it and
  * the lit body sinks into the paper.
  *
- * Opacity sits above the badge marks (0.40 vs ~0.15) because half of each
+ * Opacity sits above the badge marks (0.30 vs ~0.15) because half of each
  * mark's tonal range disappears into whichever ground it is on, so what is
- * left has to work harder than a solid plate of ink does.
+ * left has to work harder than a solid plate of ink does. Lower again in
+ * light: the lit body stands off white paper where it sank into the dark
+ * card, so the same number read ~25% stronger there (measured, and visible —
+ * the ball was the loudest thing on the page). These land the marks in the
+ * same mean-luminance-shift band as the badge marks on each ground.
  */
-export const SPORT_FALLBACK_SPEC: Required<Pick<WatermarkSpec, 'opacity' | 'height' | 'padRight' | 'mono'>> = {
-  opacity: 0.40, height: '88%', padRight: '0%', mono: false,
+export const SPORT_FALLBACK_SPEC: Required<Pick<WatermarkSpec, 'opacity' | 'lightOpacity' | 'height' | 'padRight' | 'mono'>> = {
+  opacity: 0.30, lightOpacity: 0.22, height: '88%', padRight: '0%', mono: false,
 };
 
 /** Competition-first watermark lookup for a fixture row. */

@@ -55,6 +55,23 @@ console.log('── the fallback presentation is sane ──');
   }
 }
 
+console.log('── marks are sized by a clamped real height, not a transform ──');
+{
+  // A transform: scale() is invisible to the box model, so nothing could stop
+  // it pushing a 140% mark past the card (seen: AFL/NBA/EPL marks rendered as
+  // clipped slices on desktop). The size must be a real height under a cap.
+  const css = readFileSync('src/app/globals.css', 'utf8');
+  const rule = css.slice(css.indexOf('.sh-wm-comp {'), css.indexOf('}', css.indexOf('.sh-wm-comp {')));
+  expect('.sh-wm-comp height is a clamped calc of --wm-h', /height:\s*min\(calc\(var\(--wm-h/.test(rule));
+  expect('.sh-wm-comp transform carries no scale()', !/scale\(/.test(rule));
+  expect('light theme drops the screen blend', /\[data-theme='light'\] \.sh-wm-screen\s*\{[^}]*mix-blend-mode:\s*normal/.test(css));
+  for (const [k, v] of Object.entries(WATERMARKS)) {
+    if (v.lightOpacity !== undefined) {
+      expect(`${k} lightOpacity sits in watermark range`, v.lightOpacity > 0.05 && v.lightOpacity <= 0.45);
+    }
+  }
+}
+
 console.log('── competition marks are positioned by visible art ──');
 {
   for (const [key, spec] of Object.entries(WATERMARKS)) {

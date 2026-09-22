@@ -26,8 +26,8 @@ interface CompetitionWatermarkProps {
   competition?: string;
   league: string;
   /**
-   * Override the responsive scale the shared class applies. F1 rows pass 1:
-   * that mark is already sized for the card and must not be scaled again.
+   * Override the breakpoint size factor the shared class applies. F1 rows pass
+   * 1: that mark is already sized for the card and must not be scaled again.
    */
   scale?: number;
 }
@@ -45,7 +45,11 @@ export function CompetitionWatermark({ competition, league, scale }: Competition
 
   const spec = useBall ? SPORT_FALLBACK_SPEC : wm!;
   const mono = useBall ? SPORT_FALLBACK_SPEC.mono : wm!.mono;
+  const screen = !useBall && wm?.blend === 'screen';
 
+  // Size and opacity go through CSS variables rather than inline height/opacity
+  // so the stylesheet can clamp the size to the card and swap the opacity per
+  // theme (see .sh-wm-comp in globals.css).
   return (
     /* eslint-disable-next-line @next/next/no-img-element */
     <img
@@ -56,15 +60,15 @@ export function CompetitionWatermark({ competition, league, scale }: Competition
       aria-hidden="true"
       width={100}
       height={100}
-      className={'sh-wm-comp' + (mono ? ' sh-wm-mono' : '')}
+      className={'sh-wm-comp' + (mono ? ' sh-wm-mono' : '') + (screen ? ' sh-wm-screen' : '')}
       style={{
         '--wm-right': wm?.right ?? WM_RIGHT_INSET,
         '--wm-padx': spec.padRight ?? '0%',
-        ...(scale !== undefined ? { '--wm-scale': scale } : {}),
-        height:  spec.height ?? '140%',
-        opacity: spec.opacity ?? 0.18,
+        '--wm-h':    spec.height ?? '140%',
+        '--wm-op':   spec.opacity ?? 0.18,
+        ...(spec.lightOpacity !== undefined ? { '--wm-op-light': spec.lightOpacity } : {}),
+        ...(scale !== undefined ? { '--wm-k': scale } : {}),
         ...(!useBall && wm?.maxWidth ? { maxWidth: wm.maxWidth } : {}),
-        ...(!useBall && wm?.blend    ? { mixBlendMode: wm.blend as 'screen' } : {}),
         ...(!useBall && wm?.filter   ? { filter: wm.filter } : {}),
       } as React.CSSProperties}
       // One-way: once we are on the ball there is nothing further to fall back to.
