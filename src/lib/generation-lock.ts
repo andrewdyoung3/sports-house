@@ -9,6 +9,18 @@ interface LockData {
   timestamp: number;
 }
 
+/**
+ * Is the lock's holder still running? A dev-server restart mid-generation
+ * leaves the file behind with a dead pid, and waiting out STALE_MS parked the
+ * poller for 20 minutes each time (seen 2026-09-22). Signal 0 probes without
+ * sending anything; EPERM means alive-but-not-ours, which still counts as held.
+ */
+function pidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+
 function readLockData(): LockData | null {
   try {
     return JSON.parse(readFileSync(LOCK_PATH, 'utf8')) as LockData;
@@ -35,8 +47,8 @@ export function acquireLock(): boolean {
 
       // First attempt failed — check if the existing lock is stale.
       const data = readLockData();
-      if (data && Date.now() - data.timestamp <= STALE_MS) {
-        // Fresh lock held by another process.
+      if (data && Date.now() - data.timestamp <= STALE_MS && pidAlive(data.pid)) {
+        // Fresh lock held by a live process.
         return false;
       }
       // Stale (or unreadable) — remove and retry once.

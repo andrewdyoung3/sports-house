@@ -164,13 +164,22 @@ console.log('── every consumer expands follows the same way ──');
   // competition follow silently covers less than the others.
   for (const f of [
     'scripts/generate-previews.ts',
-    'src/app/api/cron/poll-reviews/route.ts',
     'scripts/coverage-report.ts',
   ]) {
     const src2 = readFileSync(f, 'utf8');
     expect(`${f.split('/').pop()} uses the shared expansion`,
       /generationIdsFor\(/.test(src2) && !/getDistinctFollowedTeamIds\(/.test(src2));
   }
+  // The review poller is the exception, on purpose: a review is keyed by the
+  // PERSPECTIVE the results page renders, and for a competition follow that
+  // page renders the home side of each match (scope=league), not one row per
+  // club. So the poller expands a competition the way the page does — by
+  // asking /api/results for the league — rather than to every club id.
+  const poll = readFileSync('src/app/api/cron/poll-reviews/route.ts', 'utf8');
+  expect('poll-reviews reads competition follows', /followed\.leagueIds/.test(poll));
+  expect('poll-reviews expands them the way the results page does (scope=league)', /scope=league/.test(poll));
+  expect('poll-reviews keys jobs with the page\'s own id', /makeResultId\(/.test(poll));
+  expect('poll-reviews does not read the team-only follow set', !/getDistinctFollowedTeamIds\(/.test(poll));
 }
 
 console.log('── every surface renders competition follows ──');

@@ -98,6 +98,14 @@ export interface GameResult {
   opponentScore: number;
   date: string;
   competition?: string;       // Non-primary cup/CL competition label
+  /**
+   * Source event key in the fixture-id vocabulary the review enrichers parse
+   * (`afl-<squiggle game id>`, `nrl-<espn event id>`, `soccer-<slug>-<espn id>`,
+   * `sru-<id>`, `rint-<id>`). The review's STORE key is the perspective id
+   * (makeResultId); this is what lets the review route reach ESPN's
+   * summary?event= (form, head-to-head, goal timeline) for that match.
+   */
+  sourceId?: string;
   /** F1 only — finishing position label: "P1", "P3", "DNF", "DSQ", "NC" etc. */
   f1Position?: string;
   /** Cricket only — our team's batting score, e.g. "287/6 (50 ov)" */

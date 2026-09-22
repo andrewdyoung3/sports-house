@@ -38,12 +38,18 @@ src/
                             statlines/years/phase-stakes/ladder-position/WC group-record/WC group-letter/F1)
                             + Supabase upsert
     weather.ts            — fetchVenueWeather() (Open-Meteo, no key); shared by /api/weather + previews
+    review-store.ts       — Supabase game_reviews read/upsert; REVIEW_REGIME ('v9') + reviewStoreKey()
+    result-match-key.ts   — makeResultId(): the results page's render id AND the review store key
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
                             (competition-rules.ts = COMP_RULES, the per-season single source of truth)
   app/api/
     preview/route.ts      — Display panel data (thin wrapper over preview-fetchers)
     sandbox/              — Dev-only prompt sandbox: context (buildBlocks) / models / generate
     weather/route.ts      — Thin HTTP wrapper over lib/weather.ts
+    ai-review/route.ts    — Post-match review: read-through game_reviews → {preparing:true} where no
+                            generator (Vercel) → Ollama generate + upsert. Key = perspective id.
+    cron/poll-reviews/    — Pre-generates reviews for followed teams/comps; discovers via /api/results
+                            (same ids the page renders), skips ids already stored, stops if store missing
   app/sandbox/            — Dev-only UI to inspect/toggle prompt blocks and run generations
   types/index.ts          — All TypeScript interfaces
 ```
@@ -78,12 +84,15 @@ Beyond standings/news, each preview's data block is enriched by `buildPreviewCon
 
 **Faithfulness invariant:** generation, the sandbox route, and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext` and pass `[],[]` for positional results — so add new data to `PreviewContext`/`buildDataBlock`, never a parallel path, and prod/sandbox stay byte-identical.
 
+### AI post-match reviews (results page)
+Persisted in Supabase `game_reviews` (migration 0006), the results-side twin of `game_previews`. **Store key = `v9:<perspective id>`** where the perspective id is `makeResultId(teamId, result)` = `<teamId>-<YYYY-MM-DD>-vs-<opponent-slug>` — the exact id the results page renders, so one review per followed side. `GameResult.sourceId` (`afl-<squiggle id>`, `nrl-<espn id>`, `soccer-<slug>-<espn id>`, `sru-`/`rint-<id>`) is the *event* key the review enrichers parse for form/H2H/goal timeline — never use it as the store key. `/api/ai-review` is read-through: store hit → payload; no generator (`VERCEL` without a non-loopback `OLLAMA_HOST`) → `{preparing:true}` and the panel says "Match report on its way."; else generate (validators may refuse; refusals are not stored) and upsert. `poll-reviews` runs from the launchd chain every 60 s, discovers via `/api/results` (`teamId=` for followed teams, `scope=league` for followed comps, 8-day lookback), and **stops with "review store unavailable"** if the admin client or table is missing — do not "fix" that by generating anyway. AFL form/H2H needs Squiggle's exact names: the route maps `teamId → SQUIGGLE_NAME`.
+
 ## Planned future leagues
 - **Cricket** — DONE (BBL + internationals via cricketdata.org). Will populate tracked-team fixtures in-season (BBL summer; men's bilateral series); currently dormant like EPL/NBA off-season.
 - **NFL / MLB** — still mock; would use their official APIs.
 
 ## Upgrade Path (in priority order)
-1. **Persistence** — Supabase wired (`game_previews`, `preview_jobs`); see memory `project-preview-pipeline`
+1. **Persistence** — Supabase wired (`game_previews`, `preview_jobs`, `game_reviews`); see memory `project-preview-pipeline`
 2. **Auth** — add NextAuth; protect `/dashboard` with a session check
 3. ~~**AI previews**~~ — DONE: local Ollama pipeline (`preview-generator.ts`), not the originally-planned OpenAI
 4. **More leagues** — Cricket next (sources are WAF-blocked server-side → keyed API/proxy); then NFL/MLB

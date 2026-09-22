@@ -1,23 +1,29 @@
 /**
  * GET /api/cron/poll-reviews
  *
- * Finds games that finished within the last 2 hours and generates an AI review
- * for each one that doesn't already have one cached. Called every 5 minutes by
- * scripts/poll-reviews.sh.
+ * Pre-generates AI post-match reviews for every result the results page would
+ * show a followed team or competition, so the page (and the deployed site,
+ * which cannot generate) reads them from Supabase instead of waiting a minute
+ * on the model. Called every 60 s by scripts/poll-reviews.ts (launchd chain);
+ * the shared generation lock keeps it polite.
+ *
+ * Discovery is deliberately NOT its own scan of Squiggle/ESPN. It asks
+ * /api/results — the same endpoint, same perspective, same fields the page
+ * renders — and keys each job with the same makeResultId the page uses. The
+ * old poller kept a private copy of the team maps and keyed `afl-<squiggle id>`
+ * from the home side, so nothing it generated was ever what the page asked for.
  *
  * Protected by x-cron-secret header — no Supabase session required.
  * Logs each job start/end to /tmp/sporthouse-ai.log for latency verification.
- *
- * "Recently finished" heuristic per sport:
- *   AFL  — Squiggle complete=100, kickoff within last 5 hours (AFL games ~2h)
- *   NRL  — ESPN completed event, kickoff within last 4 hours (NRL game ~80 min)
- *   EPL  — ESPN completed event, kickoff within last 4 hours (EPL game ~100 min)
- *   SRU  — ESPN completed event, kickoff within last 4 hours (rugby game ~90 min)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { appendFileSync } from 'fs';
-import { getDistinctFollowed, generationIdsFor, followsNothing } from '@/lib/followed-teams-server';
+import type { GameResult } from '@/types';
+import { TEAMS } from '@/lib/teams';
+import { makeResultId } from '@/lib/result-match-key';
+import { existingReviewIds, reviewStoreKey } from '@/lib/review-store';
+import { getDistinctFollowed, followsNothing } from '@/lib/followed-teams-server';
 import { acquireLock, releaseLock } from '@/lib/generation-lock';
 import { secretsMatch } from '@/lib/request-guards';
 
@@ -40,167 +46,95 @@ function resolveSafeBase(): string {
 
 const BASE = resolveSafeBase();
 
-// ── How long after kickoff a game might still be "just finished" ──────────────
-const LOOKBACK_MS: Record<string, number> = {
-  afl:         5 * 3600 * 1000,  // AFL ~2h game + 3h buffer
-  nrl:         4 * 3600 * 1000,
-  epl:         4 * 3600 * 1000,
-  super_rugby: 4 * 3600 * 1000,
-};
+/** Leagues the results panel requests a review for (result-expand-panel REAL_DATA_LEAGUES). */
+const REVIEW_LEAGUES = new Set(['afl', 'nrl', 'epl', 'super_rugby', 'rugby_int']);
 
-// ── AFL — Squiggle ─────────────────────────────────────────────────────────────
-
-const SQUIGGLE_TEAM_ID: Record<string, string> = {
-  'Brisbane Lions': 'afl-lions', 'Richmond': 'afl-tigers', 'Sydney': 'afl-swans',
-  'Geelong': 'afl-cats', 'Collingwood': 'afl-pies', 'Carlton': 'afl-blues',
-  'Melbourne': 'afl-demons', 'Western Bulldogs': 'afl-dogs', 'Hawthorn': 'afl-hawks',
-  'Essendon': 'afl-bombers', 'Adelaide': 'afl-crows', 'Port Adelaide': 'afl-power',
-  'Fremantle': 'afl-dockers', 'GWS Giants': 'afl-giants', 'Greater Western Sydney': 'afl-giants',
-  'Gold Coast': 'afl-suns', 'North Melbourne': 'afl-kangaroos', 'St Kilda': 'afl-saints',
-  'West Coast': 'afl-eagles',
-};
+/**
+ * How far back a result still gets a review. The page shows each team's last
+ * five results, so this is a backfill horizon, not a "just finished" window:
+ * eight days is the previous round in every league (AFL Thu–Sun, EPL Sat–Mon,
+ * a Test window) so a fresh box, or one that was asleep over a weekend,
+ * catches up. Already-stored ids are skipped before any model time is spent,
+ * so the horizon costs one Supabase `in` query per poll, not regenerations.
+ */
+const LOOKBACK_MS = 8 * 24 * 3600 * 1000;
 
 interface ReviewJob {
+  gameId: string;
+  sourceId?: string;
   league: string;
+  teamId: string;
   teamName: string;
   opponent: string;
+  opponentId?: string;
   teamScore: number;
   opponentScore: number;
   isHome: boolean;
   date: string;
-  gameId: string;
   competition?: string;
-  /** Internal app team slug — used to filter by followed teams. */
-  teamId?: string;
-  opponentId?: string;
 }
 
-// ── Team display-name → internal ID maps (mirrored from league-fixtures) ──────
-// Used to populate teamId/opponentId on review jobs so we can filter by
-// followed teams without hitting the league-fixtures route.
-
-const NRL_NAME_TO_ID: Record<string, string> = {
-  'Brisbane Broncos': 'nrl-broncos', 'Canberra Raiders': 'nrl-raiders',
-  'Canterbury-Bankstown Bulldogs': 'nrl-bulldogs', 'Cronulla-Sutherland Sharks': 'nrl-sharks',
-  'Dolphins': 'nrl-dolphins', 'Gold Coast Titans': 'nrl-titans',
-  'Parramatta Eels': 'nrl-eels', 'Penrith Panthers': 'nrl-panthers',
-  'Manly-Warringah Sea Eagles': 'nrl-seahawks', 'Melbourne Storm': 'nrl-storm',
-  'Newcastle Knights': 'nrl-knights', 'New Zealand Warriors': 'nrl-warriors',
-  'North Queensland Cowboys': 'nrl-cowboys', 'South Sydney Rabbitohs': 'nrl-rabbitohs',
-  'St. George Illawarra Dragons': 'nrl-dragons', 'Sydney Roosters': 'nrl-roosters',
-  'Wests Tigers': 'nrl-tigers',
-  // ESPN short names (displayName varies)
-  'Broncos': 'nrl-broncos', 'Raiders': 'nrl-raiders', 'Bulldogs': 'nrl-bulldogs',
-  'Sharks': 'nrl-sharks', 'Titans': 'nrl-titans', 'Eels': 'nrl-eels',
-  'Panthers': 'nrl-panthers', 'Sea Eagles': 'nrl-seahawks', 'Storm': 'nrl-storm',
-  'Knights': 'nrl-knights', 'Warriors': 'nrl-warriors', 'Cowboys': 'nrl-cowboys',
-  'Rabbitohs': 'nrl-rabbitohs', 'Dragons': 'nrl-dragons', 'Roosters': 'nrl-roosters',
-};
-
-const EPL_NAME_TO_ID: Record<string, string> = {
-  'Arsenal': 'epl-arsenal', 'Aston Villa': 'epl-astonvilla',
-  'AFC Bournemouth': 'epl-bournemouth', 'Brentford': 'epl-brentford',
-  'Brighton & Hove Albion': 'epl-brighton', 'Chelsea': 'epl-chelsea',
-  'Crystal Palace': 'epl-crystalpalace', 'Everton': 'epl-everton',
-  'Fulham': 'epl-fulham', 'Liverpool': 'epl-liverpool',
-  'Manchester City': 'epl-mancity', 'Manchester United': 'epl-manutd',
-  'Newcastle United': 'epl-newcastle', 'Nottingham Forest': 'epl-forest',
-  'Sunderland': 'epl-sunderland', 'Tottenham Hotspur': 'epl-spurs',
-  'West Ham United': 'epl-westham', 'Wolverhampton Wanderers': 'epl-wolves',
-};
-
-const SRU_NAME_TO_ID: Record<string, string> = {
-  'Brumbies': 'sru-brumbies', 'ACT Brumbies': 'sru-brumbies',
-  'Queensland Reds': 'sru-reds', 'Reds': 'sru-reds',
-  'New South Wales Waratahs': 'sru-waratahs', 'Waratahs': 'sru-waratahs',
-  'NSW Waratahs': 'sru-waratahs', 'Western Force': 'sru-force', 'Force': 'sru-force',
-  'Blues': 'sru-blues', 'Chiefs': 'sru-chiefs', 'Crusaders': 'sru-crusaders',
-  'Highlanders': 'sru-highlanders', 'Hurricanes': 'sru-hurricanes',
-  'Fijian Drua': 'sru-drua', 'Drua': 'sru-drua',
-  'Moana Pasifika': 'sru-moana',
-};
-
-function resolveTeamId(league: string, name: string): string | undefined {
-  if (league === 'afl')         return SQUIGGLE_TEAM_ID[name];
-  if (league === 'nrl')         return NRL_NAME_TO_ID[name];
-  if (league === 'epl')         return EPL_NAME_TO_ID[name];
-  if (league === 'super_rugby') return SRU_NAME_TO_ID[name];
-  return undefined;
-}
-
-async function fetchRecentAFL(): Promise<ReviewJob[]> {
-  const now  = Date.now();
-  const cutoff = now - LOOKBACK_MS.afl;
+async function fetchResults(query: string): Promise<Array<GameResult & { teamId?: string }>> {
   try {
-    const year = new Date().getFullYear();
-    const res  = await fetch(
-      `https://api.squiggle.com.au/?q=games;year=${year}`,
-      { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, cache: 'no-store' },
-    );
-    if (!res.ok) return [];
-    const { games = [] } = await res.json();
-
-    return (games as any[])
-      .filter(g => Number(g.complete) === 100 && g.unixtime * 1000 > cutoff)
-      .map((g): ReviewJob => ({
-        league:    'afl',
-        teamName:  g.hteam as string,
-        opponent:  g.ateam as string,
-        teamScore: Number(g.hscore),
-        opponentScore: Number(g.ascore),
-        isHome:    true,
-        date:      g.date as string,
-        gameId:    `afl-${g.id}`,
-        teamId:    SQUIGGLE_TEAM_ID[g.hteam as string],
-        opponentId: SQUIGGLE_TEAM_ID[g.ateam as string],
-      }));
-  } catch {
-    return [];
-  }
-}
-
-async function fetchRecentESPN(sportPath: string, league: string): Promise<ReviewJob[]> {
-  const now    = Date.now();
-  const cutoff = now - LOOKBACK_MS[league];
-  const today  = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  try {
-    const res = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/scoreboard?dates=${today}&limit=50`,
-      { cache: 'no-store' },
-    );
+    const res = await fetch(`${BASE}/api/results?${query}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30_000),
+    });
     if (!res.ok) return [];
     const data = await res.json();
-    const events: any[] = data.events ?? [];
-
-    return events
-      .filter(e => {
-        if (!e.competitions?.[0]?.status?.type?.completed) return false;
-        const kickoff = new Date(e.date).getTime();
-        return kickoff > cutoff;
-      })
-      .map((e): ReviewJob => {
-        const comp:  any   = e.competitions?.[0] ?? {};
-        const competitors: any[] = comp.competitors ?? [];
-        const home  = competitors.find((c: any) => c.homeAway === 'home');
-        const away  = competitors.find((c: any) => c.homeAway === 'away');
-        const teamName = home?.team?.displayName ?? 'Home';
-        const oppName  = away?.team?.displayName ?? 'Away';
-        return {
-          league,
-          teamName,
-          opponent:      oppName,
-          teamScore:     parseInt(home?.score ?? '0', 10),
-          opponentScore: parseInt(away?.score  ?? '0', 10),
-          isHome:        true,
-          date:          e.date as string,
-          gameId:        `${league}-${e.id as string}`,
-          teamId:        resolveTeamId(league, teamName),
-          opponentId:    resolveTeamId(league, oppName),
-        };
-      });
-  } catch {
+    return Array.isArray(data) ? data : [];
+  } catch (e) {
+    log(`results-fail ${query} err=${e}`);
     return [];
   }
+}
+
+function toJob(teamId: string, r: GameResult): ReviewJob | null {
+  const team = TEAMS.find(t => t.id === teamId);
+  if (!team || !REVIEW_LEAGUES.has(team.league)) return null;
+  return {
+    gameId:        makeResultId(teamId, r),
+    sourceId:      r.sourceId,
+    league:        team.league,
+    teamId,
+    teamName:      team.name,
+    opponent:      r.opponent,
+    opponentId:    r.opponentId,
+    teamScore:     r.teamScore,
+    opponentScore: r.opponentScore,
+    isHome:        r.isHome,
+    date:          r.date,
+    competition:   r.competition,
+  };
+}
+
+/**
+ * Every result row the page would render for these follows, from the side it
+ * renders it: a followed TEAM's results from that team's perspective, a
+ * followed COMPETITION's round from the home side (what scope=league returns).
+ * A team followed both ways is deduped by id, team perspective first — the
+ * same precedence the page's merge applies.
+ */
+async function discoverJobs(teamIds: Set<string>, leagueIds: Set<string>): Promise<ReviewJob[]> {
+  const cutoff = Date.now() - LOOKBACK_MS;
+  const jobs = new Map<string, ReviewJob>();
+  const add = (teamId: string | undefined, r: GameResult) => {
+    if (!teamId || new Date(r.date).getTime() < cutoff) return;
+    const job = toJob(teamId, r);
+    if (job && !jobs.has(job.gameId)) jobs.set(job.gameId, job);
+  };
+
+  const teams = TEAMS.filter(t => teamIds.has(t.id) && REVIEW_LEAGUES.has(t.league));
+  const teamRows = await Promise.all(
+    teams.map(async t => ({ id: t.id, rows: await fetchResults(`league=${t.league}&teamId=${t.id}`) })),
+  );
+  for (const { id, rows } of teamRows) for (const r of rows) add(id, r);
+
+  const leagues = Array.from(leagueIds).filter(l => REVIEW_LEAGUES.has(l));
+  const leagueRows = await Promise.all(leagues.map(l => fetchResults(`league=${l}&scope=league`)));
+  for (const rows of leagueRows) for (const r of rows) add(r.teamId, r);
+
+  return Array.from(jobs.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 // ── POST one review job ────────────────────────────────────────────────────────
@@ -219,7 +153,7 @@ async function postReview(job: ReviewJob, secret: string): Promise<'ok' | 'cache
       log(`error gameId=${job.gameId} status=${res.status} elapsed=${elapsed}ms`);
       return 'error';
     }
-    // If elapsed < 2s the result was served from cache (generation takes >>2s)
+    // A store hit answers in well under 2 s; generation takes a minute or more.
     const outcome = elapsed < 2000 ? 'cached' : 'ok';
     log(`${outcome} gameId=${job.gameId} elapsed=${elapsed}ms`);
     return outcome;
@@ -245,58 +179,46 @@ export async function GET(req: NextRequest) {
   const t0 = Date.now();
 
   try {
-  // Gather all recently-finished games in parallel
-  const [aflJobs, nrlJobs, eplJobs, sruJobs, followed] = await Promise.all([
-    fetchRecentAFL(),
-    fetchRecentESPN('rugby-league/3',     'nrl'),
-    fetchRecentESPN('soccer/eng.1',       'epl'),
-    fetchRecentESPN('rugby/242041',       'super_rugby'),
-    getDistinctFollowed(),
-  ]);
-  // Same expansion the preview heartbeat uses: a followed competition covers
-  // every team in it, so its whole round gets reviewed, not just the matches
-  // involving a separately-followed club.
-  const followedIds = new Set(generationIdsFor(followed));
+    const followed = await getDistinctFollowed();
+    if (followsNothing(followed)) {
+      // Unlike previews there is no "everything" to fall open to: a review is
+      // per followed perspective, and with no follows there are none.
+      log('no follows (or admin client unconfigured) — nothing to review');
+      return NextResponse.json({ ok: true, gamesFound: 0, gamesProcessed: 0, generated: 0, cached: 0, errors: 0 });
+    }
 
-  const allJobs = [...aflJobs, ...nrlJobs, ...eplJobs, ...sruJobs];
-  log(`found ${allJobs.length} recently-finished games`);
+    const jobs = await discoverJobs(followed.teamIds, followed.leagueIds);
+    const done = await existingReviewIds(jobs.map(j => reviewStoreKey(j.gameId)));
+    if (!done) {
+      // Nothing generated here could be kept, and the same jobs would come
+      // back next minute: that is the model running flat out for no one.
+      log(`found ${jobs.length} results in window but the review store is unavailable (admin client / game_reviews table, migration 0006) — not generating`);
+      return NextResponse.json({ ok: false, error: 'review store unavailable', gamesFound: jobs.length, gamesProcessed: 0 });
+    }
+    const pending = jobs.filter(j => !done.has(reviewStoreKey(j.gameId)));
+    log(`found ${jobs.length} results in window, ${pending.length} without a review`);
 
-  // ── Filter to followed teams only ──────────────────────────────────────────
-  // Fail-open: if admin client is unconfigured (empty set), process all jobs.
-  const filteredJobs = followsNothing(followed)
-    ? allJobs
-    : allJobs.filter(job =>
-        (job.teamId     != null && followedIds.has(job.teamId))     ||
-        (job.opponentId != null && followedIds.has(job.opponentId)) ||
-        // Unknown team IDs → include to avoid missing a game (fail-open per job)
-        (job.teamId == null && job.opponentId == null),
-      );
+    const counts = { generated: 0, cached: 0, errors: 0 };
+    const cronSecret = process.env.CRON_SECRET ?? '';
+    for (const job of pending) {
+      const outcome = await postReview(job, cronSecret);
+      if (outcome === 'ok')     counts.generated++;
+      if (outcome === 'cached') counts.cached++;
+      if (outcome === 'error')  counts.errors++;
+    }
 
-  if (followedIds.size > 0 && filteredJobs.length < allJobs.length) {
-    log(`filtered to ${filteredJobs.length} jobs (${allJobs.length - filteredJobs.length} skipped — no followers)`);
-  }
+    const elapsed = Date.now() - t0;
+    log(`poll done elapsed=${elapsed}ms generated=${counts.generated} cached=${counts.cached} errors=${counts.errors}`);
 
-  const counts = { generated: 0, cached: 0, errors: 0 };
-  const cronSecret = process.env.CRON_SECRET ?? '';
-  for (const job of filteredJobs) {
-    const outcome = await postReview(job, cronSecret);
-    if (outcome === 'ok')     counts.generated++;
-    if (outcome === 'cached') counts.cached++;
-    if (outcome === 'error')  counts.errors++;
-  }
-
-  const elapsed = Date.now() - t0;
-  log(`poll done elapsed=${elapsed}ms generated=${counts.generated} cached=${counts.cached} errors=${counts.errors}`);
-
-  return NextResponse.json({
-    ok: true,
-    timestamp:      new Date().toISOString(),
-    gamesFound:     allJobs.length,
-    gamesProcessed: filteredJobs.length,
-    gamesSkipped:   allJobs.length - filteredJobs.length,
-    ...counts,
-    elapsedMs:      elapsed,
-  });
+    return NextResponse.json({
+      ok: true,
+      timestamp:      new Date().toISOString(),
+      gamesFound:     jobs.length,
+      gamesProcessed: pending.length,
+      gamesSkipped:   jobs.length - pending.length,
+      ...counts,
+      elapsedMs:      elapsed,
+    });
   } finally {
     releaseLock();
   }

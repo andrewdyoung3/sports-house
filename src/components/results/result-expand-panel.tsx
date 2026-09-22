@@ -27,7 +27,10 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 
 // v5: AFL player stats (CFS) + named finals paths (2026-09-13) — bump to drop
 // reviews generated before those data sources existed.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v7:${id}`;
+// Suffix tracks REVIEW_REGIME in lib/review-store.ts: a regime bump makes the
+// server re-generate, and this makes the browser re-ask instead of showing the
+// copy it kept.
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v9:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
 
 function loadJSON<T>(key: string): T | null {
@@ -246,6 +249,9 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
 
   const [aiReview,  setAiReview]  = useState<AIReview | null>(null);
   const [aiLoading, setAiLoading] = useState(isRealLeague);
+  // Server has no review yet and this deployment cannot make one (the poller
+  // on the generating box fills Supabase; the deployed site only reads).
+  const [preparing, setPreparing] = useState(false);
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
   const hasCachedReviewRef = useRef(false);
 
@@ -278,7 +284,10 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             gameId:           result.id,
+            sourceId:         result.sourceId,
             league:           team.league,
+            teamId:           team.id,
+            opponentId:       result.opponentId,
             teamName:         team.name,
             opponent:         result.opponent,
             teamScore:        result.teamScore,
@@ -297,8 +306,9 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
         })
           .then(r => r.ok ? r.json() : null)
           .catch(() => null)
-          .then((review: AIReview | null) => {
-            if (review) {
+          .then((review: (AIReview & { preparing?: boolean }) | null) => {
+            if (review?.preparing) { setPreparing(true); return; }
+            if (review?.summary) {
               setAiReview(review);
               saveJSON(REVIEW_CACHE_KEY(result.id), review);
             }
@@ -349,6 +359,7 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
                   ? `${team.shortName} drew ${result.teamScore}–${result.opponentScore}.`
                   : `${team.shortName} lost ${result.teamScore}–${result.opponentScore}.`
               }
+              {preparing && ' Match report on its way.'}
             </p>
           )}
         </div>

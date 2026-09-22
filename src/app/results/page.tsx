@@ -11,7 +11,7 @@ import { TEAMS, LEAGUES, REAL_DATA_LEAGUES } from '@/lib/teams';
 import { contrastColor, datekeyInZone, smoothScrollTo } from '@/lib/utils';
 import { accentVars } from '@/lib/team-ink';
 import { leagueBrandAccent } from '@/lib/league-brand';
-import { resultMatchKey } from '@/lib/result-match-key';
+import { resultMatchKey, makeResultId } from '@/lib/result-match-key';
 import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
@@ -39,14 +39,6 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-
-// ─── ID synthesis ─────────────────────────────────────────────────────────────
-
-function makeResultId(teamId: string, result: GameResult): string {
-  const dateStr = result.date.slice(0, 10);
-  const oppSlug = result.opponent.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-  return `${teamId}-${dateStr}-vs-${oppSlug}`;
-}
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 

@@ -49,3 +49,20 @@ export function resultMatchKey(input: {
   const b = side(input.teamAbbr, input.teamId, input.teamId);
   return [a, b].sort().join('|') + '·' + day;
 }
+
+/**
+ * PERSPECTIVE id of a result row — `<teamId>-<YYYY-MM-DD>-vs-<opponent-slug>`.
+ *
+ * This is the results page's render id AND the key an AI review is stored
+ * under: a review is written from one team's side (their form, their table
+ * position, "won at home"), so the same match has one review per followed
+ * team, not one per match. Shared here so the page that reads reviews and the
+ * poller that pre-generates them derive the key from the same function. They
+ * used to be two schemes (the poller keyed `afl-<squiggle id>` from the HOME
+ * side), which meant nothing the poller made was ever served to anyone.
+ */
+export function makeResultId(teamId: string, result: { date: string; opponent: string }): string {
+  const dateStr = result.date.slice(0, 10);
+  const oppSlug = result.opponent.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+  return `${teamId}-${dateStr}-vs-${oppSlug}`;
+}

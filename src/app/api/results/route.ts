@@ -58,6 +58,7 @@ async function fetchAFLResults(teamId: string): Promise<GameResult[]> {
     const parsedDate = new Date(g.date.replace(' ', 'T') + tz);
 
     return {
+      sourceId:       `afl-${g.id}`,
       opponent:       oppName,
       opponentAbbr:   opp.abbr,
       opponentLogoUrl: opp.logo,
@@ -133,6 +134,7 @@ const fetchNRLResults = unstable_cache(async (teamId: string): Promise<GameResul
       const oppScore  = Number(oppComp?.score ?? 0);
 
       return {
+        sourceId:        `nrl-${e.id}`,
         opponent:        oppName,
         opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
         opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined),
@@ -201,6 +203,7 @@ const fetchSOOResults = unstable_cache(async (teamId: string): Promise<GameResul
     const oppPts   = Number(oppC?.score  ?? 0);
 
     return {
+      sourceId:        `nrl-${e.id}`,
       opponent:        meta.opponent,
       opponentAbbr:    meta.oppAbbr,
       opponentLogoUrl: meta.oppLogoUrl,
@@ -315,6 +318,7 @@ async function fetchESPNResultsForSlug(
     const isPenWin  = ourWinner && teamScore === oppScore;
 
     return {
+      sourceId:        `soccer-${slug}-${e.id}`,
       opponent:        oppName,
       opponentAbbr:    opp.abbr,
       opponentLogoUrl: (oppComp?.team?.logo as string | undefined) ?? undefined,
@@ -440,6 +444,7 @@ const fetchSuperRugbyResults = unstable_cache(async (teamId: string): Promise<Ga
       const oppScore  = Number(oppComp?.score ?? 0);
 
       return {
+        sourceId:        `sru-${e.id}`,
         opponent:        oppName,
         opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
         opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
@@ -524,6 +529,7 @@ async function fetchRintResultsComp(
       const oppScore  = Number(oppComp?.score ?? 0);
 
       return {
+        sourceId:        `rint-${e.id}`,
         opponent:        oppName,
         opponentAbbr:    oppComp?.team?.abbreviation ?? oppName.slice(0, 3).toUpperCase(),
         opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
