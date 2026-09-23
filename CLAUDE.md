@@ -30,6 +30,9 @@ src/
     user-prefs.ts         — localStorage CRUD for followed teams
     utils.ts              — cn(), formatGameDate(), seededRandom()
     league-fixtures.ts    — Live fixture lists per league (ESPN/Squiggle); fixture.id embeds the source event id
+    fixture-stage.ts      — Key-match tagging (UpcomingGame.stage/decider) from each feed's OWN stage signal:
+                            Squiggle is_final/is_grand_final, ESPN NRL season.type===2 + COMP_RULES windows,
+                            ESPN cup season.slug, Origin game 3 at 1–1. Shared by BOTH fixture builders; never name-guessed
     preview-fetchers.ts   — SINGLE source of per-league preview data (standings/news/injuries/tips/F1/WC)
                             + fetchESPNMatchExtras(): form / head-to-head / lineups from ESPN summary?event=
     preview-context.ts    — buildPreviewContext(): canonical context builder used by ALL generation paths

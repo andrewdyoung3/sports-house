@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X } from 'lucide-react';
+import { Calendar, List, MapPin, Tv, ChevronDown, UserMinus, X, Trophy } from 'lucide-react';
 
 import { getFollowedTeams, saveFollowedTeams, usePrefsVersion, getFollowedLeagues, toggleFollowedLeague, getF1SessionPref } from '@/lib/user-prefs';
 import { outOfSeasonMessage } from '@/lib/season-info';
@@ -390,7 +390,7 @@ function ScheduleRow({
 
     return (
       <article
-        className={'sh-fix' + (isExpanded ? ' is-open' : '')}
+        className={'sh-fix' + (isExpanded ? ' is-open' : '') + (game.decider ? ' is-decider' : '')}
         style={accentVars(team.primaryColor) as React.CSSProperties}
         onClick={() => onToggle(game.id)}
         onMouseEnter={() => onHover(dateKey)}
@@ -444,6 +444,13 @@ function ScheduleRow({
           <div className="sh-fix-sub">
             {team.league !== 'cricket_int' && (
               <span className="sh-comptag" style={{ '--c': compColor } as React.CSSProperties}>{compShort}</span>
+            )}
+            {/* Key match — stage from the feed's own signal; deciders get the trophy + gold card ring. */}
+            {game.stage && (
+              <span className={'sh-stagetag' + (game.decider ? ' is-decider' : '')}>
+                {game.decider && <Trophy aria-hidden="true" />}
+                {game.stage}
+              </span>
             )}
             {isCricket && game.cricketFormat && (
               <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>{cricketLabel}</span>

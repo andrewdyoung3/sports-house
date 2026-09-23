@@ -253,6 +253,10 @@
   --win:  #46cd80;
   --loss: #e05c72;
 
+  /* key matches — finals gold, deliberately NOT a team colour so a Grand Final
+     reads the same whichever team the card belongs to */
+  --gold: #e8b84a;
+
   /* geometry */
   --radius:    16px;
   --radius-lg: 22px;
@@ -787,6 +791,51 @@
 }
 .sh-theme .sh-fix-kick { font-size: 22px; font-weight: 800; }
 
+/* ── Key matches (finals / cup knockouts / series deciders) ──
+   `stage` comes from each feed's own signal (lib/fixture-stage.ts). Every staged
+   fixture gets the gold stage pill; a DECIDER (Grand Final, cup Final, Origin
+   game 3 at 1–1) also gets a gold ring + ambient wash on the whole card, while the
+   team-coloured left edge stays — the team still owns the row, gold says why it
+   matters. Gold is a token (--gold) so light mode re-tunes it in one place. */
+.sh-stagetag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-head); font-weight: 800; font-size: 10.5px;
+  letter-spacing: 0.7px; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 6px;
+  color: var(--gold); background: color-mix(in oklab, var(--gold) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--gold) 45%, transparent);
+}
+.sh-stagetag svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.sh-stagetag.is-decider {
+  color: #1b1405; background: linear-gradient(120deg, var(--gold), color-mix(in oklab, var(--gold) 70%, #fff5cc));
+  box-shadow: 0 1px 6px color-mix(in oklab, var(--gold) 45%, transparent);
+}
+.sh-fix.is-decider {
+  border-color: color-mix(in oklab, var(--gold) 55%, var(--border));
+  background:
+    linear-gradient(120deg, color-mix(in oklab, var(--gold) 9%, transparent) 0%, transparent 55%),
+    var(--surface);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--gold) 35%, transparent),
+              0 0 22px color-mix(in oklab, var(--gold) 14%, transparent);
+}
+.sh-fix.is-decider.is-open { background: linear-gradient(120deg, color-mix(in oklab, var(--gold) 9%, transparent) 0%, transparent 55%), var(--surface-2); }
+.sh-theme .sh-fix.is-decider:hover {
+  border-color: color-mix(in oklab, var(--gold) 75%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--gold) 55%, transparent),
+              0 0 28px color-mix(in oklab, var(--gold) 22%, transparent),
+              -3px 0 14px color-mix(in oklab, var(--accent) var(--fix-border-glow, 28%), transparent);
+}
+/* Hero kicker: the stage rides after the competition name; a decider goes gold. */
+.sh-hero-kicker .sh-stage { display: inline-flex; align-items: center; gap: 5px; }
+.sh-hero-kicker .sh-stage.is-decider { color: var(--gold); }
+.sh-hero-kicker .sh-stage svg { width: 13px; height: 13px; }
+.sh-hero.is-decider {
+  border-color: color-mix(in oklab, var(--gold) 55%, var(--border-strong));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--gold) 35%, transparent),
+              0 0 32px color-mix(in oklab, var(--gold) 16%, transparent),
+              var(--shadow-hero, 0 0 0 transparent);
+}
+
 /* ── Feature-team badge inside .sh-fix cards (card badge restyling) ──
    Larger, rounded-square, with a soft team-colour glow that follows the
    logo's alpha shape. Both the TeamBadge outer wrapper div AND its inner
@@ -1207,6 +1256,7 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
      the dark green at 1.96:1 on the light card, and the fallback accent (used
      until a team colour is set inline) sat at 3.40:1. */
   --win: #147a44; --loss: #bb2c48;
+  --gold: #9a6f08;
   --accent: #6d3ee0; --accent-2: #7c4fe8; --on-accent: #ffffff;
   --surface: rgba(25,19,37,0.05); --surface-2: rgba(25,19,37,0.08);
   --border: rgba(25,19,37,0.12); --border-strong: rgba(25,19,37,0.22);
@@ -1291,6 +1341,9 @@ html[data-theme='light'] { background-color: #f4f1f8; color: #191325; }
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 40%, rgba(25,19,37,0.25));
 }
 [data-theme='light'] .sh-league-follow.is-on { color: #8a6d00; }
+/* Decider pill on light: the dark-canvas gradient lightens toward cream, which
+   is too pale for dark ink on the light card — go solid deep gold, white ink. */
+[data-theme='light'] .sh-stagetag.is-decider { color: #ffffff; background: var(--gold); }
 /* Monochrome watermark marks (EPL lion, rugby/cricket icons): white-forced on
    the dark canvas, ink-forced on light — the inline-filter version was
    white-on-white in light mode. */

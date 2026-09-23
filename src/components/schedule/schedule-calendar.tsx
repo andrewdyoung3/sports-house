@@ -190,18 +190,26 @@ export function ScheduleCalendar({
               {day}
               {dots.length > 0 && (
                 <span style={{ position: 'absolute', bottom: '4px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '2px' }}>
-                  {dots.slice(0, 3).map((g, gi) => (
-                    <span
-                      key={gi}
-                      style={{
-                        width: '4px', height: '4px', borderRadius: '50%',
-                        backgroundColor: g.team.primaryColor,
-                        opacity: hasUpcoming ? 1 : 0.5,
-                        // hairline so team dots stay visible on the accent-filled today cell
-                        ...(isToday ? { boxShadow: '0 0 0 1px rgba(255,255,255,0.7)' } : {}),
-                      }}
-                    />
-                  ))}
+                  {dots.slice(0, 3).map((g, gi) => {
+                    // A decider (Grand Final, cup Final, Origin decider) shows as a gold
+                    // ringed dot instead of the team colour — only upcoming entries carry it.
+                    const decider = hasUpcoming && (g as ScheduleEntry).decider === true;
+                    return (
+                      <span
+                        key={gi}
+                        style={{
+                          width: '4px', height: '4px', borderRadius: '50%',
+                          backgroundColor: decider ? 'var(--gold)' : g.team.primaryColor,
+                          opacity: hasUpcoming ? 1 : 0.5,
+                          // hairline so team dots stay visible on the accent-filled today cell;
+                          // deciders always carry a gold halo so they read at 4px.
+                          ...(decider
+                            ? { boxShadow: '0 0 0 1.5px color-mix(in oklab, var(--gold) 45%, transparent)' }
+                            : isToday ? { boxShadow: '0 0 0 1px rgba(255,255,255,0.7)' } : {}),
+                        }}
+                      />
+                    );
+                  })}
                 </span>
               )}
             </button>

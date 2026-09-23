@@ -22,6 +22,7 @@ import { AFL_TEAM_BY_SQUIGGLE as AFL_TEAMS , dedupeSquiggleGames } from '@/lib/a
 import { cricketConfigured, cricCurrentMatches, cricMatchInfo, cricSeriesInfo, cricSeriesSearch, type CricMatch } from '@/lib/cricketdata';
 import { INTL_TEAM_COUNTRY, resolveIntlVenueStatus, countryFromVenueString, type IntlVenueStatus } from '@/lib/international';
 import { SOO_META, isSOOEvent, tallySeries, seriesLabelSuffix } from '@/lib/soo';
+import { squiggleStage, espnFinalsStage, espnCupStage, sooStage } from '@/lib/fixture-stage';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export async function fetchAFLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
       const d          = new Date(g.date.replace(' ', 'T') + tz);
       const time       = g.timestr ? `${g.timestr} AEST` : aestDisplay(d);
       const isComplete = Number(g.complete) >= 100;
+      const stage      = squiggleStage(g);
 
       acc.push({
         id,
@@ -86,6 +88,8 @@ export async function fetchAFLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         streaming:       ['Kayo Sports'],
         opponentId:      away?.id,
         completed:       isComplete || undefined,
+        stage:           stage?.name,
+        decider:         stage?.decider || undefined,
       });
       return acc;
     }, [])
@@ -157,6 +161,7 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
       const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
       const espnLogo = awayComp?.team?.logos?.[0]?.href as string | undefined;
       const isComplete = e.status?.type?.completed === true;
+      const stage      = espnFinalsStage('nrl', e);
 
       acc.push({
         id,
@@ -174,6 +179,8 @@ export async function fetchNRLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         streaming:       ['Kayo Sports'],
         opponentId:      away?.id,
         completed:       isComplete || undefined,
+        stage:           stage?.name,
+        decider:         stage?.decider || undefined,
       });
       return acc;
     }, []);
@@ -235,6 +242,7 @@ async function fetchSOOGenerationFixtures(lookbackDays: number): Promise<Upcomin
     const meta  = SOO_META[homeId];            // home-team perspective
     const tally = tallySeries(allSOO, meta);   // shared derivation (C2)
     const gameNumber = idx + 1;
+    const stage = sooStage(gameNumber, tally);
 
     const utc  = new Date(e.date);
     const aest = new Date(utc.getTime() + 10 * 3600 * 1000);
@@ -263,6 +271,8 @@ async function fetchSOOGenerationFixtures(lookbackDays: number): Promise<Upcomin
       competition:     `State of Origin — Game ${gameNumber}${seriesLabelSuffix(tally, meta)}`,
       mirrorGameIds:   [`soo-${awayId}-${e.id}`],
       completed:       completed || undefined,
+      stage:           stage?.name,
+      decider:         stage?.decider || undefined,
     });
   });
 
@@ -378,6 +388,8 @@ export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
 
         const utcDate  = new Date(e.date);
         const aestDate = new Date(utcDate.getTime() + 10 * 3600 * 1000);
+        // Knockout round from the event's own season slug — league games never carry one.
+        const stage    = label === 'Premier League' ? undefined : espnCupStage(e);
 
         if (homeEPL) {
           const oppEPL  = awayEPL;
@@ -400,6 +412,8 @@ export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
             competition:     label === 'Premier League' ? undefined : label,
             opponentId:      oppEPL?.id,
             completed:       isComplete || undefined,
+            stage:           stage?.name,
+            decider:         stage?.decider || undefined,
           });
         } else {
           const homeAsEPL = EPL_TEAMS[homeName];
@@ -422,6 +436,8 @@ export async function fetchEPLFixtures(lookbackDays = 0): Promise<UpcomingGame[]
             competition:     label === 'Premier League' ? undefined : label,
             opponentId:      undefined,
             completed:       isComplete || undefined,
+            stage:           stage?.name,
+            decider:         stage?.decider || undefined,
           });
         }
         return acc;
@@ -506,6 +522,7 @@ export async function fetchSRUFixtures(lookbackDays = 0): Promise<UpcomingGame[]
       const aestDate   = new Date(utcDate.getTime() + 10 * 3600 * 1000);
       const espnLogo   = (awayComp?.team?.logos?.[0]?.href ?? awayComp?.team?.logo) as string | undefined;
       const isComplete = e.status?.type?.completed === true;
+      const stage      = espnFinalsStage('super_rugby', e);
 
       acc.push({
         id,
@@ -523,6 +540,8 @@ export async function fetchSRUFixtures(lookbackDays = 0): Promise<UpcomingGame[]
         streaming:       ['Stan Sport'],
         opponentId:      away?.id,
         completed:       isComplete || undefined,
+        stage:           stage?.name,
+        decider:         stage?.decider || undefined,
       });
       return acc;
     }, [])

@@ -56,6 +56,14 @@ export interface UpcomingGame {
   broadcast: string[];    // TV channels
   streaming: string[];    // Streaming platforms
   competition?: string;    // e.g. "FA Cup", "Champions League" (omitted for regular season)
+  /**
+   * Key-match stage from the feed's own signal (lib/fixture-stage.ts):
+   * "Grand Final", "Preliminary Final", "Quarter-final", "Series Decider".
+   * Absent for ordinary rounds — the schedule marks these rows visually.
+   */
+  stage?: string;
+  /** This match decides the competition or series (Grand Final, cup Final, Origin game 3 at 1–1). */
+  decider?: boolean;
   opponentLogoUrl?: string; // Official logo URL (from ESPN CDN when available)
   opponentId?: string;      // Our internal team slug for the opponent (when resolvable)
   /**

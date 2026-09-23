@@ -21,6 +21,7 @@ import { fetchLeagueFixtures } from '@/lib/league-fixtures';
 import { TEAMS } from '@/lib/teams';
 import { enforceRateLimit } from '@/lib/request-guards';
 import { SOO_META, tallySeries, seriesLabelSuffix } from '@/lib/soo';
+import { squiggleStage, espnFinalsStage, espnCupStage, sooStage } from '@/lib/fixture-stage';
 
 // 5-minute browser/CDN cache; server-side fetch cache handles upstream revalidation.
 const CACHE_HEADERS = { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600' };
@@ -80,6 +81,7 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
       const d    = new Date(g.date.replace(' ', 'T') + tz);
       // Squiggle's timestr is already Sydney-local; label follows its tz (AEDT in summer).
       const time = g.timestr ? `${g.timestr} ${tz.startsWith('+11') ? 'AEDT' : 'AEST'}` : aestDisplay(d);
+      const stage = squiggleStage(g);
 
       return {
         id:             `afl-${g.id}`,
@@ -95,6 +97,8 @@ async function fetchAFL(teamId: string): Promise<UpcomingGame[]> {
         broadcast:      AFL_BROADCAST_ROTATION[i % AFL_BROADCAST_ROTATION.length],
         streaming:      ['Kayo Sports', '7plus'],
         opponentId:     SQUIGGLE_TO_ID[oppName],
+        stage:          stage?.name,
+        decider:        stage?.decider || undefined,
       };
     });
 }
@@ -262,6 +266,8 @@ async function fetchESPNCompetition(
     const time     = aestDisplay(aestDate);
 
     const rights = BROADCAST_RIGHTS[slug] ?? BROADCAST_FALLBACK;
+    // Knockout round from the event's own season slug — league games never carry one.
+    const stage  = label === 'Premier League' ? undefined : espnCupStage(e);
 
     return {
       id:            `soccer-${slug}-${e.id}`,
@@ -278,6 +284,8 @@ async function fetchESPNCompetition(
       competition:      label === 'Premier League' ? undefined : label,
       opponentLogoUrl:  oppLogoUrl,
       opponentId:       EPL_DISP_TO_ID[oppName],
+      stage:            stage?.name,
+      decider:          stage?.decider || undefined,
     };
   });
 }
@@ -404,6 +412,7 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
       const utcDate  = new Date(e.date);
       const aestDate = utcDate;
       const time     = aestDisplay(aestDate);
+      const stage    = espnFinalsStage('nrl', e);
 
       return {
         id:              `nrl-${e.id}`,
@@ -420,6 +429,8 @@ async function fetchNRLFixtures(teamId: string): Promise<UpcomingGame[]> {
         opponentLogoUrl: (oppComp?.team?.logos?.[0]?.href as string | undefined)
           ?? NRL_OPP_LOGO[oppName],
         opponentId:      NRL_DISP_TO_ID[oppName],
+        stage:           stage?.name,
+        decider:         stage?.decider || undefined,
       };
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
@@ -480,6 +491,7 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
 
     // Series context label — shared derivation (see @/lib/soo).
     const seriesCtx = seriesLabelSuffix(tally, meta);
+    const stage     = sooStage(gameNum, tally);
 
     return {
       id:              `soo-${teamId}-${e.id}`,
@@ -496,6 +508,8 @@ async function fetchSOOFixtures(teamId: string): Promise<UpcomingGame[]> {
       broadcast:       ['Nine Network', 'Fox Sports'],
       streaming:       ['Kayo Sports', '9Now'],
       competition:     `State of Origin — Game ${gameNum}${seriesCtx}`,
+      stage:           stage?.name,
+      decider:         stage?.decider || undefined,
     };
   });
 }
@@ -613,6 +627,7 @@ async function fetchSuperRugbyFixtures(teamId: string): Promise<UpcomingGame[]> 
       const utcDate  = new Date(e.date);
       const aestDate = utcDate;
       const time     = aestDisplay(aestDate);
+      const stage    = espnFinalsStage('super_rugby', e);
 
       return {
         id:              `sru-${e.id}`,
@@ -630,6 +645,8 @@ async function fetchSuperRugbyFixtures(teamId: string): Promise<UpcomingGame[]> 
           ?? (oppComp?.team?.logo as string | undefined)
           ?? SRU_OPP_LOGO[oppName],
         opponentId:      SRU_DISP_TO_ID[oppName],
+        stage:           stage?.name,
+        decider:         stage?.decider || undefined,
       };
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())

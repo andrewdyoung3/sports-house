@@ -14,7 +14,7 @@
  */
 
 import { useState } from 'react';
-import { MapPin, Tv, ChevronDown } from 'lucide-react';
+import { MapPin, Tv, ChevronDown, Trophy } from 'lucide-react';
 import { TeamBadge } from '@/components/ui/team-badge';
 import dynamic from 'next/dynamic';
 // PERF-1: lazy-load the panel — it only renders once the hero is expanded (open),
@@ -116,7 +116,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl, onExpandChange }: 
     // which is driven by this same focal team — so the hero is unchanged.
     <>
     <section
-      className="sh-hero"
+      className={'sh-hero' + (game.decider ? ' is-decider' : '')}
       // When open, flatten the hero's bottom corners and drop its bottom margin so the
       // expand panel below reads as one continuous unit (the panel carries the rounded
       // bottom + the trailing spacing).
@@ -136,6 +136,16 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl, onExpandChange }: 
         <div className="sh-hero-top">
           <span className="sh-hero-kicker">
             Next game<span className="sh-dot-sep">·</span>{competitionName}
+            {/* Key match stage (Grand Final, Semi-final, Series Decider) — feed-signalled, see lib/fixture-stage.ts */}
+            {game.stage && (
+              <>
+                <span className="sh-dot-sep">·</span>
+                <span className={'sh-stage' + (game.decider ? ' is-decider' : '')}>
+                  {game.decider && <Trophy aria-hidden="true" />}
+                  {game.stage}
+                </span>
+              </>
+            )}
           </span>
           {whenLabel && <span className="sh-hero-when-pill">{whenLabel}</span>}
         </div>
