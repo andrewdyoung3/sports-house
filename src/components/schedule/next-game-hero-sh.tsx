@@ -135,7 +135,7 @@ export function NextGameHeroSh({ game, userTz, leagueLogoUrl, onExpandChange }: 
       <div className="sh-hero-body">
         <div className="sh-hero-top">
           <span className="sh-hero-kicker">
-            Next game<span className="sh-dot-sep">·</span>{competitionName}
+            <span>Next game</span><span className="sh-dot-sep">·</span><span>{competitionName}</span>
             {/* Key match stage (Grand Final, Semi-final, Series Decider) — feed-signalled, see lib/fixture-stage.ts */}
             {game.stage && (
               <>

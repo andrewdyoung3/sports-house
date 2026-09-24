@@ -161,9 +161,28 @@ function BracketSVG({
       {edges.map((e, i) => {
         const x1 = e.from.x + BOX_W, y1 = e.from.y + BOX_H / 2;
         const x2 = e.to.x,           y2 = e.to.y + BOX_H / 2;
-        const mx = x1 + (x2 - x1) / 2;
+        const gutter = (COL_W - BOX_W) / 2;
+        if (e.to.round - e.from.round === 1) {
+          // Adjacent columns: a plain elbow through the gutter between them.
+          const mx = x1 + gutter;
+          return (
+            <path key={i} d={`M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`}
+              fill="none" stroke="var(--bkt-line, rgba(255,255,255,0.22))" strokeWidth="1.5" />
+          );
+        }
+        // Skip-a-column path (qualifying winner straight to a prelim): a plain
+        // elbow would put its vertical in the middle of the skipped column, hidden
+        // behind that column's boxes. Route it around instead — down the gutter
+        // after the source, across ABOVE or BELOW the skipped column's boxes
+        // (whichever half the edge sits in), then down the gutter before the target.
+        const gA = x1 + gutter, gB = x2 - gutter;
+        const skipped = cols.slice(e.from.round + 1, e.to.round).flat();
+        const top    = Math.min(...skipped.map(s => s.y));
+        const bottom = Math.max(...skipped.map(s => s.y + BOX_H));
+        const above  = (y1 + y2) / 2 < (HEAD_H + svgH - PAD) / 2;
+        const yb     = above ? top - 8 : bottom + 8;
         return (
-          <path key={i} d={`M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`}
+          <path key={i} d={`M ${x1} ${y1} H ${gA} V ${yb} H ${gB} V ${y2} H ${x2}`}
             fill="none" stroke="var(--bkt-line, rgba(255,255,255,0.22))" strokeWidth="1.5" />
         );
       })}
