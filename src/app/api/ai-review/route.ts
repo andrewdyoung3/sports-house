@@ -140,6 +140,8 @@ const inflight = new Map<string, Promise<AIReview | null>>();
 // REFUSAL_LIMIT refusals the key rests for REFUSAL_REST_MS; process-local,
 // which is where the generator lives.
 const REFUSAL_LIMIT   = 3;
+/** Feedback retries per generation before a refusal. */
+const FEEDBACK_ROUNDS = 2;
 const REFUSAL_REST_MS = 6 * 60 * 60 * 1000;
 const refusals = new Map<string, { count: number; restUntil: number }>();
 class ReviewRestingError extends Error {
@@ -219,29 +221,33 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
     const wellFormed = (r: AIReview) => !!r.summary && Array.isArray(r.keyMoments) && (!!r.verdicts || !!r.verdict);
     if (!wellFormed(parsed)) return null;
 
-    // Validation pass (ported from the preview pipeline): violations → one
-    // retry → still violating → REFUSE via throw, so the cache stores nothing.
+    // Validation pass (ported from the preview pipeline): violations → up to
+    // FEEDBACK_ROUNDS retries, each naming the violations → still violating →
+    // REFUSE via throw, so the cache stores nothing. Two rounds since
+    // 2026-09-26: the first retry reliably fixes what it is told and just as
+    // reliably introduces one new miscount; the second lands it.
     let violations = validateReviewOutput(parsed, dataBlock);
-    if (violations.length > 0) {
-      aiLog(`validation-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
+    for (let round = 1; violations.length > 0 && round <= FEEDBACK_ROUNDS; round++) {
+      aiLog(`validation-fail cacheKey=${cacheKey} round=${round} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
       const retry = await generate(violations);
-      if (wellFormed(retry)) {
-        const retryViolations = validateReviewOutput(retry, dataBlock);
-        if (retryViolations.length === 0) {
-          aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry)`);
-          return retry;
-        }
-        // Style-only residue (a register crutch, a tautology, summary/verdict
-        // overlap) after one feedback round is accepted and logged: every
-        // factual binder passed, and refusing a true review over a phrase was
-        // costing the poller three minutes a tick (AFL finals, 2026-09-26).
-        if (retryViolations.every(isStyleViolation)) {
-          aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (accepted with style notes: ${JSON.stringify(retryViolations)})`);
-          return retry;
-        }
-        violations = retryViolations;
+      if (!wellFormed(retry)) continue;
+      const retryViolations = validateReviewOutput(retry, dataBlock);
+      if (retryViolations.length === 0) {
+        aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry ${round})`);
+        return retry;
       }
-      aiLog(`refuse cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — both attempts violate, will not serve`);
+      // Style-only residue (a register crutch, a tautology, summary/verdict
+      // overlap) after a feedback round is accepted and logged: every factual
+      // binder passed, and refusing a true review over a phrase was costing the
+      // poller three minutes a tick (AFL finals, 2026-09-26).
+      if (retryViolations.every(isStyleViolation)) {
+        aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (accepted with style notes: ${JSON.stringify(retryViolations)})`);
+        return retry;
+      }
+      violations = retryViolations;
+    }
+    if (violations.length > 0) {
+      aiLog(`refuse cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — all attempts violate, will not serve`);
       throw new ReviewValidationError(violations);
     }
 
