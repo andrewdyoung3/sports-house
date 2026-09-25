@@ -18,12 +18,12 @@ import { COMP_RULES } from '@/lib/competition-rules';
 const SPORT_CONTEXT: Record<string, string> = {
   afl:         'Australian Rules Football (AFL). Use AFL-specific terminology: contested possessions, clearances, inside 50s, centre bounces, forward 50, the corridor. The table is called "the Ladder". AFL margin = the score difference; do NOT call a 20-point loss "heavy" in AFL (30–60 is comfortable; 15–29 is clear; <15 is close).',
   nrl:         'NRL Rugby League (13-man code). Use NRL-specific terminology: completion rate, ruck speed, middle forwards, edges, kick chase. The table is called "the Ladder". NRL margin interpretation: ≤10 pts = competitive; 11–20 = clear; 21–30 = comfortable; 31+ = heavy.',
-  epl:         'English Premier League (association football). Use "pitch" not "field"; "half" not "period". The table is called "the Table". Margin: 1-goal = close; 2 goals = comfortable; 3+ = convincing/heavy.',
+  epl:         'English Premier League (association football). Use "pitch" not "field"; "half" not "period". The standings are "the table" (lower case). Margin: 1-goal = close; 2 goals = comfortable; 3+ = convincing/heavy.',
   super_rugby: 'Super Rugby Pacific (15-man rugby union). Use rugby union terminology: scrum, lineout, breakdown, ruck, gainline. The table is called "the Table". Margin: ≤10 pts = competitive; 11–20 = clear; 21–30 = comfortable; 31+ = heavy.',
   rugby_int:   'International Rugby Union Test match. Tone should reflect the magnitude of Test rugby. Same margin scale as Super Rugby.',
 };
 
-const LEAGUE_LABELS: Record<string, string> = {
+export const LEAGUE_LABELS: Record<string, string> = {
   afl:         'AFL',
   nrl:         'NRL',
   epl:         'Premier League',
@@ -65,6 +65,9 @@ GROUNDING — absolute constraint, no exceptions:
 • COMPETITION PROFILE is the authoritative description of how the competition works. All references to finals, relegation, or qualification must match it.
 • LADDER POSITIONS: use the exact ordinal positions from CURRENT STANDINGS verbatim — do NOT approximate or confuse "top 8 qualifying cutoff" with "8th place". If CURRENT STANDINGS shows a team in 13th, say "13th", not "8th" or "outside the finals". If a DERIVED FACTS note says a team is "X points outside the top 8", use that phrasing — never infer a position number from it.
 • FINALS CONTEXT: when present, it is authoritative — the match was a finals fixture and the round name, round structure, and consequences (who advances, who is eliminated, who gets a second chance) come from it exclusively. Never frame a finals result as ladder movement, a qualification race, or a dead rubber, and never invent a different finals format from training knowledge.
+• RUNS, STREAKS, RECORDS: the only run/streak/record figures you may state are those in SEASON CONTEXT, verbatim. FORM COMING INTO THIS MATCH is a five-game window, not a run — never count it ("five-match winning run" because five results are listed is an error).
+• RELATIVE POSITION: who is above whom, and by how much, comes from DERIVED FACTS only. A team that LEADS on the table is ahead; never write that the trailing side "moved ahead" or "leapfrogged".
+• PERSPECTIVE and NAMES lines bind whose review this is and what to call each club.
 
 INFORMATION ECONOMY:
 • The user can already see the scoreline and result. Do NOT restate the score in the summary or verdict.
@@ -79,16 +82,19 @@ REGISTER MECHANICS — how the professionals write match reports:
 • VARY the rhythm: at least one sentence under ten words. Metronomic 30-word compounds read like a machine.
 • COMPARATIVES over abstractions: "won more of the ball after halftime" beats "superior structure"; verdicts like "confirms their status as a serious contender" say nothing — state the specific trend confirmed or weakness exposed.
 • ONE number per claim, folded into an argument — never a sequence of stats read aloud.
+• EVIDENCE over adjectives: "convincing", "potent", "unassailable", "decisive", "vulnerabilities" describe nothing. Replace each with the thing that happened — the method of a goal, a stat gap, a substitution, a run ended. If the MATCH EVENTS say two goals came from outside the box, say that; do not say the attack was "potent".
+• A league position is never a cause. "Despite being second, they could not recover" is a non-sequitur — position explains expectation, not what happened on the pitch.
+• Name people the way the report does: the goalscorer, the assist, the player hooked at the hour — and by SHORT club names after the first mention.
 
 MARGIN CALIBRATION — read from DERIVED FACTS, do not compute:
 • Use the margin label from DERIVED FACTS verbatim. Never call a competitive defeat "heavy" or vice versa.
 
 STRUCTURE — four elements required, distributed naturally:
-• PEOPLE FIRST: when SCORERS / KEY PERFORMERS data exists, the summary MUST name the decisive individual contribution early (the real report of a 4-2 cup win led with the two-goal teenager, not "momentum continued") — a match report without its protagonist is a defect.
-• KEY MATCHUP: The decisive tactical or personnel contest that determined the result. Name it specifically.
-• RECENT FORM: What the form pattern before this game suggested — and whether this result fits or breaks it.
-• STATISTICAL ANGLE: One meaningful number from the MATCH STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
-• REASONED VERDICT: The single most important forward-looking implication — a trend confirmed, weakness exposed, or opportunity opened.
+• PEOPLE FIRST: when MATCH EVENTS / SCORERS / KEY PERFORMERS data exists, the summary MUST name the decisive individual contribution early (the real report of a 4-2 cup win led with the two-goal teenager, not "momentum continued") — a match report without its protagonist is a defect.
+• HOW IT TURNED: from MATCH EVENTS — the goal or passage that decided it, with its method (a header from a corner, a shot from outside the box, a counter), the half-time state, and the manager's reaction if the substitutions show one.
+• SEASON CONTEXT: what this result did to the side's run or record, using the SEASON CONTEXT lines verbatim — a first defeat, a run ended or extended, a season high conceded.
+• STATISTICAL ANGLE: One meaningful number from TEAM STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
+• REASONED VERDICT: The single most important forward-looking implication FOR THE PERSPECTIVE TEAM — a trend confirmed, weakness exposed, or opportunity opened.
 
 RULES:
 • No filler: avoid "credit to both sides", "gave it their all", "never-say-die spirit"
@@ -98,13 +104,13 @@ RULES:
 • Explain tactical and structural reasons — not just "they scored more"
 • Do not state uncertainty explicitly — let calibration inform tone
 
-KEY MOMENTS: specific and grounded, max 12 words each. Not restatements of the score.
+KEY MOMENTS: 2–3 interpretive factors, max 12 words each — a pattern, a matchup, a turning point explained in terms of WHY. Never a goal restated (the reader sees the scorers), never the score.
 
 OUTPUT: Return valid JSON only, no markdown fences:
 {
   "summary": "2–3 sentences — WHY the result happened. Open with the decisive structural factor, not the score.",
-  "keyMoments": ["grounded factor 1 (max 12 words)", "grounded factor 2", "grounded factor 3"],
-  "verdict": "1–2 sentences — forward-looking implication for the winning or followed team."
+  "keyMoments": ["interpretive factor 1 (max 12 words)", "factor 2", "factor 3"],
+  "verdict": "1–2 sentences — forward-looking implication for the PERSPECTIVE team."
 }`;
 
 // ─── Data block builder ───────────────────────────────────────────────────────
@@ -140,6 +146,23 @@ export interface ReviewInput {
   headToHead?:         HeadToHeadMeeting[];
   /** Soccer: derived goal timeline lines from ESPN keyEvents ("7' Max Dowman (Arsenal) — 0-1"). */
   scoringTimeline?:    string[];
+  /**
+   * Full event sequence (lib/match-report.ts): goals with method + assist and
+   * running score, cards, substitutions, stoppages, HT/FT. Supersedes
+   * scoringTimeline in the block when present.
+   */
+  matchEvents?:        string[];
+  /** Computed season lines (deriveSeasonFacts) — the only run/record figures the model may cite. */
+  seasonFacts?:        string[];
+  /** Every individual the data names — rendered as the explicit whitelist line. */
+  playerNames?:        string[];
+  venue?:              string;
+  attendance?:         number;
+  /** The side listed first at the venue; defaults from isHome. */
+  homeTeamName?:       string;
+  /** Short club names for prose after first mention ("Brighton", not "Brighton & Hove Albion"). */
+  teamShort?:          string;
+  opponentShort?:      string;
   // Cricket (cricket_int / bbl): innings context passed from the result object.
   cricketFormat?:   'test' | 'odi' | 't20';
   cricketResult?:   string;   // "Australia won by 45 runs"
@@ -153,6 +176,15 @@ function ordinalSuffix(n: number): string {
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
+
+/** Competition home timezone for rendering the kick-off date. */
+const LEAGUE_TZ: Record<string, string> = {
+  epl:         'Europe/London',
+  afl:         'Australia/Melbourne',
+  nrl:         'Australia/Sydney',
+  super_rugby: 'Australia/Sydney',
+  bbl:         'Australia/Sydney',
+};
 
 function marginCategory(league: string, margin: number): string {
   if (league === 'afl') {
@@ -182,15 +214,22 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     teamPosition, teamPlayed, teamPoints, teamPercentage,
     opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
     teamRecentForm, opponentRecentForm, headToHead, scoringTimeline,
+    matchEvents, seasonFacts, playerNames, venue, attendance, homeTeamName,
+    teamShort, opponentShort,
     cricketFormat, cricketResult, cricketInnings, cricketChart,
   } = input;
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
-  const homeAway    = isHome ? 'Home' : 'Away';
   const result      = teamScore > opponentScore ? 'WIN' : teamScore < opponentScore ? 'LOSS' : 'DRAW';
   const comp        = competition ?? 'Regular season';
-  const dateStr     = new Date(date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+  // Kick-off day in the competition's own timezone — a 14:00Z Saturday kick-off
+  // in England rendered as "Sun 20 September" in the machine's Australian
+  // local time, so the model dated the match wrong.
+  const dateStr     = new Date(date).toLocaleDateString('en-AU', {
+    weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+    timeZone: LEAGUE_TZ[league] ?? 'UTC',
+  });
   const margin      = Math.abs(teamScore - opponentScore);
   const winner      = teamScore > opponentScore ? teamName : teamScore < opponentScore ? opponent : null;
   const loser       = winner === teamName ? opponent : winner === opponent ? teamName : null;
@@ -240,7 +279,24 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   lines.push(`FIXTURE: ${teamName} vs ${opponent}`);
   lines.push(`COMPETITION: ${comp}`);
   lines.push(`Date: ${dateStr}`);
-  lines.push(`${homeAway}: ${teamName} vs ${opponent}`);
+  // Where it was played, home side first. The old "Away: Arsenal vs Brighton"
+  // line named no ground and read home-first, so reviews never placed the match.
+  if (isCricket) {
+    if (venue) lines.push(`VENUE: ${venue}`);
+  } else {
+    const homeName = homeTeamName ?? (isHome ? teamName : opponent);
+    const awayName = homeName === teamName ? opponent : teamName;
+    const sides    = `${homeName} (home) v ${awayName} (away)`;
+    const att      = attendance ? `, attendance ${attendance.toLocaleString('en-AU')}` : '';
+    lines.push(venue ? `VENUE: ${venue} — ${sides}${att}` : `HOME/AWAY: ${sides}`);
+  }
+  lines.push(`PERSPECTIVE: written for ${teamName} followers — ${teamName} is "the team". Lead with what the result means for ${teamName}, honestly; a defeat is reported as one.`);
+  {
+    const shorts: string[] = [];
+    if (teamShort && teamShort !== teamName)          shorts.push(`${teamName} "${teamShort}"`);
+    if (opponentShort && opponentShort !== opponent)  shorts.push(`${opponent} "${opponentShort}"`);
+    if (shorts.length > 0) lines.push(`NAMES: after first mention call ${shorts.join(' and ')}.`);
+  }
   if (!isCricket) {
     // Cricket scores are innings, not a two-number line — the cricket block
     // below carries them; a placeholder "0 – 0" here invites hallucination.
@@ -327,9 +383,20 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   // ── DERIVED FACTS (pre-computed — model must use these verbatim) ────────────
   const facts: string[] = [];
 
-  // Margin interpretation
+  // Placement policy (first third: no cutoff/race talk) gates the cutoff facts
+  // below as well as the prose — the block used to forbid European talk and
+  // then hand the model "is in the top 5 (Champions League places)", which it
+  // duly cited and was rejected for.
+  const placementThird = (!isCupTie && !isCricket && rules?.totalRounds && maxPlayed > 0)
+    ? seasonThird(maxPlayed, rules.totalRounds)
+    : undefined;
+  const cutoffFactsAllowed = placementThird !== 1;
+
+  // Margin interpretation. `result` is the perspective team's; the winner is
+  // named explicitly so the sentence never reads "loss for <winner>".
   if (winner) {
-    facts.push(`Match margin: ${margin} ${league === 'epl' ? 'goal' + (margin !== 1 ? 's' : '') : 'point' + (margin !== 1 ? 's' : '')} — ${marginCat} ${result.toLowerCase()} for ${winner} (${loser} defeat was ${marginCat}).`);
+    const unit = league === 'epl' ? 'goal' + (margin !== 1 ? 's' : '') : 'point' + (margin !== 1 ? 's' : '');
+    facts.push(`Match margin: ${margin} ${unit} — a ${marginCat} win for ${winner}; ${loser}'s defeat was ${marginCat}.`);
   } else {
     facts.push(`Match margin: DRAW — ${teamScore} each.`);
   }
@@ -353,7 +420,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
 
   // Finals / relegation gaps from full table — cutoff arithmetic only means
   // anything while the ladder can still move.
-  if (!regularSeasonDone && !isCupTie && !isCricket && leagueTable && leagueTable.length > 0) {
+  if (cutoffFactsAllowed && !regularSeasonDone && !isCupTie && !isCricket && leagueTable && leagueTable.length > 0) {
     const sorted = [...leagueTable].sort((a, b) => a.position - b.position);
     const finalsSpot = FINALS_SPOTS[league];
 
@@ -462,14 +529,39 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     lines.push('');
   }
 
-  // ── Scoring timeline (soccer — derived from ESPN keyEvents) ────────────────
-  if (scoringTimeline && scoringTimeline.length > 0) {
+  // ── Season context (computed runs/records — lib/match-report.ts) ───────────
+  if (seasonFacts && seasonFacts.length > 0) {
+    lines.push("SEASON CONTEXT (computed from this season's completed results — the ONLY run, streak and record figures you may cite; use them verbatim):");
+    seasonFacts.forEach(l => lines.push(`  • ${l}`));
+    lines.push('');
+  }
+
+  // ── Match events (full sequence) or the bare scoring timeline ──────────────
+  if (matchEvents && matchEvents.length > 0) {
+    lines.push('MATCH EVENTS (authoritative sequence — every score with how it came and who assisted where known, cards, substitutions, running score; anchor the story in WHEN and HOW it turned):');
+    matchEvents.forEach(l => lines.push(`  ${l}`));
+    lines.push('');
+  } else if (scoringTimeline && scoringTimeline.length > 0) {
     lines.push('SCORING TIMELINE (derived — the sequence is authoritative; anchor the story in WHEN it turned):');
     scoringTimeline.forEach(l => lines.push(`  ${l}`));
     lines.push('');
   }
 
-  // ── Match stats (EPL / NRL / SRU — from match-stats API) ──────────────────
+  // ── Match stats (team-level side by side, then scorers per side) ───────────
+  const tAgg = matchStats?.team?.aggStats ?? [];
+  const oAgg = matchStats?.opponent?.aggStats ?? [];
+  const hasAnyStats = tAgg.length > 0 || oAgg.length > 0
+    || !!matchStats?.team?.players?.length || !!matchStats?.opponent?.players?.length;
+  if (tAgg.length > 0 && oAgg.length > 0) {
+    // One line per stat, both sides — a comparison the model can read as an
+    // argument ("60% of the ball, 2 shots on target to 5"), not two lists.
+    lines.push(`TEAM STATS (${teamName} – ${opponent}):`);
+    for (const s of tAgg) {
+      const o = oAgg.find(x => x.label === s.label);
+      if (o) lines.push(`  ${s.label}: ${s.value} – ${o.value}`);
+    }
+    lines.push('');
+  }
   if (matchStats) {
     for (const [label, side] of [
       [teamName,   matchStats.team],
@@ -477,8 +569,8 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     ] as [string, typeof matchStats.team][]) {
       if (!side) continue;
 
-      // Team-level aggregate stats
-      if (side.aggStats && side.aggStats.length > 0) {
+      // Team-level aggregate stats — only when the paired block above could not render them.
+      if (side.aggStats && side.aggStats.length > 0 && !(tAgg.length > 0 && oAgg.length > 0)) {
         lines.push(`${label.toUpperCase()} TEAM STATS:`);
         side.aggStats.slice(0, 8).forEach(s => lines.push(`  ${s.label}: ${s.value}`));
       }
@@ -506,11 +598,18 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   }
 
   // Explicit note when no match stats were provided — prevents tactical stat fabrication
-  if (!matchStats) {
+  if (!hasAnyStats) {
     lines.push('NO IN-GAME MATCH STATS PROVIDED. Do NOT cite specific in-game statistics (e.g. completion rate, inside 50 efficiency, possession percentage, metres gained) — none were provided and any figure would be fabricated. Use only the scores, standings, and DERIVED FACTS above.');
+    lines.push('');
+  }
+
+  // The explicit name whitelist: every individual the data named. The player
+  // validator reads this line and scans the whole output against it.
+  if (playerNames && playerNames.length > 0) {
+    lines.push(`PLAYERS NAMED IN THIS MATCH (the only individuals you may name; spell exactly as here): ${[...new Set(playerNames)].join(', ')}`);
   }
 
   lines.push('');
   lines.push('Generate the post-match review using ONLY the data provided above. Do not invent statistics, player names, or historical records not mentioned.');
-  return lines.join('\n');
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n');
 }

@@ -1379,7 +1379,14 @@ const VENUE_HEAD_WORDS = new Set([
 // legitimately cite from RECENT FORM / HEAD-TO-HEAD past-opponent data, never a
 // person. Live refusal: "Manchester City" (a form opponent) flagged as a player
 // name because only the two FIXTURE teams were excluded.
-const KNOWN_TEAM_NAMES = new Set(TEAMS.map(t => t.name.toLowerCase()));
+// Full names AND short names: with a PLAYERS NAMED whitelist the whole output is
+// scanned, and "Man City" in a Sunderland review was refused as a player (live,
+// 2026-09-25). "Man Utd" is the one common form TEAMS does not spell.
+const KNOWN_TEAM_NAMES = new Set([
+  ...TEAMS.map(t => t.name.toLowerCase()),
+  ...TEAMS.map(t => t.shortName.toLowerCase()),
+  'man utd',
+]);
 
 export function validatePlayerNames(output: AIPreview, prompt: string): string[] {
   const { whitelist, hasPlayerData } = collectPlayerWhitelist(prompt);
@@ -1395,6 +1402,10 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
   // model legitimately references; its words must not be flagged as player names.
   const venueM = prompt.match(/^VENUE:\s*([^—\n]+)/m);
   const venueName = venueM?.[1]?.trim() ?? '';
+  // Review blocks name the short club forms the prose should use ("Brighton").
+  const shortNames = [...prompt.matchAll(/^NAMES:.*$/gm)]
+    .flatMap(m => [...m[0].matchAll(/"([^"]+)"/g)].map(q => q[1]))
+    .join(' ');
 
   // Expand a name token into the forms the validator's matcher may produce.
   // The name regex breaks internal-capital surnames (e.g. "O'Brien" → "Brien"),
@@ -1409,7 +1420,7 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
   };
 
   const excluded = new Set(PLAYER_NAME_SAFE_WORDS);
-  for (const w of `${teamName} ${opponentName} ${competition} ${venueName}`.toLowerCase().split(/\s+/)) {
+  for (const w of `${teamName} ${opponentName} ${competition} ${venueName} ${shortNames}`.toLowerCase().split(/\s+/)) {
     if (w) for (const e of expandWord(w)) excluded.add(e);
   }
   for (const name of whitelist) {

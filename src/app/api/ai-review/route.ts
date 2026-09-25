@@ -22,11 +22,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
-import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock } from '@/lib/review-prompt';
+import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock, LEAGUE_LABELS } from '@/lib/review-prompt';
 import { validateReviewOutput } from '@/lib/review-validators';
-import { fetchReviewFormAndH2H, fetchSoccerGoalTimeline, fetchNRLMatchTimeline } from '@/lib/preview-fetchers';
-import { buildContributions, buildCricketChart } from '@/lib/review-contributions';
-import { cricMatchScorecard } from '@/lib/cricketdata';
+import { fetchReviewFormAndH2H, fetchNRLMatchTimeline } from '@/lib/preview-fetchers';
+import { fetchESPNMatchReport, fetchESPNSeasonResults, deriveSeasonFacts, SOCCER_CUP_SLUGS } from '@/lib/match-report';
+import { buildContributions, buildCricketChart, buildKeyFactors } from '@/lib/review-contributions';
+import { cricMatchScorecard, cricMatchInfo } from '@/lib/cricketdata';
+import { TEAMS } from '@/lib/teams';
 import { fetchAflMatchStats } from '@/lib/afl-roster';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { readReview, upsertReview, reviewStoreKey } from '@/lib/review-store';
@@ -70,6 +72,7 @@ async function fetchMatchStats(
   teamScore: number,
   opponentScore: number,
   competition?: string,
+  eventId?: string,
 ): Promise<MatchStats | null> {
   if (league === 'afl') return null; // AFL has no usable ESPN player stats
   try {
@@ -78,6 +81,7 @@ async function fetchMatchStats(
       teamScore:     String(teamScore),
       opponentScore: String(opponentScore),
       ...(competition ? { competition } : {}),
+      ...(eventId ? { eventId } : {}),
     });
     const res = await fetch(`${BASE}/api/match-stats?${params}`, {
       cache: 'no-store',
@@ -292,8 +296,9 @@ export async function POST(req: NextRequest) {
     // the review data block (form/H2H from the same sources the preview mines).
     const isCricket  = league === 'cricket_int' || league === 'bbl';
     const soccerSlug = typeof eventKey === 'string' ? eventKey.match(/^soccer-([\w.]+)-\d+$/)?.[1] : undefined;
-    const soccerEventTail = league === 'epl' && typeof eventKey === 'string' ? eventKey.split('-').pop() : undefined;
-    const soccerEventId = soccerEventTail && /^\d+$/.test(soccerEventTail) ? soccerEventTail : undefined;
+    const eventTail  = typeof eventKey === 'string' ? eventKey.split('-').pop() : undefined;
+    // ESPN event id — every ESPN league's sourceId ends in it.
+    const espnEventId = !isCricket && league !== 'afl' && eventTail && /^\d+$/.test(eventTail) ? eventTail : undefined;
     const cricketUuid = isCricket && typeof eventKey === 'string' && !/^\d+$/.test(eventKey.replace(/^(cint|bbl)-/, ''))
       ? eventKey.replace(/^(cint|bbl)-/, '') : undefined;
     // Squiggle's form/H2H arrays are matched by exact name, and ours differ
@@ -301,18 +306,105 @@ export async function POST(req: NextRequest) {
     // Western Sydney"), so AFL form was silently empty for every caller that
     // sent the app's team name. The opponent already arrives as Squiggle's name.
     const sourceTeamName = league === 'afl' && teamId ? (SQUIGGLE_NAME[String(teamId)] ?? teamName) : teamName;
-    const [standings, matchStats, formExtras, goalTimeline, cricScorecard, nrlTimeline] = await Promise.all([
+
+    // ESPN competition paths for the event. The summary only resolves under the
+    // event's own competition, so international rugby tries its candidates.
+    const leagueSportPath =
+      league === 'epl'         ? `soccer/${soccerSlug ?? 'eng.1'}` :
+      league === 'nrl'         ? 'rugby-league/3' :
+      league === 'super_rugby' ? 'rugby/242041' :
+      undefined;
+    const sportPaths = league === 'rugby_int'
+      ? ['rugby/289234', 'rugby/244293', 'rugby/180659', 'rugby/267979']
+      : leagueSportPath ? [leagueSportPath] : [];
+    const fetchReport = async () => {
+      if (!espnEventId) return undefined;
+      for (const sp of sportPaths) {
+        const r = await fetchESPNMatchReport(sp, espnEventId, teamName, opponent);
+        if (r) return { report: r, sportPath: sp };
+      }
+      return undefined;
+    };
+
+    const [standings, ms, formExtras, reportHit, cricScorecard, nrlTimeline, cricInfo] = await Promise.all([
       isCricket ? Promise.resolve([]) : fetchStandings(league),
       // AFL: CFS playerStats (ESPN has no AFL player stats); others: ESPN match-stats.
       league === 'afl'
         ? fetchAflMatchStats(teamName, opponent, String(date))
-        : (!isCricket && teamId) ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined) : Promise.resolve(null),
+        : (!isCricket && teamId) ? fetchMatchStats(league, teamId, String(date), tScore, oScore, competition ? String(competition) : undefined, espnEventId) : Promise.resolve(null),
       fetchReviewFormAndH2H(league, eventKey ? String(eventKey) : undefined, sourceTeamName, opponent, String(date)),
-      soccerEventId ? fetchSoccerGoalTimeline(soccerSlug ?? 'eng.1', soccerEventId) : Promise.resolve(undefined),
+      fetchReport(),
       cricketUuid ? cricMatchScorecard(cricketUuid) : Promise.resolve(null),
       league === 'nrl' ? fetchNRLMatchTimeline(teamName, opponent) : Promise.resolve(undefined),
+      cricketUuid ? cricMatchInfo(cricketUuid) : Promise.resolve(null),
     ]);
+    const report = reportHit?.report;
     const cricketChart = isCricket ? buildCricketChart(cricScorecard) : undefined;
+
+    // Team-level stats: the report's (labelled for the factor builder) win over
+    // the match-stats route's; player rows still come from match-stats / CFS.
+    let matchStats: MatchStats | null = ms;
+    const sourceTeamStats = report?.teamStats ?? nrlTimeline?.teamStats;
+    if (sourceTeamStats) {
+      matchStats = {
+        team:     { teamName,           aggStats: sourceTeamStats.team,     players: ms?.team?.players     ?? [] },
+        opponent: { teamName: opponent, aggStats: sourceTeamStats.opponent, players: ms?.opponent?.players ?? [] },
+      };
+    }
+
+    // Season results → computed facts. Soccer: league + cup schedules; rugby:
+    // league schedule (ESPN returns none post-season, harmlessly); AFL: Squiggle.
+    let teamSeason = formExtras.teamSeasonResults ?? [];
+    let oppSeason  = formExtras.opponentSeasonResults ?? [];
+    if (report && reportHit && league !== 'afl') {
+      const primary = leagueSportPath ?? reportHit.sportPath;
+      const extra   = league === 'epl' ? SOCCER_CUP_SLUGS.map(s => `soccer/${s}`).filter(p => p !== primary) : [];
+      [teamSeason, oppSeason] = await Promise.all([
+        report.teamEspnId ? fetchESPNSeasonResults(primary, extra, report.teamEspnId, String(date)) : Promise.resolve([]),
+        report.oppEspnId  ? fetchESPNSeasonResults(primary, extra, report.oppEspnId,  String(date)) : Promise.resolve([]),
+      ]);
+    }
+    // Completeness guard: ESPN's recent-games window spans every competition,
+    // so a window game missing from the season set means a cup we do not
+    // fetch (a Conference League qualifier, say). All-competitions claims
+    // would then be wrong by that game — keep league-only facts in that case.
+    const leagueOnlyIfIncomplete = (season: typeof teamSeason, window?: typeof formExtras.teamRecentForm) => {
+      if (!window?.length || season.length === 0) return season;
+      const days = new Set(season.map(r => r.date.slice(0, 10)));
+      const complete = window.every(g => days.has(String(g.date).slice(0, 10)));
+      return complete ? season : season.filter(r => r.isLeague);
+    };
+    teamSeason = leagueOnlyIfIncomplete(teamSeason, formExtras.teamRecentForm);
+    oppSeason  = leagueOnlyIfIncomplete(oppSeason,  formExtras.opponentRecentForm);
+
+    const scoreUnit   = league === 'epl' ? 'goal' : 'point';
+    const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
+    const seasonFacts = [
+      ...deriveSeasonFacts(teamName, teamSeason, { teamScore: tScore, opponentScore: oScore }, leagueLabel, scoreUnit),
+      ...deriveSeasonFacts(opponent, oppSeason,  { teamScore: oScore, opponentScore: tScore }, leagueLabel, scoreUnit),
+    ];
+
+    // Short club names for prose; every individual the data names, for the whitelist.
+    const shortFor = (id: string | undefined, name: string): string =>
+      TEAMS.find(t => t.id === id)?.shortName
+      ?? TEAMS.find(t => t.league === league && t.name === name)?.shortName
+      ?? name;
+    const teamShort     = shortFor(teamId ? String(teamId) : undefined, teamName);
+    const opponentShort = shortFor(opponentId ? String(opponentId) : undefined, opponent);
+    const namedPlayers = new Set<string>(report?.playerNames ?? []);
+    for (const side of [matchStats?.team, matchStats?.opponent]) for (const p of side?.players ?? []) if (p.name) namedPlayers.add(p.name);
+    for (const t of nrlTimeline?.tries ?? []) namedPlayers.add(t.name);
+    for (const l of nrlTimeline?.scoringTimeline ?? []) {
+      // "11' Try Roosters — Daniel Tupou — Roosters 10, Sharks 0"; an unnamed
+      // score has one dash only and names no one.
+      const m = l.match(/^\d+' (?:Try|Penalty Goal|Field Goal)(?: [^—]+)? — (.+?) — /);
+      if (m) namedPlayers.add(m[1].trim());
+    }
+    for (const l of nrlTimeline?.topPerformerLines ?? []) {
+      for (const m of l.matchAll(/(?::|\|)\s*([^\d|:]+?)\s+\d+/g)) namedPlayers.add(m[1].trim());
+    }
+    const sameClub = (a?: string, b?: string) => !!a && !!b && (a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()));
+    const homeTeamName = sameClub(report?.homeTeam, teamName) ? teamName : sameClub(report?.homeTeam, opponent) ? opponent : undefined;
 
     // Cricket without a real result/innings would generate from placeholder
     // 0-0 scores — a hallucination factory (observed: an invented "0-0 draw").
@@ -357,24 +449,45 @@ export async function POST(req: NextRequest) {
       teamRecentForm:     formExtras.teamRecentForm,
       opponentRecentForm: formExtras.opponentRecentForm,
       headToHead:         formExtras.headToHead,
-      scoringTimeline:    goalTimeline ?? nrlTimeline?.scoringTimeline,
+      scoringTimeline:    report?.scoringTimeline ?? nrlTimeline?.scoringTimeline,
+      matchEvents:        report?.events?.length ? report.events : nrlTimeline?.scoringTimeline,
+      seasonFacts:        seasonFacts.length ? seasonFacts : undefined,
+      playerNames:        namedPlayers.size ? [...namedPlayers] : undefined,
+      venue:              report?.venue ?? nrlTimeline?.venue ?? formExtras.venue ?? cricInfo?.venue ?? undefined,
+      attendance:         report?.attendance ?? nrlTimeline?.attendance,
+      homeTeamName,
+      teamShort, opponentShort,
       cricketFormat, cricketResult, cricketInnings,
       cricketChart:       cricketChart?.length ? cricketChart : undefined,
     };
 
     const dataBlock = buildReviewDataBlock(input);
 
+    // Standard key-contribution strip and key factors — deterministic, derived
+    // server-side. Stored WITH the review so the deployed site, which cannot
+    // run these fetchers' upstream at generation time, serves the same strip.
+    const contributions = buildContributions(league, matchStats, report?.scoringTimeline ?? nrlTimeline?.scoringTimeline, cricketChart, { assists: report?.assists, tries: nrlTimeline?.tries });
+    if (nrlTimeline?.topPerformerLines) contributions.push(...nrlTimeline.topPerformerLines);
+    const derivedFactors = buildKeyFactors({
+      league, teamName, opponent, teamShort, opponentShort,
+      teamScore: tScore, opponentScore: oScore,
+      report, matchEvents: input.matchEvents, matchStats, seasonFacts,
+    });
+
+    // Cron-only inspection: the exact block the model would see, no generation.
+    if (isCron && (body as { debugBlock?: boolean }).debugBlock === true) {
+      return NextResponse.json({ dataBlock, seasonFacts, contributions, keyFactors: derivedFactors, playerNames: [...namedPlayers] });
+    }
+
     const review = await generateReview(reviewKey, dataBlock);
     if (!review) {
       return NextResponse.json({ error: 'Generation failed' }, { status: 500 });
     }
 
-    // Standard key-contribution strip — deterministic, derived server-side.
-    // Stored WITH the review so the deployed site, which cannot run these
-    // fetchers' upstream at generation time, serves the same strip.
-    const contributions = buildContributions(league, matchStats, goalTimeline, cricketChart);
-    if (nrlTimeline?.topPerformerLines) contributions.push(...nrlTimeline.topPerformerLines);
-    const payload: AIReview = contributions.length > 0 ? { ...review, contributions } : review;
+    // The model's own key moments survive only where the data gives us fewer
+    // than two factors to derive (no events, no stats, no season lines).
+    const keyMoments = derivedFactors.length >= 2 ? derivedFactors : review.keyMoments;
+    const payload: AIReview = { ...review, keyMoments, ...(contributions.length > 0 ? { contributions } : {}) };
 
     await upsertReview(reviewStoreKey(reviewKey), payload, REVIEW_MODEL, aiLog);
     return NextResponse.json(payload);

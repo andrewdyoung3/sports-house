@@ -22,7 +22,7 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
  *   v8: last data-cache generation.
  *   v9: Supabase-persisted, keyed by perspective id (2026-09-22).
  */
-export const REVIEW_REGIME = 'v9';
+export const REVIEW_REGIME = 'v10'; // v10 (2026-09-25): event-keyed report + season facts + derived key factors
 export const reviewStoreKey = (gameId: string): string => `${REVIEW_REGIME}:${gameId}`;
 
 export interface StoredReview {

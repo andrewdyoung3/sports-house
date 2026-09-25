@@ -41,7 +41,18 @@ src/
                             statlines/years/phase-stakes/ladder-position/WC group-record/WC group-letter/F1)
                             + Supabase upsert
     weather.ts            — fetchVenueWeather() (Open-Meteo, no key); shared by /api/weather + previews
-    review-store.ts       — Supabase game_reviews read/upsert; REVIEW_REGIME ('v9') + reviewStoreKey()
+    review-store.ts       — Supabase game_reviews read/upsert; REVIEW_REGIME ('v10') + reviewStoreKey()
+    match-report.ts       — Review enrichment keyed by the SOURCE EVENT: fetchESPNMatchReport() (soccer keyEvents →
+                            goals w/ method+assist+running score, cards, subs, HT/FT; venue; team stats),
+                            fetchESPNSeasonResults() + deriveSeasonFacts() (computed runs/records — the only
+                            streak figures the model may cite). NRL equivalents live in fetchNRLMatchTimeline (nrl.com)
+    review-prompt.ts      — Review system prompt + buildReviewDataBlock() (VENUE/PERSPECTIVE/NAMES, SEASON CONTEXT,
+                            MATCH EVENTS, paired TEAM STATS, PLAYERS NAMED whitelist line)
+    review-contributions.ts — Server-derived strip (scorers/assists/tries) + buildKeyFactors() (HT state, 2nd-half
+                            split, goal method counts, sub reactions, stat gaps) — the panel's Key Factors are
+                            derived, never LLM, whenever ≥2 can be derived
+    review-validators.ts  — Review validators incl. validateRelativePosition (ahead/behind bound to the points-gap
+                            fact) and validateReviewFormRuns (run claims bound to SEASON CONTEXT)
     result-match-key.ts   — makeResultId(): the results page's render id AND the review store key
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
                             (competition-rules.ts = COMP_RULES, the per-season single source of truth)
@@ -88,7 +99,9 @@ Beyond standings/news, each preview's data block is enriched by `buildPreviewCon
 **Faithfulness invariant:** generation, the sandbox route, and `scripts/verify-sandbox-faithful.ts` all build context via `buildPreviewContext` and pass `[],[]` for positional results — so add new data to `PreviewContext`/`buildDataBlock`, never a parallel path, and prod/sandbox stay byte-identical.
 
 ### AI post-match reviews (results page)
-Persisted in Supabase `game_reviews` (migration 0006), the results-side twin of `game_previews`. **Store key = `v9:<perspective id>`** where the perspective id is `makeResultId(teamId, result)` = `<teamId>-<YYYY-MM-DD>-vs-<opponent-slug>` — the exact id the results page renders, so one review per followed side. `GameResult.sourceId` (`afl-<squiggle id>`, `nrl-<espn id>`, `soccer-<slug>-<espn id>`, `sru-`/`rint-<id>`) is the *event* key the review enrichers parse for form/H2H/goal timeline — never use it as the store key. `/api/ai-review` is read-through: store hit → payload; no generator (`VERCEL` without a non-loopback `OLLAMA_HOST`) → `{preparing:true}` and the panel says "Match report on its way."; else generate (validators may refuse; refusals are not stored) and upsert. `poll-reviews` runs from the launchd chain every 60 s, discovers via `/api/results` (`teamId=` for followed teams, `scope=league` for followed comps, 8-day lookback), and **stops with "review store unavailable"** if the admin client or table is missing — do not "fix" that by generating anyway. AFL form/H2H needs Squiggle's exact names: the route maps `teamId → SQUIGGLE_NAME`.
+Persisted in Supabase `game_reviews` (migration 0006), the results-side twin of `game_previews`. **Store key = `v9:<perspective id>`** where the perspective id is `makeResultId(teamId, result)` = `<teamId>-<YYYY-MM-DD>-vs-<opponent-slug>` — the exact id the results page renders, so one review per followed side. `GameResult.sourceId` (`afl-<squiggle id>`, `nrl-<espn id>`, `soccer-<slug>-<espn id>`, `sru-`/`rint-<id>`) is the *event* key the review enrichers parse for form/H2H/goal timeline — never use it as the store key. `/api/ai-review` is read-through: store hit → payload; no generator (`VERCEL` without a non-loopback `OLLAMA_HOST`) → `{preparing:true}` and the panel says "Match report on its way."; else generate (validators may refuse; refusals are not stored) and upsert. A cron-secret POST with `debugBlock:true` returns the exact data block + derived contributions/key factors without generating — use it to audit a match before spending a model run.
+
+**Per-sport review data (2026-09-25 overhaul — see `match-report.ts`):** EPL gets the full ESPN event feed (every `Goal*` type incl. headers, assists, method, cards, subs, HT/FT, venue, attendance, team stats) plus season facts from the league + cup schedules (`SOCCER_CUP_SLUGS`; a completeness guard against ESPN's recent-games window drops all-comps claims when a cup is missing). NRL gets nrl.com's match centre (scoring timeline with sides, HT line, team stats groups, tries per side, venue) — ESPN's NRL summary has no events/stats. AFL gets Squiggle (venue, full-season results incl. finals → season facts) + CFS player/team stats. Super Rugby / Rugby Int'l get ESPN venue + form only. Cricket gets the scorecard chart + `match_info` venue. Do not add a per-sport parallel path: extend `ReviewInput`/`buildReviewDataBlock` and the fetchers. `poll-reviews` runs from the launchd chain every 60 s, discovers via `/api/results` (`teamId=` for followed teams, `scope=league` for followed comps, 8-day lookback), and **stops with "review store unavailable"** if the admin client or table is missing — do not "fix" that by generating anyway. AFL form/H2H needs Squiggle's exact names: the route maps `teamId → SQUIGGLE_NAME`.
 
 ## Planned future leagues
 - **Cricket** — DONE (BBL + internationals via cricketdata.org). Will populate tracked-team fixtures in-season (BBL summer; men's bilateral series); currently dormant like EPL/NBA off-season.

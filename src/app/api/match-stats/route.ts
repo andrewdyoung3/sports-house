@@ -221,7 +221,7 @@ const TEAM_STAT_KEYS: Record<string, Array<{ key: string; label: string }>> = {
     { key: 'possessionPct',    label: 'Poss %'  },
     { key: 'totalShots',       label: 'Shots'   },
     { key: 'shotsOnTarget',    label: 'On Target'},
-    { key: 'cornersTotal',     label: 'Corners'  },
+    { key: 'wonCorners',       label: 'Corners'  },
     { key: 'foulsCommitted',   label: 'Fouls'    },
   ],
   nrl: [
@@ -358,8 +358,11 @@ function parseSummary(
     players:  extractPlayerStats(bsPlayers, oppTeamId, playerKeys),
   };
 
-  // If neither team has player data, the sport doesn't provide it via this endpoint
-  if (team.players.length === 0 && opponent.players.length === 0) return null;
+  // Nothing at either level → the feed has no stats for this event. Team-level
+  // stats alone are still a result: ESPN's soccer boxscore carries possession,
+  // shots and corners but no player rows, and this used to 404 the lot.
+  if (team.players.length === 0 && opponent.players.length === 0
+      && team.aggStats.length === 0 && opponent.aggStats.length === 0) return null;
 
   return { team, opponent };
 }
@@ -377,6 +380,9 @@ export async function GET(req: NextRequest) {
   const teamScore    = Number(p.get('teamScore')    ?? '');
   const opponentScore = Number(p.get('opponentScore') ?? '');
   const competition  = p.get('competition')  ?? undefined;
+  // Known ESPN event id (from GameResult.sourceId) — skips the scoreboard scan.
+  const eventIdParam = p.get('eventId') ?? '';
+  const eventId      = /^\d{1,12}$/.test(eventIdParam) ? eventIdParam : undefined;
 
   if (!ALLOWED.has(league) || !TEAMID_RE.test(teamId) || !date) {
     return NextResponse.json({ error: 'Invalid params' }, { status: 400 });
@@ -394,20 +400,36 @@ export async function GET(req: NextRequest) {
   try {
     const sportPaths = getSlugsForLeague(league, competition);
 
-    const found = await findEvent(sportPaths, espnTeamId, date, teamScore, opponentScore);
-    if (!found) {
-      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    let summary: EspnSummaryResponse | null = null;
+    if (eventId) {
+      // The summary only resolves under the event's own competition path, so
+      // try the ordered candidates (matters for international rugby).
+      for (const { sportPath } of sportPaths) {
+        const r = await fetchTimeout(
+          `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/summary?event=${eventId}`,
+          { next: { revalidate: 86400 } },
+        );
+        if (!r.ok) continue;
+        const j = await r.json() as EspnSummaryResponse;
+        if (j?.boxscore) { summary = j; break; }
+      }
+    } else {
+      const found = await findEvent(sportPaths, espnTeamId, date, teamScore, opponentScore);
+      if (!found) {
+        return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+      }
+      const summaryRes = await fetchTimeout(
+        `https://site.api.espn.com/apis/site/v2/sports/${found.sportPath}/summary?event=${found.eventId}`,
+        { next: { revalidate: 86400 } },
+      );
+      if (!summaryRes.ok) {
+        return NextResponse.json({ error: 'Summary unavailable' }, { status: 502 });
+      }
+      summary = await summaryRes.json() as EspnSummaryResponse;
     }
-
-    const summaryRes = await fetchTimeout(
-      `https://site.api.espn.com/apis/site/v2/sports/${found.sportPath}/summary?event=${found.eventId}`,
-      { next: { revalidate: 86400 } },
-    );
-    if (!summaryRes.ok) {
+    if (!summary) {
       return NextResponse.json({ error: 'Summary unavailable' }, { status: 502 });
     }
-
-    const summary  = await summaryRes.json() as EspnSummaryResponse;
     const stats    = parseSummary(summary, league, espnTeamId);
     if (!stats) {
       return NextResponse.json({ error: 'No stats in summary' }, { status: 404 });

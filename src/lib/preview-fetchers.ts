@@ -19,6 +19,7 @@ import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS }
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
 import { readFileSync, writeFileSync, statSync } from 'fs';
 import { fetchTimeout, fetchESPNScoreboard } from '@/lib/espn';
+import type { SeasonResultLite } from '@/lib/match-report';
 import { entryRank, sortByEntryRank, espnEntries } from '@/lib/espn-standings';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import {
@@ -2169,7 +2170,13 @@ export async function fetchReviewFormAndH2H(
   teamName: string,
   opponentName: string,
   matchDateISO: string,
-): Promise<Pick<ESPNMatchExtras, 'teamRecentForm' | 'opponentRecentForm' | 'headToHead'>> {
+): Promise<Pick<ESPNMatchExtras, 'teamRecentForm' | 'opponentRecentForm' | 'headToHead'> & {
+  /** AFL only (Squiggle carries the ground): where the reviewed match was played. */
+  venue?: string;
+  /** AFL only: this season's completed results before the match, chronological, for deriveSeasonFacts. */
+  teamSeasonResults?:     SeasonResultLite[];
+  opponentSeasonResults?: SeasonResultLite[];
+}> {
   const day = matchDateISO.slice(0, 10);
   const dropSameDay = (rs?: GameResult[]) => rs?.filter(r => r.date.slice(0, 10) !== day);
 
@@ -2183,6 +2190,25 @@ export async function fetchReviewFormAndH2H(
       if (!res.ok) return {};
       const { games = [] } = await res.json() as { games?: any[] };
       const done = games.filter(g => Number(g.complete) === 100 && String(g.date).slice(0, 10) < day);
+
+      // The reviewed match itself (same day, these two sides) → venue.
+      const thisGame = games.find(g => String(g.date).slice(0, 10) === day
+        && ((g.hteam === teamName && g.ateam === opponentName) || (g.hteam === opponentName && g.ateam === teamName)));
+      const venue = typeof thisGame?.venue === 'string' && thisGame.venue ? String(thisGame.venue) : undefined;
+
+      // Every completed game this season, finals included — a run computed over
+      // home-and-away games only would skip a qualifying-final loss.
+      const seasonFor = (name: string): SeasonResultLite[] => done
+        .filter(g => g.hteam === name || g.ateam === name)
+        .map((g): SeasonResultLite => {
+          const home = g.hteam === name;
+          return {
+            date:          String(g.date),
+            teamScore:     home ? Number(g.hscore) : Number(g.ascore),
+            opponentScore: home ? Number(g.ascore) : Number(g.hscore),
+            isLeague:      true,
+          };
+        });
 
       const formFor = (name: string): GameResult[] | undefined => {
         const mine = done.filter(g => g.hteam === name || g.ateam === name).slice(-5).reverse();
@@ -2207,7 +2233,13 @@ export async function fetchReviewFormAndH2H(
           const os = home ? Number(g.ascore) : Number(g.hscore);
           return { date: String(g.date), teamScore: ts, opponentScore: os, result: ts > os ? 'W' : ts < os ? 'L' : 'D', teamWasHome: home };
         });
-      return { teamRecentForm: formFor(teamName), opponentRecentForm: formFor(opponentName), headToHead: h2h.length ? h2h : undefined };
+      return {
+        teamRecentForm: formFor(teamName), opponentRecentForm: formFor(opponentName),
+        headToHead: h2h.length ? h2h : undefined,
+        venue,
+        teamSeasonResults:     seasonFor(teamName),
+        opponentSeasonResults: seasonFor(opponentName),
+      };
     }
 
     // ESPN leagues: resolve sport path + event id from the gameId.
@@ -2454,38 +2486,6 @@ export async function fetchOpenF1Weekend(
 }
 
 
-/**
- * Soccer goal timeline from ESPN summary keyEvents (minutes + scorer + team) —
- * the event-anchoring data real match reports lead with (2026-09-16 audit:
- * pros led with the 7'/47' brace; our reviews were aggregate-only).
- */
-export async function fetchSoccerGoalTimeline(
-  slug: string,
-  eventId: string | undefined,
-): Promise<string[] | undefined> {
-  if (!eventId) return undefined;
-  try {
-    const res = await fetchTimeout(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/summary?event=${eventId}`,
-      { next: { revalidate: 3600 }, timeoutMs: 8000 },
-    );
-    if (!res.ok) return undefined;
-    const data = await res.json() as any;
-    const lines: string[] = [];
-    for (const e of (data.keyEvents ?? []) as any[]) {
-      const t = (e.type?.text ?? '') as string;
-      if (!/^(goal|penalty - scored|own goal)$/i.test(t)) continue;
-      const clock = e.clock?.displayValue ?? '';
-      const who   = e.participants?.[0]?.athlete?.displayName ?? '';
-      const team  = e.team?.displayName ?? '';
-      if (!who || !team) continue;
-      lines.push(`${clock} ${who} (${team})${/own goal/i.test(t) ? ' — own goal' : /penalty/i.test(t) ? ' — penalty' : ''}`);
-    }
-    return lines.length > 0 ? lines : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 
 /**
@@ -2495,10 +2495,33 @@ export async function fetchSoccerGoalTimeline(
  * summary lacks (probed 2026-09-16). Round located by trying the current
  * round then stepping back (reviews are for recent games).
  */
+/** nrl.com match-centre team stats worth a review line, in display order. */
+const NRL_TEAM_STATS: Array<{ title: string; label: string }> = [
+  { title: 'Possession %',       label: 'Poss %'         },
+  { title: 'Completion Rate',    label: 'Comp %'         },
+  { title: 'All Run Metres',     label: 'Run metres'     },
+  { title: 'Line Breaks',        label: 'Line breaks'    },
+  { title: 'Tackle Breaks',      label: 'Tackle breaks'  },
+  { title: 'Offloads',           label: 'Offloads'       },
+  { title: 'Missed Tackles',     label: 'Missed tackles' },
+  { title: 'Effective Tackle %', label: 'Tackle eff %'   },
+  { title: 'Errors',             label: 'Errors'         },
+  { title: 'Penalties Conceded', label: 'Pens'           },
+];
+
 export async function fetchNRLMatchTimeline(
   teamName: string,
   opponentName: string,
-): Promise<{ scoringTimeline?: string[]; topPerformerLines?: string[] } | undefined> {
+): Promise<{
+  scoringTimeline?:   string[];
+  topPerformerLines?: string[];
+  venue?:             string;
+  attendance?:        number;
+  /** Team stats from the match centre, mapped to the perspective side / opponent. */
+  teamStats?:         { team: Array<{ label: string; value: string }>; opponent: Array<{ label: string; value: string }> };
+  /** Try scorers with the side they scored for (nrl.com nickname). */
+  tries?:             Array<{ name: string; team: string }>;
+} | undefined> {
   try {
     const season = new Date().getFullYear();
     const nm = (x: string) => (x ?? '').toLowerCase();
@@ -2527,17 +2550,60 @@ export async function fetchNRLMatchTimeline(
     if (!mcRes.ok) return undefined;
     const mc = await mcRes.json() as any;
 
+    const homeNick = String(mc.homeTeam?.nickName ?? 'home');
+    const awayNick = String(mc.awayTeam?.nickName ?? 'away');
+    const nickOf = (teamId: unknown): string | undefined =>
+      teamId !== undefined && teamId !== null
+        ? (String(teamId) === String(mc.homeTeam?.teamId) ? homeNick : String(teamId) === String(mc.awayTeam?.teamId) ? awayNick : undefined)
+        : undefined;
+
     const lines: string[] = [];
+    const tries: Array<{ name: string; team: string }> = [];
+    // Running score (the feed leaves a side's score null until it changes) and
+    // the half-time state, which the model otherwise guesses — it read a 16–10
+    // half-time as "trailing by two" (live, 2026-09-25).
+    let hs = 0, as = 0, htDone = false;
+    const HALF_SECONDS = 40 * 60;
     for (const t of (mc.timeline ?? []) as any[]) {
       const kind = t.title ?? t.type ?? '';
+      const secs = Number(t.gameSeconds ?? 0);
+      if (!htDone && secs > HALF_SECONDS && lines.length > 0) {
+        lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`);
+        htDone = true;
+      }
       if (!/^(Try|Penalty Goal|Field Goal|Conversion-Made)$/.test(kind)) continue;
+      if (typeof t.homeScore === 'number') hs = t.homeScore;
+      if (typeof t.awayScore === 'number') as = t.awayScore;
       if (kind === 'Conversion-Made') continue; // tries + kicks that change momentum only
-      const min = Math.round((t.gameSeconds ?? 0) / 60);
-      const who = String(t.content?.name ?? '').replace(/ (Try|Penalty Goal|Field Goal)$/i, '').trim();
-      const score = (t.homeScore !== undefined || t.awayScore !== undefined)
-        ? ` — ${mc.homeTeam?.nickName ?? 'home'} ${t.homeScore ?? 0}, ${mc.awayTeam?.nickName ?? 'away'} ${t.awayScore ?? 0}` : '';
-      lines.push(`${min}' ${kind}${who ? ` — ${who}` : ''}${score}`);
+      const min = Math.round(secs / 60);
+      const who = String(t.content?.name ?? '').replace(/ (Try|Penalty Goal|Field Goal)$/i, '').replace(/\s+\d+(?:st|nd|rd|th)$/, '').trim();
+      const side = nickOf(t.teamId);
+      lines.push(`${min}' ${kind}${side ? ` ${side}` : ''}${who ? ` — ${who}` : ''} — ${homeNick} ${hs}, ${awayNick} ${as}`);
+      if (kind === 'Try' && who && side) tries.push({ name: who, team: side });
     }
+    if (!htDone && lines.length > 0 && Number(mc.gameSeconds ?? 0) > HALF_SECONDS) {
+      lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`); // no second-half score
+    }
+
+    // Team stats: the match centre's stat groups, mapped to the perspective side.
+    const teamIsHome = nm(teamName).includes(nm(homeNick)) || nm(homeNick).includes(nm(teamName));
+    const home: Array<{ label: string; value: string }> = [];
+    const away: Array<{ label: string; value: string }> = [];
+    for (const g of (mc.stats?.groups ?? []) as any[]) {
+      for (const s of (g.stats ?? []) as any[]) {
+        const spec = NRL_TEAM_STATS.find(x => x.title === s.title);
+        if (!spec) continue;
+        const hv = s.homeValue?.value, av = s.awayValue?.value;
+        if (typeof hv !== 'number' || typeof av !== 'number') continue;
+        home.push({ label: spec.label, value: String(Math.round(hv)) });
+        away.push({ label: spec.label, value: String(Math.round(av)) });
+      }
+    }
+    const teamStats = home.length > 0
+      ? { team: teamIsHome ? home : away, opponent: teamIsHome ? away : home }
+      : undefined;
+    const venue = typeof mc.venue === 'string' && mc.venue ? String(mc.venue) : undefined;
+    const attendance = Number(mc.attendance) > 0 ? Number(mc.attendance) : undefined;
 
     const tp: string[] = [];
     const playersById = new Map<number, string>();
@@ -2557,6 +2623,8 @@ export async function fetchNRLMatchTimeline(
     return {
       scoringTimeline:   lines.length > 0 ? lines : undefined,
       topPerformerLines: tp.length > 0 ? tp : undefined,
+      venue, attendance, teamStats,
+      tries: tries.length > 0 ? tries : undefined,
     };
   } catch {
     return undefined;

@@ -30,8 +30,8 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 // Suffix tracks REVIEW_REGIME in lib/review-store.ts: a regime bump makes the
 // server re-generate, and this makes the browser re-ask instead of showing the
 // copy it kept.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v9:${id}`;
-const STATS_CACHE_KEY  = (id: string) => `match-stats-v1:${id}`;
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v10:${id}`;
+const STATS_CACHE_KEY  = (id: string) => `match-stats-v2:${id}`;
 
 function loadJSON<T>(key: string): T | null {
   try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as T : null; }
@@ -178,6 +178,10 @@ function PlayerStatsSection({ result, primaryColor }: PlayerStatsSectionProps) {
       opponentScore: String(result.opponentScore),
     });
     if (result.competition) params.set('competition', result.competition);
+    // The source event id lets the route read the summary directly instead of
+    // re-discovering the event by date scan.
+    const evTail = result.sourceId?.split('-').pop();
+    if (evTail && /^\d+$/.test(evTail)) params.set('eventId', evTail);
 
     fetch(`/api/match-stats?${params}`)
       .then(r => {

@@ -791,6 +791,17 @@ export function collectPlayerWhitelist(prompt: string): {
     }
   }
 
+  // Review data blocks (lib/match-report.ts): the explicit whitelist line —
+  // every individual the match events / stats named, comma-separated.
+  const namedM = prompt.match(/^PLAYERS NAMED IN THIS MATCH[^:\n]*:\s*(.+)$/m);
+  if (namedM) {
+    hasPlayerData = true;
+    for (const raw of namedM[1].split(',')) {
+      const name = raw.trim();
+      if (name.length > 1) whitelist.add(name.toLowerCase());
+    }
+  }
+
   // F1 — drivers and constructors from the championship standings/grid are the
   // grounded name source (the F1 path has no LINEUP block). Seed them so legitimate
   // names pass; a driver/constructor NOT in the standings is still rejected.
