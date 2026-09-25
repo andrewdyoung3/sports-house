@@ -67,7 +67,7 @@ GROUNDING — absolute constraint, no exceptions:
 • FINALS CONTEXT: when present, it is authoritative — the match was a finals fixture and the round name, round structure, and consequences (who advances, who is eliminated, who gets a second chance) come from it exclusively. Never frame a finals result as ladder movement, a qualification race, or a dead rubber, and never invent a different finals format from training knowledge.
 • RUNS, STREAKS, RECORDS: the only run/streak/record figures you may state are those in SEASON CONTEXT, verbatim. FORM COMING INTO THIS MATCH is a five-game window, not a run — never count it ("five-match winning run" because five results are listed is an error).
 • RELATIVE POSITION: who is above whom, and by how much, comes from DERIVED FACTS only. A team that LEADS on the table is ahead; never write that the trailing side "moved ahead" or "leapfrogged".
-• PERSPECTIVE and NAMES lines bind whose review this is and what to call each club.
+• NEUTRAL REPORT: the summary and key moments are written for followers of BOTH clubs — a match report, not a fan's account. "The team", "they" and "their" are ambiguous in a neutral report; name the club every time. The NAMES line says what to call each club. Only the two VERDICTS take a side, one each.
 
 INFORMATION ECONOMY:
 • The user can already see the scoreline and result. Do NOT restate the score in the summary or verdict.
@@ -95,7 +95,7 @@ STRUCTURE — four elements required, distributed naturally:
 • HOW IT TURNED: from MATCH EVENTS — the goal or passage that decided it, with its method (a header from a corner, a shot from outside the box, a counter), the half-time state, and the manager's reaction if the substitutions show one.
 • SEASON CONTEXT: what this result did to the side's run or record, using the SEASON CONTEXT lines verbatim — a first defeat, a run ended or extended, a season high conceded.
 • STATISTICAL ANGLE: One meaningful number from TEAM STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
-• REASONED VERDICT: The single most important forward-looking implication FOR THE PERSPECTIVE TEAM — a trend confirmed, weakness exposed, or opportunity opened.
+• TWO VERDICTS: one forward-looking line per club, each about THAT club — a trend confirmed, weakness exposed, or opportunity opened — anchored to a figure or event from the data. Each verdict names its club.
 
 RULES:
 • No filler: avoid "credit to both sides", "gave it their all", "never-say-die spirit"
@@ -111,8 +111,12 @@ OUTPUT: Return valid JSON only, no markdown fences:
 {
   "summary": "2–3 sentences — WHY the result happened. Open with the decisive structural factor, not the score.",
   "keyMoments": ["interpretive factor 1 (max 12 words)", "factor 2", "factor 3"],
-  "verdict": "1–2 sentences about the PERSPECTIVE team only: the one thing this result says they must fix or can bank on, anchored to a specific figure or event from the data. Never 'confirms/establishes … contenders', never 'exposes a vulnerability' without naming the mechanism and the number."
-}`;
+  "verdicts": {
+    "<first club exactly as the FIXTURE line spells it>": "1–2 sentences for that club: the one thing this result says they must fix or can bank on, anchored to a specific figure or event from the data.",
+    "<second club exactly as the FIXTURE line spells it>": "1–2 sentences for that club, same standard."
+  }
+}
+Never 'confirms/establishes … contenders', never 'exposes a vulnerability' without naming the mechanism and the number.`;
 
 // ─── Data block builder ───────────────────────────────────────────────────────
 
@@ -222,7 +226,6 @@ export function buildReviewDataBlock(input: ReviewInput): string {
 
   const leagueLabel = LEAGUE_LABELS[league] ?? league.toUpperCase();
   const sportCtx    = SPORT_CONTEXT[league] ?? '';
-  const result      = teamScore > opponentScore ? 'WIN' : teamScore < opponentScore ? 'LOSS' : 'DRAW';
   const comp        = competition ?? 'Regular season';
   // Kick-off day in the competition's own timezone — a 14:00Z Saturday kick-off
   // in England rendered as "Sun 20 September" in the machine's Australian
@@ -291,7 +294,10 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     const att      = attendance ? `, attendance ${attendance.toLocaleString('en-AU')}` : '';
     lines.push(venue ? `VENUE: ${venue} — ${sides}${att}` : `HOME/AWAY: ${sides}`);
   }
-  lines.push(`PERSPECTIVE: written for ${teamName} followers — "the team", "they" and "their" ALWAYS mean ${teamName}, never ${opponent}. Lead with what the result means for ${teamName}, honestly; a defeat is reported as one. Attach every figure to the side it belongs to by name.`);
+  // One neutral generation serves followers of both clubs (2026-09-25): the
+  // body takes no side, the two VERDICTS do. Forcing a losing side's name
+  // into the opening sentence had the model refusing four times running.
+  lines.push(`REPORT: neutral — written for followers of both ${teamName} and ${opponent}. Attach every figure to the club it belongs to, by name. Two verdicts, one per club.`);
   {
     const shorts: string[] = [];
     if (teamShort && teamShort !== teamName)          shorts.push(`${teamName} "${teamShort}"`);
@@ -302,7 +308,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     // Cricket scores are innings, not a two-number line — the cricket block
     // below carries them; a placeholder "0 – 0" here invites hallucination.
     lines.push(`Score: ${teamName} ${teamScore} – ${opponentScore} ${opponent}`);
-    lines.push(`Result: ${result}`);
+    lines.push(`Result: ${winner ? `${winner} won` : 'Draw'}`);
   }
   lines.push('');
 

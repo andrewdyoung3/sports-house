@@ -39,13 +39,21 @@ import {
   validateDeciderClaims,
 } from '@/lib/preview-generator';
 
+/** Every verdict the review carries: the per-club map (model output) or the single stored line. */
+function verdictTexts(r: AIReview): string[] {
+  const out: string[] = [];
+  if (r.verdicts) for (const v of Object.values(r.verdicts)) if (typeof v === 'string' && v.trim()) out.push(v);
+  if (out.length === 0 && r.verdict) out.push(r.verdict);
+  return out;
+}
+
 /** Adapt an AIReview to the AIPreview field shape the shared validators scan. */
 function asPreviewShape(r: AIReview): AIPreview {
   return {
     context:         r.summary ?? '',
     tacticalBattle:  '',
     playerSpotlight: '',
-    verdict:         r.verdict ?? '',
+    verdict:         verdictTexts(r).join('  '),
     keyInsights:     Array.isArray(r.keyMoments) ? r.keyMoments : [],
     mediaWatch:      [],
   };
@@ -59,7 +67,7 @@ function asPreviewShape(r: AIReview): AIPreview {
  *   disproportionate by definition (the calibration line says so explicitly).
  */
 export function validateReviewPhase(review: AIReview, dataBlock: string): string[] {
-  const text = [review.summary, review.verdict, ...(review.keyMoments ?? [])].filter(Boolean).join('  ');
+  const text = REVIEW_TEXT(review);
   const violations: string[] = [];
 
   if (/FINALS CONTEXT/.test(dataBlock)) {
@@ -91,7 +99,7 @@ export function validateReviewPhase(review: AIReview, dataBlock: string): string
  */
 export function validateReviewStatlines(review: AIReview, dataBlock: string): string[] {
   if (!/NO IN-GAME MATCH STATS PROVIDED/.test(dataBlock)) return [];
-  const text = [review.summary, review.verdict, ...(review.keyMoments ?? [])].filter(Boolean).join('  ');
+  const text = REVIEW_TEXT(review);
   const statRe = /\b\d+\s*(?:tackles|clearances|inside[- ]50s?|turnovers|metres gained|possessions|disposals|completions|line[- ]breaks|offloads|marks|hit[- ]?outs)\b|\b\d+\s*%\s*(?:completion|possession|efficiency|accuracy)|\b(?:completion|possession|efficiency|accuracy)\s+(?:rate\s+)?(?:of\s+)?\d+\s*%/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
@@ -133,15 +141,17 @@ export function validateReviewOverlap(review: AIReview, dataBlock: string): stri
     for (let i = 0; i + 3 < w.length; i++) g.add(w.slice(i, i + 4).join(' '));
     return g;
   };
-  const a = grams(review.summary ?? ''), b = grams(review.verdict ?? '');
-  if (a.size < 8 || b.size < 8) return [];
-  let shared = 0;
-  for (const g of a) if (b.has(g)) shared++;
-  const ratio = shared / Math.min(a.size, b.size);
-  if (ratio > 0.22) {
-    return [`summary and verdict substantially repeat each other (${Math.round(ratio * 100)}% shared phrasing) — the verdict must add the forward implication, not restate the summary`];
+  const a = grams(review.summary ?? '');
+  const out: string[] = [];
+  for (const v of verdictTexts(review)) {
+    const b = grams(v);
+    if (a.size < 8 || b.size < 8) continue;
+    let shared = 0;
+    for (const g of a) if (b.has(g)) shared++;
+    const ratio = shared / Math.min(a.size, b.size);
+    if (ratio > 0.22) out.push(`summary and a verdict substantially repeat each other (${Math.round(ratio * 100)}% shared phrasing) — the verdict must add the forward implication, not restate the summary`);
   }
-  return [];
+  return out;
 }
 
 const NUM_WORDS: Record<string, number> = {
@@ -151,7 +161,7 @@ const NUM_WORDS: Record<string, number> = {
 const toN = (s: string): number => /^\d+$/.test(s) ? Number(s) : (NUM_WORDS[s.toLowerCase()] ?? NaN);
 
 const REVIEW_TEXT = (r: AIReview): string =>
-  [r.summary, r.verdict, ...(r.keyMoments ?? [])].filter(Boolean).join('  ');
+  [r.summary, ...verdictTexts(r), ...(r.keyMoments ?? [])].filter(Boolean).join('  ');
 
 /** Words in a club name that identify it in prose (drops generic suffixes shared across clubs). */
 const GENERIC_CLUB_WORDS = new Set(['united', 'city', 'town', 'albion', 'hove', 'rovers', 'athletic', 'wanderers', 'hotspur', 'county', 'the', 'and']);
@@ -357,7 +367,27 @@ function blockPairs(dataBlock: string): Set<string> {
 
 /** The review's prose in separately-validated segments (an HT window must not bleed across bullets). */
 const REVIEW_SEGMENTS = (r: AIReview): string[] =>
-  [r.summary, r.verdict, ...(r.keyMoments ?? [])].filter((s): s is string => !!s);
+  [r.summary, ...verdictTexts(r), ...(r.keyMoments ?? [])].filter((s): s is string => !!s);
+
+/**
+ * Segments with the club a verdict is written for, so "they" inside that
+ * verdict resolves to that club; the neutral body carries no default.
+ */
+function sidedSegments(r: AIReview, ctx: SideContext): Array<{ text: string; side: 'team' | 'opp' | null }> {
+  const out: Array<{ text: string; side: 'team' | 'opp' | null }> = [];
+  if (r.summary) out.push({ text: r.summary, side: null });
+  if (r.verdicts) {
+    for (const [club, v] of Object.entries(r.verdicts)) {
+      if (typeof v !== 'string' || !v.trim()) continue;
+      const c = club.toLowerCase();
+      const side = ctx.teamToks.some(t => c.includes(t)) || ctx.teamName.toLowerCase() === c ? 'team'
+        : ctx.oppToks.some(t => c.includes(t)) || ctx.opponent.toLowerCase() === c ? 'opp' : null;
+      out.push({ text: v, side });
+    }
+  } else if (r.verdict) out.push({ text: r.verdict, side: null });
+  for (const k of r.keyMoments ?? []) if (k) out.push({ text: k, side: null });
+  return out;
+}
 
 /**
  * Quoted score states ("12-all", "16–4", "2-0 at half-time") must exist in
@@ -501,11 +531,12 @@ function sideContext(dataBlock: string): SideContext | null {
 }
 
 /**
- * Whose figure a phrase is about: the nearest side named before it ("the
- * team"/"they" = the perspective side), flipped when "conced…" sits between
- * the subject and the phrase (a side concedes the OTHER side's tally).
+ * Whose figure a phrase is about: the nearest club named before it ("the
+ * team"/"they" = `fallback`, the club a verdict is written for; null in the
+ * neutral body), flipped when "conced…" is the verb governing the phrase
+ * (a side concedes the OTHER side's tally).
  */
-function subjectFor(lowerText: string, idx: number, ctx: SideContext): 'team' | 'opp' | null {
+function subjectFor(lowerText: string, idx: number, ctx: SideContext, fallback: 'team' | 'opp' | null = null): 'team' | 'opp' | null {
   const from = Math.max(0, idx - 110);
   const window = lowerText.slice(from, idx);
   let best: { side: 'team' | 'opp'; at: number } | null = null;
@@ -514,8 +545,10 @@ function subjectFor(lowerText: string, idx: number, ctx: SideContext): 'team' | 
       if (!best || at > best.at) best = { side, at };
     }
   }
-  for (const m of window.matchAll(/\bthe (?:team|side)\b|\bthey\b|\btheir\b/g)) {
-    if (!best || (m.index ?? 0) > best.at) best = { side: 'team', at: m.index ?? 0 };
+  if (fallback) {
+    for (const m of window.matchAll(/\bthe (?:team|side)\b|\bthey\b|\btheir\b/g)) {
+      if (!best || (m.index ?? 0) > best.at) best = { side: fallback, at: m.index ?? 0 };
+    }
   }
   if (!best) return null;
   // Flip only when "conceding" is the verb governing THIS phrase — "conceding
@@ -571,7 +604,7 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
   const seen = new Set<string>();
   const flag = (k: string, msg: string) => { if (!seen.has(k)) { seen.add(k); violations.push(msg); } };
 
-  for (const text of REVIEW_SEGMENTS(review)) {
+  for (const { text, side } of sidedSegments(review, ctx)) {
     const lower = text.toLowerCase();
     // "three goals before halftime" / "four first-half tries" / "three tries in the second half"
     const reA = new RegExp(String.raw`\b${N}\s+(?:unanswered\s+|more\s+|further\s+)?${UNIT}\s+(in|during|after|before|by|inside|since|from|into)\s+(?:the\s+)?${HALF}`, 'gi');
@@ -583,7 +616,7 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
         const n = re === reD ? 2 : toN(m[1]);
         const half = re !== reA ? (m[2].toLowerCase() as 'first' | 'second') : halfFromPrep(m[2], m[3]);
         if (!Number.isFinite(n) || !half) continue;
-        const subject = subjectFor(lower, m.index ?? 0, ctx);
+        const subject = subjectFor(lower, m.index ?? 0, ctx, side);
         const [t, o] = counts[half];
         const ok = subject === 'team' ? n === t : subject === 'opp' ? n === o : (n === t || n === o);
         if (!ok) flag(m[0], `half count "${m[0]}" — MATCH EVENTS give ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in the ${half} half`);
@@ -655,7 +688,7 @@ export function validateStatValues(review: AIReview, dataBlock: string): string[
   const violations: string[] = [];
   const seen = new Set<string>();
   const NOUN = String.raw`([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2}?)`;
-  for (const text of REVIEW_SEGMENTS(review)) {
+  for (const { text, side } of sidedSegments(review, ctx)) {
     const lower = text.toLowerCase();
     const hits: Array<{ idx: number; raw: string; n: number; noun: string }> = [];
     for (const m of text.matchAll(new RegExp(String.raw`\b(\d{1,4})\s*%?\s+${NOUN}\b`, 'gi'))) hits.push({ idx: m.index ?? 0, raw: m[0], n: Number(m[1]), noun: m[2] });
@@ -669,7 +702,7 @@ export function validateStatValues(review: AIReview, dataBlock: string): string[
       const before = lower.slice(Math.max(0, h.idx - 45), h.idx);
       if (surnames.some(s => s.length >= 3 && before.includes(s))) continue;
       const [t, o] = stats.get(label)!;
-      const subject = subjectFor(lower, h.idx, ctx);
+      const subject = subjectFor(lower, h.idx, ctx, side);
       const ok = subject === 'team' ? h.n === t : subject === 'opp' ? h.n === o : (h.n === t || h.n === o);
       if (ok || seen.has(h.raw)) continue;
       seen.add(h.raw);
@@ -717,27 +750,39 @@ export function validateSeasonClaims(review: AIReview, dataBlock: string): strin
 }
 
 /**
- * The review is written for one side: the summary's first sentence and the
- * verdict must reference it (name, short name, or "the team/side").
+ * Map the model's verdict keys (which may be short names or approximate) onto
+ * the exact FIXTURE club names. Null when a side has no verdict.
  */
-export function validatePerspective(review: AIReview, dataBlock: string): string[] {
-  const persp = dataBlock.match(/^PERSPECTIVE: written for (.+?) followers/m);
-  if (!persp) return [];
-  const fixture = dataBlock.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
-  const namesLine = dataBlock.match(/^NAMES: after first mention call .+$/m)?.[0] ?? '';
-  const quoted = [...namesLine.matchAll(/"([^"]+)"/g)].map(q => q[1]);
-  const full = persp[1].trim();
-  const toks = clubTokens(full, ...quoted.filter(q => full.includes(q) || q.includes(full.split(' ')[0])));
-  const opp = fixture ? (fixture[1].trim() === full ? fixture[2].trim() : fixture[1].trim()) : '';
-  const oppToks = clubTokens(opp);
-  const mentions = (s: string) => {
-    const l = s.toLowerCase();
-    return /\bthe (?:team|side)\b/.test(l) || toks.some(t => l.includes(t) && !oppToks.includes(t));
-  };
+export function normalizeVerdicts(review: AIReview, dataBlock: string): Record<string, string> | null {
+  const ctx = sideContext(dataBlock);
+  if (!ctx) return null;
+  const raw = review.verdicts ?? {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v !== 'string' || !v.trim()) continue;
+    const key = k.toLowerCase();
+    if (key === ctx.teamName.toLowerCase() || ctx.teamToks.some(t => key.includes(t))) out[ctx.teamName] = v.trim();
+    else if (key === ctx.opponent.toLowerCase() || ctx.oppToks.some(t => key.includes(t))) out[ctx.opponent] = v.trim();
+  }
+  return out[ctx.teamName] && out[ctx.opponent] ? out : null;
+}
+
+/**
+ * One verdict per club, each about its club (names it, or "the team/they" —
+ * unambiguous inside a verdict), neither about the other club alone.
+ */
+export function validateVerdicts(review: AIReview, dataBlock: string): string[] {
+  const ctx = sideContext(dataBlock);
+  if (!ctx) return [];
+  if (!review.verdicts) return review.verdict ? [] : [`verdicts missing — return "verdicts" with one entry for ${ctx.teamName} and one for ${ctx.opponent}`];
+  const norm = normalizeVerdicts(review, dataBlock);
+  if (!norm) return [`verdicts must cover both clubs, keyed exactly "${ctx.teamName}" and "${ctx.opponent}" (got: ${Object.keys(review.verdicts).map(k => `"${k}"`).join(', ') || 'none'})`];
   const violations: string[] = [];
-  const first = (review.summary ?? '').split(/(?<=[.;])\s/)[0] ?? '';
-  if (first && !mentions(first)) violations.push(`perspective: the summary opens without ${full} ("${first.slice(0, 70)}…") — this review is written for ${full} followers; lead with them`);
-  if (review.verdict && !mentions(review.verdict)) violations.push(`perspective: the verdict never refers to ${full} — it must state the implication for them`);
+  for (const [club, toks, otherToks] of [[ctx.teamName, ctx.teamToks, ctx.oppToks], [ctx.opponent, ctx.oppToks, ctx.teamToks]] as const) {
+    const l = norm[club].toLowerCase();
+    const mine  = toks.some(t => l.includes(t) && !otherToks.includes(t)) || /\bthe (?:team|side)\b|\bthey\b|\btheir\b/.test(l);
+    if (!mine) violations.push(`verdict for ${club} never refers to ${club} — it must state the implication for them`);
+  }
   return violations;
 }
 
@@ -776,7 +821,7 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateStatValues(review, dataBlock),
     ...validateHalfCounts(review, dataBlock),
     ...validateSeasonClaims(review, dataBlock),
-    ...validatePerspective(review, dataBlock),
+    ...validateVerdicts(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
     ...validateReviewOpener(review, dataBlock),

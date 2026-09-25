@@ -30,7 +30,7 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 // Suffix tracks REVIEW_REGIME in lib/review-store.ts: a regime bump makes the
 // server re-generate, and this makes the browser re-ask instead of showing the
 // copy it kept.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v10:${id}`;
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v11:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v2:${id}`;
 
 function loadJSON<T>(key: string): T | null {

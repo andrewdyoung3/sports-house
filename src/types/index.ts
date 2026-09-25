@@ -459,6 +459,12 @@ export interface AIReview {
    * scorers, AFL goal kickers, cricket scoring chart. Rendered as a strip.
    */
   contributions?: string[];
+  /**
+   * Model output only (never stored): the forward-looking line for EACH club,
+   * keyed by club name as the FIXTURE line spells it. One neutral generation
+   * serves both followed sides; the store holds `verdict` per perspective key.
+   */
+  verdicts?: Record<string, string>;
   /** 2–3 sentences explaining what happened tactically and why. */
   summary: string;
   /** 2–3 specific, grounded factors that determined the match. */

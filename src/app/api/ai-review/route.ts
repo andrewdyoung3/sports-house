@@ -23,7 +23,8 @@ import OpenAI from 'openai';
 import { appendFileSync } from 'fs';
 import type { AIReview, MatchStats, LeagueTableRow } from '@/types';
 import { REVIEW_SYSTEM_PROMPT, ReviewInput, buildReviewDataBlock, LEAGUE_LABELS } from '@/lib/review-prompt';
-import { validateReviewOutput } from '@/lib/review-validators';
+import { validateReviewOutput, normalizeVerdicts } from '@/lib/review-validators';
+import { makeResultId } from '@/lib/result-match-key';
 import { fetchReviewFormAndH2H, fetchNRLMatchTimeline } from '@/lib/preview-fetchers';
 import { fetchESPNMatchReport, fetchESPNSeasonResults, deriveSeasonFacts, SOCCER_CUP_SLUGS } from '@/lib/match-report';
 import { buildContributions, buildCricketChart, buildKeyFactors } from '@/lib/review-contributions';
@@ -128,10 +129,36 @@ const GENERATION_AVAILABLE = !process.env.VERCEL
 // same result within seconds of each other, and a second model run for the
 // same match is a minute wasted. Validation failures propagate to every waiter.
 const inflight = new Map<string, Promise<AIReview | null>>();
+
+// Refusal backoff: a match the validators keep refusing would otherwise be
+// retried by the poller every minute at ~2–3 min of model time per attempt
+// (Dolphins v Roosters refused three ticks running, 2026-09-25). After
+// REFUSAL_LIMIT refusals the key rests for REFUSAL_REST_MS; process-local,
+// which is where the generator lives.
+const REFUSAL_LIMIT   = 3;
+const REFUSAL_REST_MS = 6 * 60 * 60 * 1000;
+const refusals = new Map<string, { count: number; restUntil: number }>();
+class ReviewRestingError extends Error {
+  constructor(public readonly until: number) { super('review resting after repeated refusals'); this.name = 'ReviewRestingError'; }
+}
+
 function generateReview(cacheKey: string, dataBlock: string): Promise<AIReview | null> {
   const running = inflight.get(cacheKey);
   if (running) return running;
-  const p = generateReviewUncached(cacheKey, dataBlock).finally(() => inflight.delete(cacheKey));
+  const r = refusals.get(cacheKey);
+  if (r && r.restUntil > Date.now()) return Promise.reject(new ReviewRestingError(r.restUntil));
+  const p = generateReviewUncached(cacheKey, dataBlock)
+    .then(out => { refusals.delete(cacheKey); return out; })
+    .catch(err => {
+      if (err instanceof ReviewValidationError) {
+        const cur = refusals.get(cacheKey) ?? { count: 0, restUntil: 0 };
+        cur.count++;
+        if (cur.count >= REFUSAL_LIMIT) { cur.restUntil = Date.now() + REFUSAL_REST_MS; aiLog(`resting cacheKey=${cacheKey} after ${cur.count} refusals until ${new Date(cur.restUntil).toISOString()}`); }
+        refusals.set(cacheKey, cur);
+      }
+      throw err;
+    })
+    .finally(() => inflight.delete(cacheKey));
   inflight.set(cacheKey, p);
   return p;
 }
@@ -185,7 +212,8 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
       parsed = await generate(); // throws → caught below → returns null → 500
     }
 
-    if (!parsed.summary || !Array.isArray(parsed.keyMoments) || !parsed.verdict) return null;
+    const wellFormed = (r: AIReview) => !!r.summary && Array.isArray(r.keyMoments) && (!!r.verdicts || !!r.verdict);
+    if (!wellFormed(parsed)) return null;
 
     // Validation pass (ported from the preview pipeline): violations → one
     // retry → still violating → REFUSE via throw, so the cache stores nothing.
@@ -193,7 +221,7 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
     if (violations.length > 0) {
       aiLog(`validation-fail cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
       const retry = await generate(violations);
-      if (retry.summary && Array.isArray(retry.keyMoments) && retry.verdict) {
+      if (wellFormed(retry)) {
         const retryViolations = validateReviewOutput(retry, dataBlock);
         if (retryViolations.length === 0) {
           aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry)`);
@@ -213,6 +241,34 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
     console.error('[/api/ai-review] generation error', err);
       return null;
     }
+}
+
+// ─── Mirror key (the opponent's perspective id) ───────────────────────────────
+
+/** Our team id for a source's opponent label ("Roosters", "Hawthorn", "Brighton & Hove Albion"). */
+function resolveTeamId(league: string, name: string): string | undefined {
+  const n = name.trim().toLowerCase();
+  if (!n) return undefined;
+  const pool = TEAMS.filter(t => t.league === league);
+  return pool.find(t => t.name.toLowerCase() === n || t.shortName.toLowerCase() === n)?.id
+      ?? pool.find(t => t.name.toLowerCase().includes(n) || n.includes(t.shortName.toLowerCase()))?.id;
+}
+
+/**
+ * The id the results page renders for the SAME match from the opponent's
+ * row — found from the opponent's own results feed by source event id, so
+ * it is exactly what that row will request. One neutral generation is then
+ * stored under both keys.
+ */
+async function resolveMirrorKey(league: string, opponentTeamId: string, eventKey: string, day: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(`${BASE}/api/results?league=${league}&teamId=${opponentTeamId}`, { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return undefined;
+    const data = await res.json() as unknown;
+    const list = (Array.isArray(data) ? data : (data as { results?: unknown[] })?.results ?? []) as Array<{ sourceId?: string; date: string; opponent: string }>;
+    const hit = list.find(r => r.sourceId === eventKey) ?? list.find(r => String(r.date).slice(0, 10) === day);
+    return hit ? makeResultId(opponentTeamId, hit) : undefined;
+  } catch { return undefined; }
 }
 
 // ─── Input validation ─────────────────────────────────────────────────────────
@@ -406,6 +462,15 @@ export async function POST(req: NextRequest) {
     const sameClub = (a?: string, b?: string) => !!a && !!b && (a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()));
     const homeTeamName = sameClub(report?.homeTeam, teamName) ? teamName : sameClub(report?.homeTeam, opponent) ? opponent : undefined;
 
+    // The opponent's perspective key for the same match: the neutral review is
+    // stored under both, so a user following both clubs costs one generation.
+    const opponentTeamId = (opponentId ? String(opponentId) : undefined) ?? resolveTeamId(league, opponent);
+    const mirrorKey = (opponentTeamId && opponentTeamId !== teamId && typeof eventKey === 'string')
+      ? await resolveMirrorKey(league, opponentTeamId, eventKey, String(date).slice(0, 10))
+      : undefined;
+    // Generation is keyed by the MATCH so the two perspectives never run twice.
+    const genKey = typeof eventKey === 'string' && eventKey ? `event:${eventKey}` : reviewKey;
+
     // Cricket without a real result/innings would generate from placeholder
     // 0-0 scores — a hallucination factory (observed: an invented "0-0 draw").
     // Refuse instead; the panel's plain fallback line covers the gap.
@@ -476,10 +541,10 @@ export async function POST(req: NextRequest) {
 
     // Cron-only inspection: the exact block the model would see, no generation.
     if (isCron && (body as { debugBlock?: boolean }).debugBlock === true) {
-      return NextResponse.json({ dataBlock, seasonFacts, contributions, keyFactors: derivedFactors, playerNames: [...namedPlayers] });
+      return NextResponse.json({ dataBlock, seasonFacts, contributions, keyFactors: derivedFactors, playerNames: [...namedPlayers], mirrorKey, genKey });
     }
 
-    const review = await generateReview(reviewKey, dataBlock);
+    const review = await generateReview(genKey, dataBlock);
     if (!review) {
       return NextResponse.json({ error: 'Generation failed' }, { status: 500 });
     }
@@ -487,14 +552,31 @@ export async function POST(req: NextRequest) {
     // The model's own key moments survive only where the data gives us fewer
     // than two factors to derive (no events, no stats, no season lines).
     const keyMoments = derivedFactors.length >= 2 ? derivedFactors : review.keyMoments;
-    const payload: AIReview = { ...review, keyMoments, ...(contributions.length > 0 ? { contributions } : {}) };
+    // One verdict per club: this key gets its club's, the mirror key the other's.
+    const verdicts = normalizeVerdicts(review, dataBlock);
+    const { verdicts: _drop, ...body_ } = review;
+    void _drop;
+    const forClub = (club: string): AIReview => ({
+      ...body_,
+      keyMoments,
+      verdict: verdicts?.[club] ?? review.verdict ?? '',
+      ...(contributions.length > 0 ? { contributions } : {}),
+    });
+    const payload = forClub(teamName);
 
     await upsertReview(reviewStoreKey(reviewKey), payload, REVIEW_MODEL, aiLog);
+    if (mirrorKey && mirrorKey !== reviewKey) {
+      await upsertReview(reviewStoreKey(mirrorKey), forClub(opponent), REVIEW_MODEL, aiLog);
+      aiLog(`mirrored gameId=${reviewKey} → ${mirrorKey}`);
+    }
     return NextResponse.json(payload);
   } catch (err) {
     if (err instanceof ReviewValidationError) {
       // Both attempts contradicted the derived facts — never serve or cache it.
       return NextResponse.json({ error: 'Generation failed validation' }, { status: 500 });
+    }
+    if (err instanceof ReviewRestingError) {
+      return NextResponse.json({ error: 'Resting after repeated refusals', retryAfter: new Date(err.until).toISOString() }, { status: 429 });
     }
     console.error('[/api/ai-review]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
