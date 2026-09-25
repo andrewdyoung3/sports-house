@@ -55,8 +55,13 @@ src/
                             fact), validateReviewFormRuns (run claims bound to SEASON CONTEXT), validateScorerCounts
                             ("twice"/"hat-trick" bound to the events), validateScoreStates (quoted X–Y / "X-all" /
                             half-time scores must exist in the block), validateStatClaims ("won the clearances" bound
-                            to TEAM STATS presence + direction), validatePerspective (summary opens with / verdict
-                            names the followed team)
+                            to TEAM STATS presence + direction), validateStatValues ("45 tackle breaks", "N more X"
+                            bound to the named side's figure / the gap), validateHalfCounts (goals/tries per half,
+                            "N tries to M"), validateScoringOrder (who scored first, per half; "posted N points"),
+                            validateSeasonClaims (season-high / first-time claims need a SEASON CONTEXT line),
+                            validateVerdicts (one verdict per club, each naming its club). Policy: factual violations
+                            refuse (2 feedback rounds, then 3 refusals → 6 h rest); style-only residue is accepted.
+                            Numbers equal to a TEAM STATS gap/sum count as sourced.
     result-match-key.ts   — makeResultId(): the results page's render id AND the review store key
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
                             (competition-rules.ts = COMP_RULES, the per-season single source of truth)
