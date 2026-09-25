@@ -34,6 +34,10 @@ import { fetchAflMatchStats } from '@/lib/afl-roster';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { readReview, upsertReview, reviewStoreKey } from '@/lib/review-store';
 
+/** Violations that concern phrasing, not facts — never worth a refusal on their own. */
+const isStyleViolation = (v: string): boolean =>
+  /^(?:register crutch|tautology|summary and a verdict substantially repeat)/.test(v);
+
 /** Thrown (not returned) so a failed-validation review is never stored or served. */
 class ReviewValidationError extends Error {
   constructor(violations: string[]) {
@@ -225,6 +229,14 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
         const retryViolations = validateReviewOutput(retry, dataBlock);
         if (retryViolations.length === 0) {
           aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry)`);
+          return retry;
+        }
+        // Style-only residue (a register crutch, a tautology, summary/verdict
+        // overlap) after one feedback round is accepted and logged: every
+        // factual binder passed, and refusing a true review over a phrase was
+        // costing the poller three minutes a tick (AFL finals, 2026-09-26).
+        if (retryViolations.every(isStyleViolation)) {
+          aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (accepted with style notes: ${JSON.stringify(retryViolations)})`);
           return retry;
         }
         violations = retryViolations;

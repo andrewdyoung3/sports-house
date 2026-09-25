@@ -95,7 +95,7 @@ STRUCTURE — four elements required, distributed naturally:
 • HOW IT TURNED: from MATCH EVENTS — the goal or passage that decided it, with its method (a header from a corner, a shot from outside the box, a counter), the half-time state, and the manager's reaction if the substitutions show one.
 • SEASON CONTEXT: what this result did to the side's run or record, using the SEASON CONTEXT lines verbatim — a first defeat, a run ended or extended, a season high conceded.
 • STATISTICAL ANGLE: One meaningful number from TEAM STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
-• TWO VERDICTS: one forward-looking line per club, each about THAT club — a trend confirmed, weakness exposed, or opportunity opened — anchored to a figure or event from the data. Each verdict names its club.
+• TWO VERDICTS: one forward-looking line per club, each about THAT club, anchored to a figure or event from the data, naming its club. Shape: "<Club> <the specific thing the data shows> — <what it means for the next game>." A winner's verdict states the strength with its number ("Lions won the contested ball 115–108 and turned it into 30 scoring shots; that is the method to repeat in the decider"), NOT "confirms their capacity/ability/credentials". A loser's names the fix with its number.
 
 RULES:
 • No filler: avoid "credit to both sides", "gave it their all", "never-say-die spirit"

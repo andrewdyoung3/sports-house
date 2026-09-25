@@ -410,6 +410,12 @@ export function validateScoreStates(review: AIReview, dataBlock: string): string
     for (const m of text.matchAll(/\b(\d{1,3})[–-]\s?all\b/gi)) {
       if (!pairs.has(`${m[1]}:${m[1]}`)) flag(m[0], `"${m[0]}" — the scores were never level at ${m[1]} in MATCH EVENTS`);
     }
+    // "level at ten apiece", "ten each", "levelling at 12" — the same claim in words.
+    for (const m of text.matchAll(/\b(?:level(?:l?ed|ling)?(?: the scores)? at|locked at|tied at)\s+(\d{1,3}|[a-z]+)(?:[- ](?:apiece|all|each))?\b|\b(\d{1,3}|[a-z]+)[- ](?:apiece|each)\b/gi)) {
+      const n = toN(m[1] ?? m[2] ?? '');
+      if (!Number.isFinite(n) || n < 1) continue;
+      if (!pairs.has(`${n}:${n}`)) flag(m[0], `"${m[0]}" — the scores were never level at ${n} in MATCH EVENTS`);
+    }
     if (!ht) continue;
     for (const m of text.matchAll(htRe)) {
       const idx = m.index ?? 0;
@@ -507,9 +513,12 @@ export function validateStatClaims(review: AIReview, dataBlock: string): string[
     const subject = sideAt(Math.max(0, idx - 100), idx);
     if (!subject) continue;
     const mine = subject === 'team' ? t : o, theirs = subject === 'team' ? o : t;
-    if (mine <= theirs) {
+    // "won fewer clearances" claims the LOWER figure — a true statement for the
+    // side that lost the category (false refusal, 2026-09-26).
+    const claimsLower = /^(?:fewer|less|only|just)\b/i.test(phrase);
+    if (claimsLower ? mine >= theirs : mine <= theirs) {
       const who = subject === 'team' ? teamName : opponent;
-      violations.push(`stat claim "${m[0]}" — TEAM STATS have ${who} ${mine} to ${theirs} on ${label}; they did not win that category`);
+      violations.push(`stat claim "${m[0]}" — TEAM STATS have ${who} ${mine} to ${theirs} on ${label}; ${claimsLower ? 'they had the higher figure' : 'they did not win that category'}`);
     }
   }
   return violations;
@@ -607,7 +616,18 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
   for (const { text, side } of sidedSegments(review, ctx)) {
     const lower = text.toLowerCase();
     // "three goals before halftime" / "four first-half tries" / "three tries in the second half"
-    const reA = new RegExp(String.raw`\b${N}\s+(?:unanswered\s+|more\s+|further\s+)?${UNIT}\s+(in|during|after|before|by|inside|since|from|into)\s+(?:the\s+)?${HALF}`, 'gi');
+    const reA = new RegExp(String.raw`\b${N}\s+(?:[a-z]+\s+)?${UNIT}\s+(in|during|after|before|by|inside|since|from|into)\s+(?:the\s+)?${HALF}`, 'gi');
+    // Reverse order: "after halftime with two quick tries" → second half.
+    const reE = new RegExp(String.raw`\b(after|before|by|since)\s+(?:the\s+)?${HALF}\b[^.;]{0,40}?\b${N}\s+(?:[a-z]+\s+)?${UNIT}\b`, 'gi');
+    for (const m of text.matchAll(reE)) {
+      const n = toN(m[3]);
+      const half = halfFromPrep(m[1], m[2]);
+      if (!Number.isFinite(n) || !half) continue;
+      const subject = subjectFor(lower, m.index ?? 0, ctx, side);
+      const [t, o] = counts[half];
+      const ok = subject === 'team' ? n === t : subject === 'opp' ? n === o : (n === t || n === o);
+      if (!ok) flag(m[0], `half count "${m[0]}" — MATCH EVENTS give ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in the ${half} half`);
+    }
     const reB = new RegExp(String.raw`\b${N}\s+(?:unanswered\s+)?(first|second)[- ]half\s+${UNIT}`, 'gi');
     // "both of the team's second-half tries" → the side had exactly two.
     const reD = new RegExp(String.raw`\b(both)\s+(?:of\s+)?(?:the\s+|their\s+|[A-Z][\w'’]*\s+)?(?:team['’]s\s+|side['’]s\s+)?(first|second)[- ]half\s+${UNIT}`, 'gi');
@@ -629,10 +649,10 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
       const near = lower.slice(Math.max(0, idx - 70), idx + m[0].length + 50);
       const half = /second half|after (?:half[- ]?time|halftime|the break|the interval)/.test(near) ? 'second'
         : /first half|before (?:half[- ]?time|halftime|the break)|by (?:half[- ]?time|halftime|the break)/.test(near) ? 'first' : null;
-      if (!half) continue;
       const a = toN(m[1]), b = toN(m[2]);
-      const [t, o] = counts[half];
-      if (!((a === t && b === o) || (a === o && b === t))) flag(m[0], `half count "${m[0]}" — the ${half} half was ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in MATCH EVENTS`);
+      // No half indicator → the whole-match tally ("six tries to four").
+      const [t, o] = half ? counts[half] : [counts.first[0] + counts.second[0], counts.first[1] + counts.second[1]];
+      if (!((a === t && b === o) || (a === o && b === t))) flag(m[0], `${half ? 'half' : 'match'} count "${m[0]}" — ${half ? `the ${half} half` : 'the match'} was ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in MATCH EVENTS`);
     }
   }
   return violations;
@@ -687,17 +707,44 @@ export function validateStatValues(review: AIReview, dataBlock: string): string[
   const surnames = namedPlayers(dataBlock).map(n => n.split(/\s+/).pop()!.toLowerCase());
   const violations: string[] = [];
   const seen = new Set<string>();
-  const NOUN = String.raw`([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2}?)`;
+  // Up to three words after the figure; the noun test runs longest-first so
+  // "tackle breaks" is not read as "tackle(s)" and "scoring shots" as "scoring".
+  const NOUN = String.raw`([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})`;
+  const nounSpec = (phrase: string): { noun: string; spec: (typeof VALUE_NOUNS)[number] } | null => {
+    const words = phrase.trim().split(/\s+/);
+    for (let len = Math.min(3, words.length); len >= 1; len--) {
+      const cand = words.slice(0, len).join(' ');
+      const spec = VALUE_NOUNS.find(v => v.re.test(cand));
+      if (spec) return { noun: cand, spec };
+    }
+    return null;
+  };
   for (const { text, side } of sidedSegments(review, ctx)) {
     const lower = text.toLowerCase();
     const hits: Array<{ idx: number; raw: string; n: number; noun: string }> = [];
-    for (const m of text.matchAll(new RegExp(String.raw`\b(\d{1,4})\s*%?\s+${NOUN}\b`, 'gi'))) hits.push({ idx: m.index ?? 0, raw: m[0], n: Number(m[1]), noun: m[2] });
+    for (const m of text.matchAll(new RegExp(String.raw`\b(\d{1,4})\s*%?\s+${NOUN}\b`, 'gi'))) {
+      const ns = nounSpec(m[2]);
+      if (ns) hits.push({ idx: m.index ?? 0, raw: `${m[1]} ${ns.noun}`, n: Number(m[1]), noun: ns.noun });
+    }
     for (const m of text.matchAll(/\b(?:missed|missing)\s+(\d{1,3})\s+tackles\b/gi)) hits.push({ idx: m.index ?? 0, raw: m[0], n: Number(m[1]), noun: 'missed tackles' });
+    // "12 more scoring shots" / "45 fewer disposals" → the gap between the sides.
+    for (const m of text.matchAll(new RegExp(String.raw`\b(\d{1,4})\s+(more|fewer|extra|additional)\s+${NOUN}\b`, 'gi'))) {
+      const ns = nounSpec(m[3]);
+      const label = ns?.spec.labels.find(l => stats.has(l));
+      if (!label) continue;
+      const [t, o] = stats.get(label)!;
+      const gap = Math.abs(t - o);
+      if (Number(m[1]) !== gap && !seen.has(m[0])) {
+        seen.add(m[0]);
+        violations.push(`stat gap "${m[0]}" — TEAM STATS have ${ctx.teamName} ${t}, ${ctx.opponent} ${o} on ${label}: a gap of ${gap}`);
+      }
+    }
     for (const h of hits) {
       const spec = VALUE_NOUNS.find(v => v.re.test(h.noun.trim()));
       if (!spec) continue;
       const label = spec.labels.find(l => stats.has(l));
       if (!label) continue;
+      if (/^\d+\s+(?:more|fewer|extra|additional)\b/i.test(h.raw)) continue; // handled as a gap above
       if (playerVals.get(label)?.has(h.n)) continue;
       const before = lower.slice(Math.max(0, h.idx - 45), h.idx);
       if (surnames.some(s => s.length >= 3 && before.includes(s))) continue;
@@ -721,7 +768,7 @@ export function validateSeasonClaims(review: AIReview, dataBlock: string): strin
   const start = dataBlock.indexOf('SEASON CONTEXT');
   const section = start >= 0 ? dataBlock.slice(start, dataBlock.indexOf('\n\n', start) === -1 ? undefined : dataBlock.indexOf('\n\n', start)).toLowerCase() : '';
   const kinds: Array<{ re: RegExp; needs: RegExp; label: string }> = [
-    { re: /\b(?:season[- ]high|season maximum|highest (?:\w+ ){0,3}(?:of|this) (?:the )?season|most (?:goals|points|tries) (?:\w+ ){0,5}this season)\b/gi, needs: /most (?:goals|points) .* (?:scored|conceded)/, label: 'a season-high line' },
+    { re: /\b(?:season[- ]high|season maximum|highest (?:\w+ ){0,3}(?:of|this) (?:the )?season|most (?:goals|points|tries) (?:\w+ ){0,5}this season|than (?:they|[A-Z][\w'’]+(?: [A-Z][\w'’]+)?) (?:have|had) (?:all|this|the whole) (?:season|campaign|year))\b/gi, needs: /most (?:goals|points) .* (?:scored|conceded)/, label: 'a season-high line' },
     { re: /\bfirst time this season\b|\bfor the first time\b(?=[^.]{0,40}(?:season|campaign))/gi, needs: /first time this season/, label: '"first time this season"' },
     { re: /\bfirst (?:defeat|loss) of (?:the|their) (?:season|campaign)\b|\bfirst defeat of any kind\b/gi, needs: /first .*defeat/, label: 'a first-defeat line' },
     { re: /\bfirst (?:win|victory) of (?:the|their) (?:season|campaign)\b/gi, needs: /first .*win/, label: 'a first-win line' },
