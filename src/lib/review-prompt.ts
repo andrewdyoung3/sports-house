@@ -85,6 +85,7 @@ REGISTER MECHANICS — how the professionals write match reports:
 • EVIDENCE over adjectives: "convincing", "potent", "unassailable", "decisive", "vulnerabilities" describe nothing. Replace each with the thing that happened — the method of a goal, a stat gap, a substitution, a run ended. If the MATCH EVENTS say two goals came from outside the box, say that; do not say the attack was "potent".
 • A league position is never a cause. "Despite being second, they could not recover" is a non-sequitur — position explains expectation, not what happened on the pitch.
 • Name people the way the report does: the goalscorer, the assist, the player hooked at the hour — and by SHORT club names after the first mention.
+• COUNTS AND STATES ARE CHECKED: a player's tally ("twice", "a brace", "hat-trick") is the number of MATCH EVENTS lines with their name — count them. Any score you quote (X–Y, "X-all", "at half-time") must appear in MATCH EVENTS or the HT line exactly; never reconstruct one. "Won/led/dominated the <stat>" is allowed only for a category in TEAM STATS, and only for the side with the higher figure. A stat the SPORT line mentions (centre bounces, hitouts) is vocabulary, not data — do not claim it.
 
 MARGIN CALIBRATION — read from DERIVED FACTS, do not compute:
 • Use the margin label from DERIVED FACTS verbatim. Never call a competitive defeat "heavy" or vice versa.
@@ -110,7 +111,7 @@ OUTPUT: Return valid JSON only, no markdown fences:
 {
   "summary": "2–3 sentences — WHY the result happened. Open with the decisive structural factor, not the score.",
   "keyMoments": ["interpretive factor 1 (max 12 words)", "factor 2", "factor 3"],
-  "verdict": "1–2 sentences — forward-looking implication for the PERSPECTIVE team."
+  "verdict": "1–2 sentences about the PERSPECTIVE team only: the one thing this result says they must fix or can bank on, anchored to a specific figure or event from the data. Never 'confirms/establishes … contenders', never 'exposes a vulnerability' without naming the mechanism and the number."
 }`;
 
 // ─── Data block builder ───────────────────────────────────────────────────────
@@ -290,7 +291,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     const att      = attendance ? `, attendance ${attendance.toLocaleString('en-AU')}` : '';
     lines.push(venue ? `VENUE: ${venue} — ${sides}${att}` : `HOME/AWAY: ${sides}`);
   }
-  lines.push(`PERSPECTIVE: written for ${teamName} followers — ${teamName} is "the team". Lead with what the result means for ${teamName}, honestly; a defeat is reported as one.`);
+  lines.push(`PERSPECTIVE: written for ${teamName} followers — "the team", "they" and "their" ALWAYS mean ${teamName}, never ${opponent}. Lead with what the result means for ${teamName}, honestly; a defeat is reported as one. Attach every figure to the side it belongs to by name.`);
   {
     const shorts: string[] = [];
     if (teamShort && teamShort !== teamName)          shorts.push(`${teamName} "${teamShort}"`);

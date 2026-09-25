@@ -478,7 +478,7 @@ export function validateRegisterCrutches(output: AIPreview, prompt: string): str
   void prompt;
   const text = [output.context, output.tacticalBattle, output.playerSpotlight, output.verdict, ...(output.keyInsights ?? [])]
     .filter(Boolean).join('  ');
-  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\b(?:will be|is|looms as) (?:crucial|critical|paramount|vital|pivotal|non-negotiable)\b|\blooms large\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\b(?:confirms?|affirms?|validates?|cements?|solidif(?:y|ies)) (?:their|its|his|her) (?:status|resilience|credentials|readiness|dominance)\b|\bunderlines? (?:their|its) readiness\b|\bserious (?:flag |premiership |title )?contender\b/gi;
+  const crutchRe = /\bthe (?:key|decisive|crucial|critical) (?:contest|battle|factor|question|clash|matchup) (?:will be|is|lies|hinges)\b|\b(?:will be|is|looms as) (?:crucial|critical|paramount|vital|pivotal|non-negotiable)\b|\blooms large\b|\bhigh-stakes\b|\bone-off contest\b|\bremains to be seen\b|\bat the end of the day\b|\bfirepower\b|\b(?:confirms?|affirms?|validates?|cements?|solidif(?:y|ies)) (?:their|its|his|her) (?:status|resilience|credentials|readiness|dominance)\b|\bunderlines? (?:their|its) readiness\b|\b(?:serious|genuine|legitimate) (?:flag |premiership |title )?contenders?\b|\b(?:confirms?|establish(?:es|ed|ing)|cements?|underlines?) (?:the |their |its )?(?:[\w'’]+ ){0,3}?(?:ability|capacity|credentials|status|resilience) (?:to|as|in)\b|\bshowcas(?:es|ed|ing)\b|\bexposes? (?:a |the )?(?:clear |structural |worrying )?(?:vulnerabilit(?:y|ies)|weakness(?:es)?|gap)\b(?![^.]{0,40}\b(?:at|in|when|to|under)\b)/gi;
   const violations: string[] = [];
   const seen = new Set<string>();
   for (const m of text.matchAll(crutchRe)) {
@@ -1468,6 +1468,17 @@ export function validatePlayerNames(output: AIPreview, prompt: string): string[]
     if (competition.toLowerCase().includes(lower)) continue;
     if (whitelist.has(lower)) continue;
     if ([...whitelist].some(entry => entry.includes(lower) || lower.includes(entry))) continue;
+    // A sentence-initial word glued to a real name ("Though Logan McDonald",
+    // "While Nick Watson") is not a new person: accept when any suffix of the
+    // candidate is a whitelisted name (live retry cost, 2026-09-25).
+    if (words.length >= 2 && words.slice(1).some((_, i) => {
+      const suffix = words.slice(i + 1).join(' ');
+      return whitelist.has(suffix)
+        || [...whitelist].some(entry => entry.endsWith(suffix) || entry.includes(` ${suffix}`) || entry.startsWith(`${suffix} `))
+        // …or a club ("Ends Hawthorn's run", "While Sydney Swans").
+        || KNOWN_TEAM_NAMES.has(suffix)
+        || teamName.toLowerCase().includes(suffix) || opponentName.toLowerCase().includes(suffix);
+    })) continue;
     const nonSafeWords = words.filter(w => !excluded.has(w) && w.length >= 2);
 
     if (!hasPlayerData) {

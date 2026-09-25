@@ -52,7 +52,11 @@ src/
                             split, goal method counts, sub reactions, stat gaps) — the panel's Key Factors are
                             derived, never LLM, whenever ≥2 can be derived
     review-validators.ts  — Review validators incl. validateRelativePosition (ahead/behind bound to the points-gap
-                            fact) and validateReviewFormRuns (run claims bound to SEASON CONTEXT)
+                            fact), validateReviewFormRuns (run claims bound to SEASON CONTEXT), validateScorerCounts
+                            ("twice"/"hat-trick" bound to the events), validateScoreStates (quoted X–Y / "X-all" /
+                            half-time scores must exist in the block), validateStatClaims ("won the clearances" bound
+                            to TEAM STATS presence + direction), validatePerspective (summary opens with / verdict
+                            names the followed team)
     result-match-key.ts   — makeResultId(): the results page's render id AND the review store key
     f1-data.ts, world-cup.ts, managers.ts, competition-*.ts — preview support data
                             (competition-rules.ts = COMP_RULES, the per-season single source of truth)

@@ -69,7 +69,8 @@ export function buildContributions(
       (byScorer.get(key) ?? byScorer.set(key, []).get(key)!).push(`${m[1]}${tag}`);
     }
     if (byScorer.size > 0) {
-      out.push('Goals: ' + [...byScorer.entries()].map(([who, mins]) => `${who} ${mins.join(', ')}`).join('; '));
+      const tag = (n: number) => n >= 4 ? ' (four)' : n === 3 ? ' (hat-trick)' : '';
+      out.push('Goals: ' + [...byScorer.entries()].map(([who, mins]) => `${who} ${mins.join(', ')}${tag(mins.length)}`).join('; '));
     }
     if (assists?.length) {
       const byName = new Map<string, number>();
@@ -255,6 +256,44 @@ export function buildKeyFactors(input: {
     }
     const reds = report.events.filter(l => /^\S+ Red card /.test(l));
     for (const r of reds) out.push(r.replace(/^(\S+) Red card — (.+?) \((.+?)\).*$/, (_m, min, who, team) => `${shortOf(team)} down to ten from ${min} (${who} sent off)`));
+  }
+
+  // People first: the individual haul that shaped it (soccer ≥2 goals, rugby
+  // league ≥2 tries, AFL ≥4 goals) — the real report of a 5-3 led with the
+  // hat-trick, and the model wrote "scored twice".
+  {
+    const hauls: string[] = [];
+    if (report?.scoringTimeline?.length) {
+      const per = new Map<string, { team: string; mins: string[] }>();
+      for (const l of report.scoringTimeline) {
+        const m = l.match(/^(\S+)\s+(.+?)\s+\((.+?)\)(?:\s+—\s+own goal)?$/);
+        if (!m || /own goal/.test(l)) continue;
+        const e = per.get(m[2]) ?? per.set(m[2], { team: m[3], mins: [] }).get(m[2])!;
+        e.mins.push(m[1]);
+      }
+      for (const [who, e] of per) {
+        if (e.mins.length >= 2) hauls.push(`${who} ${e.mins.length >= 4 ? 'scored four' : e.mins.length === 3 ? 'hat-trick' : 'scored twice'} for ${shortOf(e.team)} (${e.mins.join(', ')})`);
+      }
+    }
+    if (league === 'nrl' && input.matchEvents?.length) {
+      const per = new Map<string, { team: string; n: number }>();
+      for (const l of input.matchEvents) {
+        const m = l.match(/^\d+' Try (\S+) — ([^—]+?) — /);
+        if (!m) continue;
+        const e = per.get(m[2]) ?? per.set(m[2], { team: m[1], n: 0 }).get(m[2])!;
+        e.n++;
+      }
+      for (const [who, e] of per) if (e.n >= 2) hauls.push(`${who} scored ${e.n === 2 ? 'two' : e.n === 3 ? 'three' : e.n} tries for ${shortOf(e.team)}`);
+    }
+    if (league === 'afl' && matchStats) {
+      for (const side of [matchStats.team, matchStats.opponent]) {
+        for (const p of side?.players ?? []) {
+          const g = statRaw(p.stats, ['Goals']);
+          if (g && parseInt(g, 10) >= 4) hauls.push(`${p.name} kicked ${g} for ${shortOf(side.teamName)}`);
+        }
+      }
+    }
+    out.unshift(...hauls.slice(0, 2));
   }
 
   // Team-stat gaps: what the method looked like.

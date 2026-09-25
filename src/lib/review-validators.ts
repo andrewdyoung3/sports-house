@@ -67,6 +67,13 @@ export function validateReviewPhase(review: AIReview, dataBlock: string): string
     for (const m of text.matchAll(badRe)) {
       violations.push(`phase contradiction "${m[0]}" — FINALS CONTEXT says this was a finals fixture`);
     }
+    // A side that LOST a qualifying final is here BECAUSE of the second chance;
+    // "had no second chance" inverts the bracket (live, 2026-09-25).
+    if (/second life|double chance/i.test(dataBlock)) {
+      for (const m of text.matchAll(/\b(?:no|without (?:a|the|any)) (?:second chance|safety net|second life|double chance)\b/gi)) {
+        violations.push(`bracket contradiction "${m[0]}" — the bracket facts describe the second chance that brought the qualifying-final loser here; read them again`);
+      }
+    }
   }
 
   if (/SEASON PHASE: early season/.test(dataBlock)) {
@@ -261,6 +268,479 @@ export function validateReviewFormRuns(review: AIReview, dataBlock: string): str
   return violations;
 }
 
+// ─── Second-tier binders (2026-09-25 audit of the first v10 batch) ───────────
+// With the block finally right, the residual errors were the model miscounting
+// or inventing WITHIN it: "Brobbey and Semenyo score twice" (Brobbey: three),
+// "levelling at 12-all" (never level), "16–4 by halftime" (6–16), "winning
+// centre bounce differential" (no such data), "outpointed inside 50 (55-62)"
+// (backwards). Each is a claim the block can bind.
+
+const COUNT_WORDS: Record<string, number> = { once: 1, twice: 2, brace: 2, 'hat-trick': 3, 'hat trick': 3, treble: 3, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+const countOf = (s: string): number => COUNT_WORDS[s.toLowerCase()] ?? (/^\d+$/.test(s) ? Number(s) : NaN);
+
+/** Named players from the PLAYERS NAMED line (full names + surnames), lower-case. */
+function namedPlayers(dataBlock: string): string[] {
+  const m = dataBlock.match(/^PLAYERS NAMED IN THIS MATCH[^:\n]*:\s*(.+)$/m);
+  return m ? m[1].split(',').map(s => s.trim()).filter(s => s.length > 1) : [];
+}
+
+/** Per-player scoring tallies as the block states them (soccer goals, NRL tries, AFL goals). */
+function scorerTallies(dataBlock: string): Map<string, number> {
+  const tally = new Map<string, number>();
+  const add = (name: string, n = 1) => { const k = name.trim().toLowerCase(); if (k) tally.set(k, (tally.get(k) ?? 0) + n); };
+  for (const m of dataBlock.matchAll(/^\s*\S+ GOAL [^—\n]+ — ([^,(\[\n]+?)(?: \(own goal\))?(?:,|\s\(|\s\[)/gm)) add(m[1]);
+  for (const m of dataBlock.matchAll(/^\s*\d+' Try(?: [^—\n]+)? — ([^—\n]+?) — /gm)) add(m[1]);
+  for (const m of dataBlock.matchAll(/^\s+([^(\n—]+?)(?: \([^)]*\))? — Goals: (\d+)\.\d+/gm)) add(m[1], Number(m[2]));
+  return tally;
+}
+
+/**
+ * A player's stated tally must equal the block's count of their scores.
+ */
+export function validateScorerCounts(review: AIReview, dataBlock: string): string[] {
+  const tally = scorerTallies(dataBlock);
+  if (tally.size === 0) return [];
+  const text = REVIEW_TEXT(review);
+  const names = namedPlayers(dataBlock);
+  const surnameOf = (full: string) => full.split(/\s+/).pop()!.toLowerCase();
+  const resolve = (token: string): string | null => {
+    const t = token.toLowerCase().replace(/['’]s$/, '');
+    const hit = names.find(n => n.toLowerCase() === t || surnameOf(n) === t);
+    return hit ? hit.toLowerCase() : null;
+  };
+  const NAME = String.raw`([A-Z][\w'’\-]+(?:\s+[A-Z][\w'’\-]+){0,2})`;
+  const CNT  = String.raw`(twice|a brace|brace|a hat-trick|hat-trick|hat trick|treble|two|three|four|five|six|\d)`;
+  const VERB = String.raw`(?:scor(?:e|ed|es|ing)|nett(?:ed|ing)|kick(?:ed|ing|s)|cross(?:ed|ing)|bagg(?:ed|ing)|grabb(?:ed|ing)|add(?:ed|ing)|struck|slott(?:ed|ing)|touch(?:ed|ing) down|finish(?:ed|ing))`;
+  const patterns = [
+    new RegExp(String.raw`${NAME}(?:['’]s)?\s+(?:who\s+)?${VERB}\s+(?:[a-z-]+\s+){0,3}?${CNT}(?:\s+(?:goals?|tries|majors|times))?\b`, 'g'),
+    new RegExp(String.raw`(?:a\s+)?${CNT}\s+(?:goals?|tries|majors)?\s*(?:from|by|for|courtesy of)\s+${NAME}`, 'g'),
+    new RegExp(String.raw`${NAME}['’]s?\s+${CNT}\b(?:\s+(?:goals?|tries|majors))?`, 'g'),
+    new RegExp(String.raw`(?:both|each of)\s+${NAME}\s+and\s+${NAME}\s+${VERB}\s+${CNT}`, 'g'),
+  ];
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const re of patterns) {
+    for (const m of text.matchAll(re)) {
+      // Pattern 2 puts the count first; pattern 4 binds two names to one count.
+      const groups = m.slice(1).filter(Boolean);
+      const cntTok = groups.find(g => Number.isFinite(countOf(g.replace(/^a\s+/, ''))));
+      if (!cntTok) continue;
+      const n = countOf(cntTok.replace(/^a\s+/, ''));
+      if (!Number.isFinite(n) || n < 1) continue;
+      for (const g of groups) {
+        if (g === cntTok) continue;
+        const who = resolve(g);
+        if (!who) continue;
+        const actual = tally.get(who) ?? 0;
+        if (actual === n) continue;
+        const key = `${who}:${n}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        violations.push(`scorer count: "${m[0].trim()}" — the events credit ${g} with ${actual} score${actual === 1 ? '' : 's'}, not ${n}; count the MATCH EVENTS lines`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** Every score pair the block states, either order: events, HT/FT, TEAM STATS. */
+function blockPairs(dataBlock: string): Set<string> {
+  const pairs = new Set<string>();
+  const add = (a: string, b: string) => { pairs.add(`${a}:${b}`); pairs.add(`${b}:${a}`); };
+  for (const m of dataBlock.matchAll(/(\d+)\s*[–-]\s*(\d+)/g)) add(m[1], m[2]);
+  for (const m of dataBlock.matchAll(/(\d+),\s*[A-Z][^\n,]*?\s(\d+)\b/g)) add(m[1], m[2]); // "Dolphins 4, Roosters 16"
+  for (const m of dataBlock.matchAll(/(\d+) \((\d+)\.(\d+)\)\s*[–-]\s*(\d+) \((\d+)\.(\d+)\)/g)) { // AFL "30 (20.10) – 26 (19.7)"
+    add(m[1], m[4]); add(m[2], m[5]); add(m[3], m[6]);
+  }
+  return pairs;
+}
+
+/** The review's prose in separately-validated segments (an HT window must not bleed across bullets). */
+const REVIEW_SEGMENTS = (r: AIReview): string[] =>
+  [r.summary, r.verdict, ...(r.keyMoments ?? [])].filter((s): s is string => !!s);
+
+/**
+ * Quoted score states ("12-all", "16–4", "2-0 at half-time") must exist in
+ * the block; a half-time claim must match the HT line exactly.
+ */
+export function validateScoreStates(review: AIReview, dataBlock: string): string[] {
+  const pairs = blockPairs(dataBlock);
+  if (pairs.size === 0) return [];
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const flag = (raw: string, msg: string) => { if (!seen.has(raw)) { seen.add(raw); violations.push(msg); } };
+  const ht = dataBlock.match(/^\s*HT — (.+?) (\d+)–(\d+) (.+)$/m);
+  const h = ht ? Number(ht[2]) : NaN, a = ht ? Number(ht[3]) : NaN;
+  const htRe = /(?:(?:at|by|before|into|reached)\s+(?:the\s+)?(?:half[- ]?time|the break|the interval)|half[- ]?time (?:lead|score|margin|deficit|advantage))/gi;
+
+  for (const text of REVIEW_SEGMENTS(review)) {
+    for (const m of text.matchAll(/\b(\d{1,3})\s*[–-]\s*(\d{1,3})\b(?!['’%])/g)) {
+      if (!pairs.has(`${m[1]}:${m[2]}`)) flag(m[0], `score/stat pair "${m[0]}" appears nowhere in the data — quote states and pairs exactly as MATCH EVENTS or TEAM STATS give them`);
+    }
+    for (const m of text.matchAll(/\b(\d{1,3})[–-]\s?all\b/gi)) {
+      if (!pairs.has(`${m[1]}:${m[1]}`)) flag(m[0], `"${m[0]}" — the scores were never level at ${m[1]} in MATCH EVENTS`);
+    }
+    if (!ht) continue;
+    for (const m of text.matchAll(htRe)) {
+      const idx = m.index ?? 0;
+      const near = text.slice(Math.max(0, idx - 90), idx + m[0].length + 40);
+      for (const p of near.matchAll(/\b(\d{1,3})\s*[–-]\s*(\d{1,3})\b(?!['’%])/g)) {
+        const x = Number(p[1]), y = Number(p[2]);
+        if (!((x === h && y === a) || (x === a && y === h))) flag(`ht:${p[0]}`, `half-time score "${p[0]}" — the HT line says ${ht[1]} ${h}–${a} ${ht[4]}`);
+      }
+      for (const p of near.matchAll(/\b(?:trail(?:ed|ing)?|led|lead(?:ing)?|behind|ahead|up|down)\s+by\s+(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/gi)) {
+        const n = toN(p[1]);
+        if (Number.isFinite(n) && n !== Math.abs(h - a)) flag(`htby:${p[0]}`, `half-time margin "${p[0]}" — the HT line says ${h}–${a}, a margin of ${Math.abs(h - a)}`);
+      }
+    }
+  }
+  return violations;
+}
+
+/** Prose stat nouns → TEAM STATS labels (null = the sport's data never carries it). */
+const STAT_NOUNS: Array<{ re: RegExp; labels: string[] | null }> = [
+  { re: /centre[- ]bounces?|centre[- ]clearances?|hit[- ]?outs?|ruck(?: battle| contest| duel)?/i, labels: null },
+  { re: /clearances?/i,                                              labels: ['Clearances'] },
+  { re: /contested[- ](?:possessions?|ball|footy)|the contest|contested work/i, labels: ['Contested possessions'] },
+  { re: /inside[- ]50s?|forward[- ]50 entries|entries inside 50|territory/i,    labels: ['Inside 50s', 'Terr %'] },
+  { re: /disposals?/i,                                               labels: ['Disposals'] },
+  { re: /scoring shots?/i,                                           labels: ['Scoring shots'] },
+  { re: /line[- ]?breaks?/i,                                         labels: ['Line breaks'] },
+  { re: /tackle[- ]breaks?/i,                                        labels: ['Tackle breaks'] },
+  { re: /run metres|metres gained|yardage|metres/i,                  labels: ['Run metres'] },
+  { re: /offloads?/i,                                                labels: ['Offloads'] },
+  { re: /completion(?: rates?)?|completions/i,                       labels: ['Comp %'] },
+  { re: /possession(?: (?:share|count|battle|stakes))?/i,            labels: ['Poss %', 'Possession %'] },
+  { re: /shots on target/i,                                          labels: ['Shots on target'] },
+  { re: /shots?(?: count)?/i,                                        labels: ['Shots'] },
+  { re: /corners?(?: count)?/i,                                      labels: ['Corners'] },
+  { re: /tackles?(?: count)?/i,                                      labels: ['Tackles'] },
+];
+
+/**
+ * "Won / led / dominated the <stat>" claims: the stat must exist in TEAM
+ * STATS and the named side must be the one with the higher figure.
+ */
+export function validateStatClaims(review: AIReview, dataBlock: string): string[] {
+  const fixture = dataBlock.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
+  if (!fixture) return [];
+  const teamName = fixture[1].trim(), opponent = fixture[2].trim();
+  const namesLine = dataBlock.match(/^NAMES: after first mention call .+$/m)?.[0] ?? '';
+  const quoted = [...namesLine.matchAll(/"([^"]+)"/g)].map(q => q[1]);
+  const teamToks = clubTokens(teamName, quoted.find(q => teamName.includes(q) || q.includes(teamName.split(' ')[0])));
+  const oppToks  = clubTokens(opponent, quoted.find(q => opponent.includes(q) || q.includes(opponent.split(' ')[0])));
+
+  const statsHead = dataBlock.match(/^TEAM STATS \((.+?) – (.+?)\):\n((?:[^\n]+\n)*?)\n/m);
+  const stats = new Map<string, [number, number]>();
+  if (statsHead) {
+    for (const line of statsHead[3].split('\n')) {
+      const m = line.match(/^\s+(.+?):\s*([\d.]+)(?:\s*\([^)]*\))?\s*–\s*([\d.]+)/);
+      if (m) stats.set(m[1], [Number(m[2]), Number(m[3])]);
+    }
+  }
+
+  const text = REVIEW_TEXT(review);
+  const lower = text.toLowerCase();
+  // Up to three words after the verb ("controlled centre bounces and" → the
+  // noun test runs on the phrase), and up to three before "advantage".
+  const claimRe = /\b(?:won|winning|led|leading|dominat(?:ed|ing)|controll(?:ed|ing)|edg(?:ed|ing)|owned|owning|shaded|monopoli[sz]ed)\s+(?:the\s+|their\s+|its\s+)?([a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*){0,2})|\b([a-z][a-z0-9-]*(?:\s+[a-z][a-z0-9-]*){0,2})\s+(?:advantage|dominance|differential|supremacy)\b/gi;
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const sideAt = (from: number, to: number): 'team' | 'opp' | null => {
+    let best: { side: 'team' | 'opp'; at: number } | null = null;
+    for (const [side, toks] of [['team', teamToks], ['opp', oppToks]] as const) {
+      for (const t of toks) for (let at = lower.indexOf(t, from); at >= 0 && at < to; at = lower.indexOf(t, at + 1)) {
+        if (!best || at > best.at) best = { side, at };
+      }
+    }
+    return best?.side ?? null;
+  };
+  for (const m of text.matchAll(claimRe)) {
+    const phrase = (m[1] ?? m[2] ?? '').trim();
+    if (!phrase) continue;
+    const noun = STAT_NOUNS.find(s => s.re.test(phrase));
+    if (!noun) continue;
+    const key = m[0].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (noun.labels === null) {
+      violations.push(`stat claim "${m[0]}" — the data carries no such figure; claim only categories listed in TEAM STATS`);
+      continue;
+    }
+    const label = noun.labels.find(l => stats.has(l));
+    if (!label) {
+      violations.push(`stat claim "${m[0]}" — ${noun.labels[0]} is not in TEAM STATS for this match; claim only categories listed there`);
+      continue;
+    }
+    const [t, o] = stats.get(label)!;
+    const idx = m.index ?? 0;
+    const subject = sideAt(Math.max(0, idx - 100), idx);
+    if (!subject) continue;
+    const mine = subject === 'team' ? t : o, theirs = subject === 'team' ? o : t;
+    if (mine <= theirs) {
+      const who = subject === 'team' ? teamName : opponent;
+      violations.push(`stat claim "${m[0]}" — TEAM STATS have ${who} ${mine} to ${theirs} on ${label}; they did not win that category`);
+    }
+  }
+  return violations;
+}
+
+// ─── Third-tier binders (audit of the regenerated batch) ─────────────────────
+
+interface SideContext { teamName: string; opponent: string; teamToks: string[]; oppToks: string[] }
+function sideContext(dataBlock: string): SideContext | null {
+  const fixture = dataBlock.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
+  if (!fixture) return null;
+  const teamName = fixture[1].trim(), opponent = fixture[2].trim();
+  const quoted = [...(dataBlock.match(/^NAMES: after first mention call .+$/m)?.[0] ?? '').matchAll(/"([^"]+)"/g)].map(q => q[1]);
+  return {
+    teamName, opponent,
+    teamToks: clubTokens(teamName, quoted.find(q => teamName.includes(q) || q.includes(teamName.split(' ')[0]))),
+    oppToks:  clubTokens(opponent, quoted.find(q => opponent.includes(q) || q.includes(opponent.split(' ')[0]))),
+  };
+}
+
+/**
+ * Whose figure a phrase is about: the nearest side named before it ("the
+ * team"/"they" = the perspective side), flipped when "conced…" sits between
+ * the subject and the phrase (a side concedes the OTHER side's tally).
+ */
+function subjectFor(lowerText: string, idx: number, ctx: SideContext): 'team' | 'opp' | null {
+  const from = Math.max(0, idx - 110);
+  const window = lowerText.slice(from, idx);
+  let best: { side: 'team' | 'opp'; at: number } | null = null;
+  for (const [side, toks] of [['team', ctx.teamToks], ['opp', ctx.oppToks]] as const) {
+    for (const t of toks) for (let at = window.indexOf(t); at >= 0; at = window.indexOf(t, at + 1)) {
+      if (!best || at > best.at) best = { side, at };
+    }
+  }
+  for (const m of window.matchAll(/\bthe (?:team|side)\b|\bthey\b|\btheir\b/g)) {
+    if (!best || (m.index ?? 0) > best.at) best = { side: 'team', at: m.index ?? 0 };
+  }
+  if (!best) return null;
+  // Flip only when "conceding" is the verb governing THIS phrase — "conceding
+  // 45 tackle breaks and missing 33 tackles" flips the first figure, not the second.
+  const between = window.slice(best.at);
+  let lastVerb: string | null = null;
+  for (const v of between.matchAll(/\b(conced\w*|miss(?:ed|ing)|made|making|won|winning|led|leading|scor\w+|record\w*|manag\w+|had|with)\b/g)) lastVerb = v[1];
+  return lastVerb && /^conced/.test(lastVerb) ? (best.side === 'team' ? 'opp' : 'team') : best.side;
+}
+
+/** Scores per side per half from MATCH EVENTS (soccer GOAL lines, rugby Try lines). */
+function halfCounts(dataBlock: string, ctx: SideContext): { first: [number, number]; second: [number, number] } | null {
+  const start = dataBlock.indexOf('MATCH EVENTS');
+  if (start < 0) return null;
+  const section = dataBlock.slice(start, dataBlock.indexOf('\n\n', start) === -1 ? undefined : dataBlock.indexOf('\n\n', start));
+  const first: [number, number] = [0, 0], second: [number, number] = [0, 0];
+  let half: 'first' | 'second' = 'first';
+  let sawHT = false;
+  for (const line of section.split('\n')) {
+    if (/^\s*HT — /.test(line)) { half = 'second'; sawHT = true; continue; }
+    const m = line.match(/^\s*\S+ (?:GOAL|Try) ([^—\n]+?) — /);
+    if (!m) continue;
+    const side = m[1].trim().toLowerCase();
+    const isTeam = ctx.teamToks.some(t => side.includes(t)) || ctx.teamName.toLowerCase().includes(side);
+    const isOpp  = ctx.oppToks.some(t => side.includes(t))  || ctx.opponent.toLowerCase().includes(side);
+    if (!isTeam && !isOpp) continue;
+    (half === 'first' ? first : second)[isTeam ? 0 : 1]++;
+  }
+  return sawHT ? { first, second } : null;
+}
+
+/**
+ * "N goals/tries before half-time", "N first-half tries", "three tries to two
+ * after the break" — bound to the events on either side of the HT line.
+ */
+export function validateHalfCounts(review: AIReview, dataBlock: string): string[] {
+  const ctx = sideContext(dataBlock);
+  if (!ctx) return [];
+  const counts = halfCounts(dataBlock, ctx);
+  if (!counts) return [];
+  const N = String.raw`(\d{1,2}|one|two|three|four|five|six|seven|eight)`;
+  const UNIT = String.raw`(?:goals?|tries|majors)`;
+  const HALF = String.raw`(first half|second half|half[- ]?time|halftime|the break|the interval)`;
+  const halfOf = (s: string): 'first' | 'second' | null => {
+    const l = s.toLowerCase();
+    if (/second half/.test(l)) return 'second';
+    if (/first half/.test(l)) return 'first';
+    return null;
+  };
+  const halfFromPrep = (prep: string, word: string): 'first' | 'second' | null =>
+    halfOf(word) ?? (/^(?:after|since|from)$/i.test(prep) ? 'second' : /^(?:before|by|inside|in|during|to|into)$/i.test(prep) ? 'first' : null);
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const flag = (k: string, msg: string) => { if (!seen.has(k)) { seen.add(k); violations.push(msg); } };
+
+  for (const text of REVIEW_SEGMENTS(review)) {
+    const lower = text.toLowerCase();
+    // "three goals before halftime" / "four first-half tries" / "three tries in the second half"
+    const reA = new RegExp(String.raw`\b${N}\s+(?:unanswered\s+|more\s+|further\s+)?${UNIT}\s+(in|during|after|before|by|inside|since|from|into)\s+(?:the\s+)?${HALF}`, 'gi');
+    const reB = new RegExp(String.raw`\b${N}\s+(?:unanswered\s+)?(first|second)[- ]half\s+${UNIT}`, 'gi');
+    // "both of the team's second-half tries" → the side had exactly two.
+    const reD = new RegExp(String.raw`\b(both)\s+(?:of\s+)?(?:the\s+|their\s+|[A-Z][\w'’]*\s+)?(?:team['’]s\s+|side['’]s\s+)?(first|second)[- ]half\s+${UNIT}`, 'gi');
+    for (const re of [reA, reB, reD]) {
+      for (const m of text.matchAll(re)) {
+        const n = re === reD ? 2 : toN(m[1]);
+        const half = re !== reA ? (m[2].toLowerCase() as 'first' | 'second') : halfFromPrep(m[2], m[3]);
+        if (!Number.isFinite(n) || !half) continue;
+        const subject = subjectFor(lower, m.index ?? 0, ctx);
+        const [t, o] = counts[half];
+        const ok = subject === 'team' ? n === t : subject === 'opp' ? n === o : (n === t || n === o);
+        if (!ok) flag(m[0], `half count "${m[0]}" — MATCH EVENTS give ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in the ${half} half`);
+      }
+    }
+    // "three tries to two" with a half indicator nearby
+    const reC = new RegExp(String.raw`\b${N}\s+${UNIT}\s+to\s+${N}\b`, 'gi');
+    for (const m of text.matchAll(reC)) {
+      const idx = m.index ?? 0;
+      const near = lower.slice(Math.max(0, idx - 70), idx + m[0].length + 50);
+      const half = /second half|after (?:half[- ]?time|halftime|the break|the interval)/.test(near) ? 'second'
+        : /first half|before (?:half[- ]?time|halftime|the break)|by (?:half[- ]?time|halftime|the break)/.test(near) ? 'first' : null;
+      if (!half) continue;
+      const a = toN(m[1]), b = toN(m[2]);
+      const [t, o] = counts[half];
+      if (!((a === t && b === o) || (a === o && b === t))) flag(m[0], `half count "${m[0]}" — the ${half} half was ${ctx.teamName} ${t}, ${ctx.opponent} ${o} in MATCH EVENTS`);
+    }
+  }
+  return violations;
+}
+
+/** Stat nouns as they appear with a number in prose → block labels. */
+const VALUE_NOUNS: Array<{ re: RegExp; labels: string[] }> = [
+  { re: /^tackle[- ]breaks?$/i,                     labels: ['Tackle breaks'] },
+  { re: /^missed tackles?$/i,                       labels: ['Missed tackles'] },
+  { re: /^line[- ]?breaks?$/i,                      labels: ['Line breaks'] },
+  { re: /^(?:run )?metres$/i,                       labels: ['Run metres'] },
+  { re: /^errors?$/i,                               labels: ['Errors'] },
+  { re: /^penalties$/i,                             labels: ['Pens'] },
+  { re: /^offloads?$/i,                             labels: ['Offloads'] },
+  { re: /^disposals?$/i,                            labels: ['Disposals'] },
+  { re: /^inside[- ]50s?$/i,                        labels: ['Inside 50s'] },
+  { re: /^clearances?$/i,                           labels: ['Clearances'] },
+  { re: /^contested possessions?$/i,                labels: ['Contested possessions'] },
+  { re: /^tackles?$/i,                              labels: ['Tackles'] },
+  { re: /^scoring shots?$/i,                        labels: ['Scoring shots'] },
+  { re: /^shots on target$/i,                       labels: ['Shots on target'] },
+  { re: /^shots?$/i,                                labels: ['Shots'] },
+  { re: /^corners?$/i,                              labels: ['Corners'] },
+  { re: /^(?:of (?:the )?)?possession$/i,           labels: ['Poss %', 'Possession %'] },
+  { re: /^completion(?: rate)?$/i,                  labels: ['Comp %'] },
+];
+
+/**
+ * "45 tackle breaks", "missing 33 tackles", "55% possession" — the figure must
+ * be the named side's value for that TEAM STATS label.
+ */
+export function validateStatValues(review: AIReview, dataBlock: string): string[] {
+  const ctx = sideContext(dataBlock);
+  if (!ctx) return [];
+  const head = dataBlock.match(/^TEAM STATS \((.+?) – (.+?)\):\n((?:[^\n]+\n)*?)\n/m);
+  if (!head) return [];
+  const stats = new Map<string, [number, number]>();
+  for (const line of head[3].split('\n')) {
+    const m = line.match(/^\s+(.+?):\s*([\d.]+)(?:\s*\([^)]*\))?\s*–\s*([\d.]+)/);
+    if (m) stats.set(m[1], [Number(m[2]), Number(m[3])]);
+  }
+  // Player-level figures ("Caleb Serong 28 disposals") are not team totals:
+  // skip a figure that matches a KEY PERFORMERS / SCORERS value for that stat,
+  // or that follows a named player closely.
+  const playerVals = new Map<string, Set<number>>();
+  for (const line of dataBlock.matchAll(/^\s+[^\n—]+ — ((?:[A-Za-z0-9 %]+: [\d.]+(?:, )?)+)$/gm)) {
+    for (const kv of line[1].matchAll(/([A-Za-z0-9 %]+): ([\d.]+)/g)) {
+      const k = kv[1].trim();
+      (playerVals.get(k) ?? playerVals.set(k, new Set()).get(k)!).add(Math.floor(Number(kv[2])));
+    }
+  }
+  const surnames = namedPlayers(dataBlock).map(n => n.split(/\s+/).pop()!.toLowerCase());
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const NOUN = String.raw`([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2}?)`;
+  for (const text of REVIEW_SEGMENTS(review)) {
+    const lower = text.toLowerCase();
+    const hits: Array<{ idx: number; raw: string; n: number; noun: string }> = [];
+    for (const m of text.matchAll(new RegExp(String.raw`\b(\d{1,4})\s*%?\s+${NOUN}\b`, 'gi'))) hits.push({ idx: m.index ?? 0, raw: m[0], n: Number(m[1]), noun: m[2] });
+    for (const m of text.matchAll(/\b(?:missed|missing)\s+(\d{1,3})\s+tackles\b/gi)) hits.push({ idx: m.index ?? 0, raw: m[0], n: Number(m[1]), noun: 'missed tackles' });
+    for (const h of hits) {
+      const spec = VALUE_NOUNS.find(v => v.re.test(h.noun.trim()));
+      if (!spec) continue;
+      const label = spec.labels.find(l => stats.has(l));
+      if (!label) continue;
+      if (playerVals.get(label)?.has(h.n)) continue;
+      const before = lower.slice(Math.max(0, h.idx - 45), h.idx);
+      if (surnames.some(s => s.length >= 3 && before.includes(s))) continue;
+      const [t, o] = stats.get(label)!;
+      const subject = subjectFor(lower, h.idx, ctx);
+      const ok = subject === 'team' ? h.n === t : subject === 'opp' ? h.n === o : (h.n === t || h.n === o);
+      if (ok || seen.has(h.raw)) continue;
+      seen.add(h.raw);
+      const who = subject === 'team' ? ctx.teamName : ctx.opponent;
+      violations.push(`stat value "${h.raw}" — TEAM STATS have ${who} at ${subject === 'team' ? t : o} on ${label} (the other side ${subject === 'team' ? o : t}); attach each figure to the side it belongs to`);
+    }
+  }
+  return violations;
+}
+
+/**
+ * Season-record claims ("season high", "first time this season", "first defeat
+ * of the season") exist only where SEASON CONTEXT states them.
+ */
+export function validateSeasonClaims(review: AIReview, dataBlock: string): string[] {
+  const start = dataBlock.indexOf('SEASON CONTEXT');
+  const section = start >= 0 ? dataBlock.slice(start, dataBlock.indexOf('\n\n', start) === -1 ? undefined : dataBlock.indexOf('\n\n', start)).toLowerCase() : '';
+  const kinds: Array<{ re: RegExp; needs: RegExp; label: string }> = [
+    { re: /\b(?:season[- ]high|season maximum|highest (?:\w+ ){0,3}(?:of|this) (?:the )?season|most (?:goals|points|tries) (?:\w+ ){0,5}this season)\b/gi, needs: /most (?:goals|points) .* (?:scored|conceded)/, label: 'a season-high line' },
+    { re: /\bfirst time this season\b|\bfor the first time\b(?=[^.]{0,40}(?:season|campaign))/gi, needs: /first time this season/, label: '"first time this season"' },
+    { re: /\bfirst (?:defeat|loss) of (?:the|their) (?:season|campaign)\b|\bfirst defeat of any kind\b/gi, needs: /first .*defeat/, label: 'a first-defeat line' },
+    { re: /\bfirst (?:win|victory) of (?:the|their) (?:season|campaign)\b/gi, needs: /first .*win/, label: 'a first-win line' },
+  ];
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  for (const text of REVIEW_SEGMENTS(review)) {
+    for (const k of kinds) {
+      for (const m of text.matchAll(k.re)) {
+        const hit = m[0].toLowerCase();
+        if (seen.has(hit)) continue;
+        // Direction for season highs: scored vs conceded must match a line of that kind.
+        let needs = k.needs;
+        if (k.label === 'a season-high line') {
+          const near = text.slice(Math.max(0, (m.index ?? 0) - 60), (m.index ?? 0) + hit.length + 40).toLowerCase();
+          if (/conced/.test(near)) needs = /conceded/; else if (/scor/.test(near)) needs = /have scored/;
+        }
+        if (!needs.test(section)) {
+          seen.add(hit);
+          violations.push(`season claim "${m[0]}" — SEASON CONTEXT has no ${k.label} supporting it; state only the season facts given`);
+        }
+      }
+    }
+  }
+  return violations;
+}
+
+/**
+ * The review is written for one side: the summary's first sentence and the
+ * verdict must reference it (name, short name, or "the team/side").
+ */
+export function validatePerspective(review: AIReview, dataBlock: string): string[] {
+  const persp = dataBlock.match(/^PERSPECTIVE: written for (.+?) followers/m);
+  if (!persp) return [];
+  const fixture = dataBlock.match(/^FIXTURE:\s*(.+?)\s+vs\s+(.+)$/m);
+  const namesLine = dataBlock.match(/^NAMES: after first mention call .+$/m)?.[0] ?? '';
+  const quoted = [...namesLine.matchAll(/"([^"]+)"/g)].map(q => q[1]);
+  const full = persp[1].trim();
+  const toks = clubTokens(full, ...quoted.filter(q => full.includes(q) || q.includes(full.split(' ')[0])));
+  const opp = fixture ? (fixture[1].trim() === full ? fixture[2].trim() : fixture[1].trim()) : '';
+  const oppToks = clubTokens(opp);
+  const mentions = (s: string) => {
+    const l = s.toLowerCase();
+    return /\bthe (?:team|side)\b/.test(l) || toks.some(t => l.includes(t) && !oppToks.includes(t));
+  };
+  const violations: string[] = [];
+  const first = (review.summary ?? '').split(/(?<=[.;])\s/)[0] ?? '';
+  if (first && !mentions(first)) violations.push(`perspective: the summary opens without ${full} ("${first.slice(0, 70)}…") — this review is written for ${full} followers; lead with them`);
+  if (review.verdict && !mentions(review.verdict)) violations.push(`perspective: the verdict never refers to ${full} — it must state the implication for them`);
+  return violations;
+}
+
 /** Full review validation pass. Empty array = clean, safe to cache and serve. */
 export function validateReviewOutput(review: AIReview, dataBlock: string): string[] {
   const shaped = asPreviewShape(review);
@@ -290,6 +770,13 @@ export function validateReviewOutput(review: AIReview, dataBlock: string): strin
     ...validateReviewOverlap(review, dataBlock),
     ...validateRelativePosition(review, dataBlock),
     ...validateReviewFormRuns(review, dataBlock),
+    ...validateScorerCounts(review, dataBlock),
+    ...validateScoreStates(review, dataBlock),
+    ...validateStatClaims(review, dataBlock),
+    ...validateStatValues(review, dataBlock),
+    ...validateHalfCounts(review, dataBlock),
+    ...validateSeasonClaims(review, dataBlock),
+    ...validatePerspective(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),
     ...validateReviewOpener(review, dataBlock),
