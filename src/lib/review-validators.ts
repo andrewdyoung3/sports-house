@@ -833,8 +833,32 @@ export function validateVerdicts(review: AIReview, dataBlock: string): string[] 
   return violations;
 }
 
+/**
+ * Numbers the model may legitimately derive: the gap between the two sides on
+ * any TEAM STATS line or score pair ("1781 run metres to 1554" → 227). The
+ * shared numeral binder only knows literal figures, and was refusing correct
+ * arithmetic three ticks running (2026-09-26).
+ */
+function derivedNumbers(dataBlock: string): Set<number> {
+  const out = new Set<number>();
+  for (const m of dataBlock.matchAll(/(\d+(?:\.\d+)?)(?:\s*\([^)]*\))?\s*[–-]\s*(\d+(?:\.\d+)?)/g)) {
+    const a = Number(m[1]), b = Number(m[2]);
+    if (Number.isFinite(a) && Number.isFinite(b)) { out.add(Math.abs(Math.round(a - b))); out.add(Math.round(a + b)); }
+  }
+  for (const m of dataBlock.matchAll(/(\d+),\s*[A-Z][^\n,]*?\s(\d+)\b/g)) out.add(Math.abs(Number(m[1]) - Number(m[2])));
+  return out;
+}
+
 /** Full review validation pass. Empty array = clean, safe to cache and serve. */
 export function validateReviewOutput(review: AIReview, dataBlock: string): string[] {
+  const derived = derivedNumbers(dataBlock);
+  return validateReviewOutputRaw(review, dataBlock).filter(v => {
+    const m = v.match(/^unsourced number "[^"]*" — no figure (\d+) appears/);
+    return !(m && derived.has(Number(m[1])));
+  });
+}
+
+function validateReviewOutputRaw(review: AIReview, dataBlock: string): string[] {
   const shaped = asPreviewShape(review);
   return [
     ...validateFinalsSeeding(shaped, dataBlock),

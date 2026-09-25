@@ -227,28 +227,32 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
     // 2026-09-26: the first retry reliably fixes what it is told and just as
     // reliably introduces one new miscount; the second lands it.
     let violations = validateReviewOutput(parsed, dataBlock);
-    for (let round = 1; violations.length > 0 && round <= FEEDBACK_ROUNDS; round++) {
-      aiLog(`validation-fail cacheKey=${cacheKey} round=${round} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — retrying with feedback`);
-      const retry = await generate(violations);
-      if (!wellFormed(retry)) continue;
+    // Best candidate across rounds = fewest FACTUAL violations. Style-only
+    // residue (a register crutch, a tautology, summary/verdict overlap) is
+    // accepted and logged at the end: every factual binder passed, and
+    // refusing a true review over a phrase was costing the poller three
+    // minutes a tick (AFL finals, 2026-09-26). A candidate is judged on its
+    // own violations even when a later retry comes back malformed.
+    const factual = (vs: string[]) => vs.filter(v => !isStyleViolation(v));
+    let best: { review: AIReview; violations: string[] } = { review: parsed, violations };
+    for (let round = 1; factual(best.violations).length > 0 && round <= FEEDBACK_ROUNDS; round++) {
+      aiLog(`validation-fail cacheKey=${cacheKey} round=${round} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(best.violations)} — retrying with feedback`);
+      const retry = await generate(best.violations);
+      if (!wellFormed(retry)) { aiLog(`malformed retry cacheKey=${cacheKey} round=${round}`); continue; }
       const retryViolations = validateReviewOutput(retry, dataBlock);
       if (retryViolations.length === 0) {
         aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (clean on retry ${round})`);
         return retry;
       }
-      // Style-only residue (a register crutch, a tautology, summary/verdict
-      // overlap) after a feedback round is accepted and logged: every factual
-      // binder passed, and refusing a true review over a phrase was costing the
-      // poller three minutes a tick (AFL finals, 2026-09-26).
-      if (retryViolations.every(isStyleViolation)) {
-        aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (accepted with style notes: ${JSON.stringify(retryViolations)})`);
-        return retry;
-      }
-      violations = retryViolations;
+      if (factual(retryViolations).length <= factual(best.violations).length) best = { review: retry, violations: retryViolations };
     }
-    if (violations.length > 0) {
-      aiLog(`refuse cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(violations)} — all attempts violate, will not serve`);
-      throw new ReviewValidationError(violations);
+    if (factual(best.violations).length > 0) {
+      aiLog(`refuse cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms violations=${JSON.stringify(best.violations)} — all attempts violate, will not serve`);
+      throw new ReviewValidationError(best.violations);
+    }
+    if (best.violations.length > 0) {
+      aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms (accepted with style notes: ${JSON.stringify(best.violations)})`);
+      return best.review;
     }
 
     aiLog(`done  cacheKey=${cacheKey} elapsed=${Date.now() - t0}ms`);
