@@ -658,6 +658,81 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
   return violations;
 }
 
+/** Sides of the scoring events in order, split at the HT line. */
+function scoringOrder(dataBlock: string, ctx: SideContext): { first: Array<'team' | 'opp'>; second: Array<'team' | 'opp'> } | null {
+  const start = dataBlock.indexOf('MATCH EVENTS');
+  if (start < 0) return null;
+  const end = dataBlock.indexOf('\n\n', start);
+  const section = dataBlock.slice(start, end === -1 ? undefined : end);
+  const first: Array<'team' | 'opp'> = [], second: Array<'team' | 'opp'> = [];
+  let half: 'first' | 'second' = 'first';
+  for (const line of section.split('\n')) {
+    if (/^\s*HT — /.test(line)) { half = 'second'; continue; }
+    const m = line.match(/^\s*\S+ (?:GOAL|Try|Penalty Goal|Field Goal) ([^—\n]+?) — /);
+    if (!m) continue;
+    const s = m[1].trim().toLowerCase();
+    const isTeam = ctx.teamToks.some(t => s.includes(t)) || ctx.teamName.toLowerCase().includes(s);
+    const isOpp  = ctx.oppToks.some(t => s.includes(t))  || ctx.opponent.toLowerCase().includes(s);
+    if (!isTeam && !isOpp) continue;
+    (half === 'first' ? first : second).push(isTeam ? 'team' : 'opp');
+  }
+  return first.length + second.length > 0 ? { first, second } : null;
+}
+
+/**
+ * "Opened the scoring", "struck first", "opened with two quick tries",
+ * "first to score after the break" — bound to the order of the events;
+ * "posted / scored N points" bound to the final score.
+ */
+export function validateScoringOrder(review: AIReview, dataBlock: string): string[] {
+  const ctx = sideContext(dataBlock);
+  if (!ctx) return [];
+  const order = scoringOrder(dataBlock, ctx);
+  const score = dataBlock.match(/^Score:\s*(.+?) (\d+) – (\d+) (.+)$/m);
+  const violations: string[] = [];
+  const seen = new Set<string>();
+  const flag = (k: string, msg: string) => { if (!seen.has(k)) { seen.add(k); violations.push(msg); } };
+  const name = (s: 'team' | 'opp') => s === 'team' ? ctx.teamName : ctx.opponent;
+
+  for (const { text, side } of sidedSegments(review, ctx)) {
+    const lower = text.toLowerCase();
+    if (order) {
+      const firstRe = /\b(?:opened the scoring|opened (?:up )?with|scored first|struck first|drew first blood|first (?:team |side )?to score|first on the (?:board|scoreboard)|early (?:lead|breakthrough))\b/gi;
+      for (const m of text.matchAll(firstRe)) {
+        const idx = m.index ?? 0;
+        const near = lower.slice(idx, idx + m[0].length + 60);
+        const half = /second half|after (?:half[- ]?time|halftime|the break|the interval)/.test(near) ? 'second'
+          : /each half|both halves/.test(near) ? 'both' : 'first';
+        const subject = subjectFor(lower, idx, ctx, side);
+        if (!subject) continue;
+        const check = (h: 'first' | 'second') => {
+          const seq = order[h];
+          if (seq.length === 0) return true;
+          // "opened with two quick tries" → the first N scores must all be theirs.
+          const nM = near.match(/^\S+(?:\s+\S+){0,3}?\s+(two|three|four|\d)\s+(?:[a-z]+\s+)?(?:tries|goals)/);
+          const n = nM ? toN(nM[1]) : 1;
+          return seq.slice(0, Math.max(1, n)).every(s => s === subject);
+        };
+        const ok = half === 'both' ? check('first') && check('second') : check(half);
+        if (!ok) {
+          const h = half === 'both' ? 'second' : half;
+          flag(m[0], `scoring order "${m[0]}" — MATCH EVENTS have ${name(order[h][0])} scoring first in the ${h} half`);
+        }
+      }
+    }
+    if (score) {
+      const tScore = Number(score[2]), oScore = Number(score[3]);
+      for (const m of text.matchAll(/\b(?:posted|scored|racked up|put up|ran up|amassed|managed|finished with)\s+(\d{1,3})\s+points\b/gi)) {
+        const subject = subjectFor(lower, m.index ?? 0, ctx, side);
+        const n = Number(m[1]);
+        const ok = subject === 'team' ? n === tScore : subject === 'opp' ? n === oScore : (n === tScore || n === oScore);
+        if (!ok) flag(m[0], `"${m[0]}" — the final score is ${ctx.teamName} ${tScore}, ${ctx.opponent} ${oScore}`);
+      }
+    }
+  }
+  return violations;
+}
+
 /** Stat nouns as they appear with a number in prose → block labels. */
 const VALUE_NOUNS: Array<{ re: RegExp; labels: string[] }> = [
   { re: /^tackle[- ]breaks?$/i,                     labels: ['Tackle breaks'] },
@@ -891,6 +966,7 @@ function validateReviewOutputRaw(review: AIReview, dataBlock: string): string[] 
     ...validateStatClaims(review, dataBlock),
     ...validateStatValues(review, dataBlock),
     ...validateHalfCounts(review, dataBlock),
+    ...validateScoringOrder(review, dataBlock),
     ...validateSeasonClaims(review, dataBlock),
     ...validateVerdicts(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
