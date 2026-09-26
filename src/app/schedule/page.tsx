@@ -924,6 +924,57 @@ export default function SchedulePage() {
     }
   }, [followedLeagues]);
 
+  // Followed competitions' results feed the calendar's past days too, so the
+  // calendar shows the same results here as on the results page.
+  useEffect(() => {
+    if (followedLeagues.length === 0) return;
+    let active = true;
+    const twoMonthsAgo = new Date();
+    twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+    for (const lg of followedLeagues) {
+      if (!REAL_DATA_LEAGUES.has(lg)) continue;
+      fetch(`/api/results?league=${lg}&scope=league`)
+        .then(r => r.ok ? r.json() : [])
+        .then((rows: (import('@/types').GameResult & { teamId?: string })[]) => {
+          if (!active || !Array.isArray(rows)) return;
+          const recent = rows
+            .filter(r => new Date(r.date) >= twoMonthsAgo)
+            .map(r => ({ ...r, team: TEAMS.find(t => t.id === r.teamId) ?? makeFallbackTeam({ teamId: r.teamId ?? lg } as UpcomingGame, lg) }));
+          if (recent.length === 0) return;
+          setPastResults(prev => {
+            // Same match from the followed team and from the competition: keep one.
+            const key = (r: { team: Team; date: string; opponent: string; opponentId?: string }) =>
+              [r.team.league, r.date.slice(0, 10), [r.team.id, r.opponentId ?? r.opponent].sort().join('|')].join(':');
+            const seen = new Set(prev.map(key));
+            const fresh = recent.filter(r => !seen.has(key(r)));
+            return fresh.length ? [...prev, ...fresh] : prev;
+          });
+        })
+        .catch(() => {});
+    }
+    return () => { active = false; };
+  }, [followedLeagues]);
+
+  // Arriving from the results calendar with #date-section-<day>: scroll to that
+  // day once fixtures have loaded (the anchor does not exist before then).
+  useEffect(() => {
+    if (loading) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith('#date-section-')) return;
+    const dk = hash.slice('#date-section-'.length);
+    const t = setTimeout(() => {
+      const el = document.getElementById(`date-section-${dk}`);
+      if (el) {
+        const y = el.getBoundingClientRect().top + window.scrollY - 88;
+        window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+      }
+      setClickedDateKey(dk);
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = setTimeout(() => setClickedDateKey(null), 2500);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   // Fetch league fixtures on first visit; subsequent visits are served from the
   // ref cache synchronously (same render as activeLeagueId changes — no flash).
   useEffect(() => {

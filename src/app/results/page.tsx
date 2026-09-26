@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Trophy, ChevronDown, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Trophy, ChevronDown, X } from 'lucide-react';
 
 import { getFollowedTeams, getFollowedLeagues, usePrefsVersion } from '@/lib/user-prefs';
 // mock-data intentionally NOT imported — results page only shows real API data.
@@ -16,7 +16,9 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { TeamBadge } from '@/components/ui/team-badge';
 import { ResultExpandPanel } from '@/components/results/result-expand-panel';
 import { CompetitionWatermark } from '@/components/schedule/competition-watermark';
-import type { Team, GameResult, SportKey } from '@/types';
+import { ScheduleCalendar } from '@/components/schedule/schedule-calendar';
+import { useRouter } from 'next/navigation';
+import type { Team, GameResult, SportKey, UpcomingGame } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,12 +35,6 @@ type ResultEntry = GameResult & {
  *  cannot drift. See lib/result-match-key.ts for why abbreviations, not ids. */
 const matchKey = (r: ResultEntry): string =>
   resultMatchKey({ ...r, league: r.team.league, teamId: r.team.id, teamAbbr: r.team.abbreviation });
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 // ─── Data fetching ────────────────────────────────────────────────────────────
 
@@ -94,6 +90,29 @@ async function loadResults(team: Team): Promise<ResultEntry[]> {
     }
   } catch { /* network error — return empty */ }
   return [];
+}
+
+/**
+ * Upcoming fixtures for the calendar — the same data the schedule page's
+ * calendar shows, so the calendar is one calendar wherever it is opened.
+ * Background-loaded; never gates the results list.
+ */
+async function loadUpcomingForTeam(team: Team): Promise<(UpcomingGame & { team: Team })[]> {
+  if (!REAL_DATA_LEAGUES.has(team.league)) return [];
+  try {
+    const res  = await fetch(`/api/fixtures?league=${team.league}&teamId=${team.id}`);
+    const data = res.ok ? await res.json() : [];
+    return Array.isArray(data) ? data.map((g: UpcomingGame) => ({ ...g, team })) : [];
+  } catch { return []; }
+}
+async function loadUpcomingForLeague(leagueId: string): Promise<(UpcomingGame & { team: Team })[]> {
+  if (!REAL_DATA_LEAGUES.has(leagueId)) return [];
+  try {
+    const res  = await fetch(`/api/league-fixtures?league=${leagueId}`);
+    const data = res.ok ? await res.json() : [];
+    if (!Array.isArray(data)) return [];
+    return data.map((g: UpcomingGame) => ({ ...g, team: TEAMS.find(t => t.id === g.teamId) ?? competitionTeam(leagueId) }));
+  } catch { return []; }
 }
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
@@ -415,171 +434,6 @@ function ResultRow({
   );
 }
 
-// ─── Results calendar ─────────────────────────────────────────────────────────
-
-interface ResultsCalendarProps {
-  results: ResultEntry[];
-  userTz: string;
-  hoveredDateKey: string | null;
-  onHover: (dateKey: string | null) => void;
-  onDayClick: (dateKey: string) => void;
-}
-
-function ResultsCalendar({ results, userTz, hoveredDateKey, onHover, onDayClick }: ResultsCalendarProps) {
-  // Mount-stable "now" — used only for the initial view month/year and today's key,
-  // which don't need to track render time. Stabilising it lets todayKey list it as a
-  // dep without recomputing every render (CQ-5).
-  const now = useMemo(() => new Date(), []);
-  const [viewYear,  setViewYear]  = useState(now.getFullYear());
-  const [viewMonth, setViewMonth] = useState(now.getMonth());
-
-  const todayKey = useMemo(() => datekeyInZone(now.toISOString(), userTz), [now, userTz]);
-
-  const resultsByDate = useMemo(() => {
-    const map = new Map<string, ResultEntry[]>();
-    for (const r of results) {
-      const dk = datekeyInZone(r.date, userTz);
-      if (!map.has(dk)) map.set(dk, []);
-      map.get(dk)!.push(r);
-    }
-    return map;
-  }, [results, userTz]);
-
-  const calendarDays = useMemo(() => {
-    const firstDow    = new Date(viewYear, viewMonth, 1).getDay();
-    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-    const cells: (number | null)[] = Array(firstDow).fill(null);
-    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-    while (cells.length % 7 !== 0) cells.push(null);
-    return cells;
-  }, [viewYear, viewMonth]);
-
-  function dateKeyForDay(day: number): string {
-    const mm = String(viewMonth + 1).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    return `${viewYear}-${mm}-${dd}`;
-  }
-
-  function goPrev() {
-    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
-    else setViewMonth(m => m - 1);
-  }
-  function goNext() {
-    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
-    else setViewMonth(m => m + 1);
-  }
-
-  const viewHasResults = calendarDays.some(day => day !== null && resultsByDate.has(dateKeyForDay(day)));
-  const previewResults = hoveredDateKey ? (resultsByDate.get(hoveredDateKey) ?? []) : [];
-
-  return (
-    // Step 8 — glass → sh-card for the token surface; internal hover/glow logic unchanged.
-    <div className="sh-card select-none">
-      {/* Month nav */}
-      <div className="flex items-center justify-between mb-3">
-        <button onClick={goPrev} className="p-1.5 rounded-lg hover:bg-white/8 transition-colors" style={{ color: 'var(--text-3)' }} aria-label="Previous month">
-          <ChevronLeft className="h-3.5 w-3.5" />
-        </button>
-        <span className="text-xs font-bold" style={{ color: 'var(--text)' }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
-        <button onClick={goNext} className="p-1.5 rounded-lg hover:bg-white/8 transition-colors" style={{ color: 'var(--text-3)' }} aria-label="Next month">
-          <ChevronRight className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Day headers */}
-      <div className="grid grid-cols-7 mb-1">
-        {DAY_LABELS.map(d => (
-          <div key={d} className="text-[9px] font-semibold text-center py-0.5" style={{ color: 'var(--text-3)' }}>{d}</div>
-        ))}
-      </div>
-
-      {/* Grid */}
-      <div className="grid grid-cols-7 gap-y-0.5">
-        {calendarDays.map((day, i) => {
-          if (day === null) return <div key={`blank-${i}`} />;
-
-          const dk        = dateKeyForDay(day);
-          const dayResults = resultsByDate.get(dk);
-          const isToday   = dk === todayKey;
-          const isHovered = dk === hoveredDateKey;
-          const hasResults = !!dayResults?.length;
-          const dotColor  = dayResults?.[0]?.team.primaryColor;
-
-          return (
-            <button
-              key={dk}
-              onClick={() => hasResults && onDayClick(dk)}
-              onMouseEnter={() => hasResults && onHover(dk)}
-              onMouseLeave={() => onHover(null)}
-              disabled={!hasResults}
-              className={[
-                'relative flex flex-col items-center justify-center gap-0.5 py-1 rounded-lg',
-                'text-[11px] font-medium transition-all duration-150',
-                hasResults ? 'cursor-pointer' : 'cursor-default',
-                isToday
-                  ? 'ring-1 ring-white/35 bg-white/10 text-white font-bold'
-                  : hasResults
-                    ? 'text-white/65 hover:text-white'
-                    : 'text-white/20',
-                isHovered && hasResults ? 'scale-110' : '',
-              ].join(' ')}
-              style={isHovered && dotColor
-                ? { boxShadow: `0 0 14px ${dotColor}55`, background: `${dotColor}18` }
-                : undefined}
-            >
-              <span>{day}</span>
-              {hasResults && (
-                <div className="flex gap-0.5 justify-center">
-                  {dayResults!.slice(0, 3).map((r, ri) => {
-                    const c = r.f1Position
-                      ? f1PositionColor(r.f1Position)
-                      : r.isDraw === true ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
-                    return <span key={ri} className="w-1 h-1 rounded-full" style={{ backgroundColor: c }} />;
-                  })}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Hover preview */}
-      <div className="mt-3 pt-3 overflow-hidden transition-all duration-200" style={{ minHeight: '2.5rem', borderTop: '1px solid var(--border)' }}>
-        {previewResults.length > 0 ? (
-          <div style={{ animation: 'slideDown 0.18s ease-out' }}>
-            <p className="text-[9px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-3)' }}>
-              {new Date(previewResults[0].date).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
-            </p>
-            <div className="space-y-2">
-              {previewResults.map(r => {
-                const isDraw = r.isDraw === true;
-                const scoreColor = r.f1Position
-                  ? f1PositionColor(r.f1Position)
-                  : isDraw ? '#f59e0b' : r.isWin ? '#34d399' : '#f87171';
-                return (
-                  <div key={r.id} className="flex items-center gap-1.5" style={{ borderLeft: `2px solid ${r.team.primaryColor}60`, paddingLeft: '6px' }}>
-                    <TeamBadge logoUrl={TEAM_LOGOS[r.team.id]} logoFilter={TEAM_LOGO_FILTERS[r.team.id]} abbreviation={r.team.abbreviation} primaryColor={r.team.primaryColor} size={20} className="rounded-md shrink-0" />
-                    <span className="text-[11px] font-bold text-white leading-none">{r.team.shortName}</span>
-                    <span className="text-[10px] text-white/35">{r.isHome ? 'vs' : 'at'}</span>
-                    <span className="text-[11px] text-white/70 flex-1 min-w-0 truncate">{r.opponent}</span>
-                    <span className="text-[11px] font-black shrink-0" style={{ color: scoreColor }}>
-                      {r.f1Position ?? `${r.teamScore}–${r.opponentScore}`}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          <p className="text-[9px] text-center leading-tight" style={{ color: 'var(--text-3)' }}>
-            {viewHasResults ? 'Hover a date · click to jump' : 'No results this month'}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Filter pill ──────────────────────────────────────────────────────────────
 
 // Step 8 — reskinned to .sh-chip (mirrors the schedule's TeamFilterPill).
@@ -677,6 +531,9 @@ function ResultsSkeleton() {
 export default function ResultsPage() {
   const [teams,      setTeams]      = useState<Team[]>([]);
   const [allResults, setAllResults] = useState<ResultEntry[]>([]);
+  /** Upcoming fixtures for the shared calendar (results + fixtures in one view). */
+  const [upcoming, setUpcoming] = useState<(UpcomingGame & { team: Team })[]>([]);
+  const router = useRouter();
   const [loading,    setLoading]    = useState(true);
   const [userTz,     setUserTz]     = useState('Australia/Brisbane');
   const prefsVersion = usePrefsVersion(); // bumps when followed teams change (e.g. post-sign-in merge)
@@ -740,6 +597,7 @@ export default function ResultsPage() {
     // Reset accumulator so a followed-teams change (prefsVersion, e.g. the post-sign-in
     // anon→permanent union) refetches the EXACT new set instead of layering onto the old one.
     setAllResults([]);
+    setUpcoming([]);
     setLoading(true);
 
     const followed = getFollowedTeams();
@@ -788,6 +646,20 @@ export default function ResultsPage() {
     teamsToFetch.forEach(async (team) => {
       try { absorb(await loadResults(team)); } finally { done(); }
     });
+
+    // Upcoming fixtures for the calendar — background, deduped by fixture id,
+    // future only (a just-finished match belongs to the results side).
+    const absorbUpcoming = (games: (UpcomingGame & { team: Team })[]) => {
+      if (!active || games.length === 0) return;
+      const nowMs = Date.now();
+      setUpcoming(prev => {
+        const seen = new Set(prev.map(g => g.id));
+        const fresh = games.filter(g => !seen.has(g.id) && new Date(g.date).getTime() > nowMs);
+        return fresh.length ? [...prev, ...fresh].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : prev;
+      });
+    };
+    teamsToFetch.forEach(team => { loadUpcomingForTeam(team).then(absorbUpcoming); });
+    leaguesToFetch.forEach(id => { loadUpcomingForLeague(id).then(absorbUpcoming); });
     leaguesToFetch.forEach(async (leagueId) => {
       try { absorb(await loadLeagueResults(leagueId)); } finally { done(); }
     });
@@ -801,6 +673,18 @@ export default function ResultsPage() {
     if (activeTeamId === 'all') return allResults;
     return allResults.filter(r => r.team.id === activeTeamId);
   }, [allResults, activeTeamId, activeLeagueId]);
+
+  // The calendar's upcoming side follows the same team / competition filter.
+  const filteredUpcoming = useMemo(() => {
+    if (activeLeagueId) return upcoming.filter(g => g.team.league === activeLeagueId);
+    if (activeTeamId === 'all') return upcoming;
+    return upcoming.filter(g => g.team.id === activeTeamId);
+  }, [upcoming, activeTeamId, activeLeagueId]);
+
+  // A future day in the calendar opens the schedule at that date.
+  const handleUpcomingDayClick = useCallback((dk: string) => {
+    router.push(`/schedule#date-section-${dk}`);
+  }, [router]);
 
   // Group by date in user timezone (reverse-chronological)
   const groupedByDate = useMemo(() => {
@@ -996,12 +880,14 @@ export default function ResultsPage() {
                      max-h-[calc(100vh-5.5rem)] overflow-y-auto overscroll-contain pb-4 pr-0.5"
         >
           {!loading && (
-            <ResultsCalendar
-              results={filteredResults}
+            <ScheduleCalendar
+              games={filteredUpcoming}
+              pastResults={filteredResults}
               userTz={userTz}
               hoveredDateKey={hoveredDateKey}
               onHover={handleCalendarHover}
-              onDayClick={handleDayClick}
+              onDayClick={handleUpcomingDayClick}
+              onPastDayClick={handleDayClick}
             />
           )}
           <FollowedTeamsWidget teams={teams} />
@@ -1040,12 +926,14 @@ export default function ResultsPage() {
               </button>
             </div>
             {!loading && (
-              <ResultsCalendar
-                results={filteredResults}
+              <ScheduleCalendar
+                games={filteredUpcoming}
+                pastResults={filteredResults}
                 userTz={userTz}
                 hoveredDateKey={hoveredDateKey}
                 onHover={handleCalendarHover}
-                onDayClick={(dk) => {
+                onDayClick={(dk) => closeCalendar(() => handleUpcomingDayClick(dk))}
+                onPastDayClick={(dk) => {
                   closeCalendar(() => {
                     const el = document.getElementById(`result-date-${dk}`);
                     if (el) {
