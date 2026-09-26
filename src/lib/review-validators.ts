@@ -1410,6 +1410,50 @@ function derivedNumbers(dataBlock: string): Set<number> {
   return out;
 }
 
+/**
+ * The report's shape is part of the brief, not a hope: three paragraphs,
+ * 120–260 words, at least two players from the block named with a figure.
+ * Retry drafts had been collapsing to one vague paragraph to dodge the
+ * binders (2026-09-26); a short report is a defect, so this refuses like a
+ * factual violation. Only applies when the block has player data to write from.
+ */
+export function validateReportShape(review: AIReview, dataBlock: string): string[] {
+  const summary = (review.summary ?? '').trim();
+  if (!summary) return [];
+  const violations: string[] = [];
+  const paras = summary.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  const words = summary.split(/\s+/).filter(Boolean).length;
+  const names = namedPlayers(dataBlock);
+  if (names.length >= 4) {
+    if (paras.length < 3) violations.push(`report shape: ${paras.length} paragraph${paras.length === 1 ? '' : 's'} — write three (lede / how it unfolded / the people and the why), separated by blank lines`);
+    if (words < 120) violations.push(`report shape: ${words} words — the report is 150–230 words; keep the chronology and the people lines with their figures`);
+    const lower = summary.toLowerCase();
+    const named = names.filter(n => { const s = n.split(/\s+/).pop()!.toLowerCase(); return s.length >= 4 && lower.includes(s); });
+    if (named.length < 2) violations.push(`report shape: only ${named.length} named player${named.length === 1 ? '' : 's'} — name at least two standouts from KEY PERFORMERS / MATCH EVENTS with their figures`);
+    const withFigure = named.filter(n => new RegExp(String.raw`${n.split(/\s+/).pop()!}[^.]{0,80}?\b\d`, 'i').test(summary) || new RegExp(String.raw`\b\d[^.]{0,60}?${n.split(/\s+/).pop()!}`, 'i').test(summary));
+    if (named.length >= 2 && withFigure.length < 1) violations.push('report shape: no player is given a figure — each standout carries their KEY PERFORMERS number ("ran for 193 metres", "kicked 5.1", "four shots, two on target")');
+  }
+  if (words > 300) violations.push(`report shape: ${words} words — cut to 230`);
+  return violations;
+}
+
+/**
+ * Minutes in a block that has none (AFL: quarter scores only) are invented —
+ * "Lohmann kicks a goal at 16'" (2026-09-26).
+ */
+export function validateMinuteSource(review: AIReview, dataBlock: string): string[] {
+  const start = dataBlock.indexOf('MATCH EVENTS');
+  if (start < 0) return [];
+  const section = dataBlock.slice(start, dataBlock.indexOf('\n\n', start) === -1 ? undefined : dataBlock.indexOf('\n\n', start));
+  if (/^\s*\d+'/m.test(section)) return []; // the block carries minutes
+  const violations: string[] = [];
+  for (const m of REVIEW_TEXT(review).matchAll(/\b(?:at|on|in|after|within)\s+(?:the\s+)?(\d{1,3})(?:'|’|(?:st|nd|rd|th)?\s+minute)|\b(\d{1,3})['’](?!\w)/g)) {
+    violations.push(`minute "${m[0].trim()}" — this match's data carries no minutes (only term scores); anchor moments to the term, never a minute`);
+    if (violations.length >= 3) break;
+  }
+  return violations;
+}
+
 /** Full review validation pass. Empty array = clean, safe to cache and serve. */
 export function validateReviewOutput(input: AIReview, dataBlock: string): string[] {
   // "1,811 metres" is 1811, not 1 and 811 (the shared numeral binder split it, 2026-09-26).
@@ -1464,6 +1508,8 @@ function validateReviewOutputRaw(review: AIReview, dataBlock: string): string[] 
     ...validateHalfCounts(review, dataBlock),
     ...validateScoringOrder(review, dataBlock),
     ...validateSeasonClaims(review, dataBlock),
+    ...validateMinuteSource(review, dataBlock),
+    ...validateReportShape(review, dataBlock),
     ...validateVerdicts(review, dataBlock),
     ...validateReviewPhase(review, dataBlock),
     ...validateReviewStatlines(review, dataBlock),

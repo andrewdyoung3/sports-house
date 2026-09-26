@@ -235,7 +235,7 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
         content:
           'Your previous attempt was REJECTED by automated fact/style checks:\n' +
           feedback.map(f => `- ${f}`).join('\n') +
-          '\nRegenerate the complete JSON response. Fix each rejection precisely while keeping every claim consistent with the data block. Do not repeat the rejected phrasing.',
+          '\nRegenerate the complete JSON response at the SAME length and structure — three paragraphs, 150–230 words, the chronology from PASSAGES, one line per standout with their KEY PERFORMERS figure, three key moments. Fix each rejection precisely (replace the wrong figure or drop that one claim); do not shorten, generalise or remove the people and passages to avoid the checks. Do not repeat the rejected phrasing.',
       });
     }
     const msg = await ollama.chat.completions.create({
