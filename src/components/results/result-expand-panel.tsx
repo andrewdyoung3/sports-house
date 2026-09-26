@@ -8,6 +8,16 @@ import {
 import { cn } from '@/lib/utils';
 import { ensureSession } from '@/lib/user-prefs';
 import { accentVars } from '@/lib/team-ink';
+import { copyedit, reportParagraphs } from '@/lib/report-copyedit';
+
+/** "17' Name crosses — what it changed" → { tag: "17'", text }. AFL uses Q1–Q4 / HT / FT. */
+function splitMoment(m: string): { tag?: string; text: string } {
+  const t = copyedit(m);
+  const hit = t.match(/^((?:\d{1,3}['’](?:\+\d+['’])?)|Q[1-4]|HT|FT)\s*(?:[—–-]\s*)?(.*)$/);
+  if (!hit || !hit[2]) return { text: t };
+  const text = hit[2].charAt(0).toUpperCase() + hit[2].slice(1);
+  return { tag: hit[1].replace(/’/g, "'"), text };
+}
 import type { Team, GameResult, AIReview, MatchStats, TeamMatchStats, SportKey, StandingRow } from '@/types';
 import { LeagueTableSh } from '@/components/schedule/league-table-sh';
 
@@ -354,10 +364,13 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
         <div>
           <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Report</div>
           {aiReview?.summary ? (
-            // Reports are written in paragraphs (blank-line separated).
-            aiReview.summary.split(/\n\s*\n/).filter(Boolean).map((para, i) => (
-              <p key={i} className="sh-detail-body">{para}</p>
-            ))
+            // Reports are written in paragraphs (blank-line separated); the
+            // first is the lede and carries the weight of a standfirst.
+            <div className="sh-report">
+              {reportParagraphs(aiReview.summary).map((para, i) => (
+                <p key={i} className={cn('sh-detail-body', i === 0 && 'sh-report-lede')}>{para}</p>
+              ))}
+            </div>
           ) : (
             <p className="sh-detail-body" style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>
               {result.isWin
@@ -388,11 +401,17 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
       {/* ── Key Factors → Quick Take bullets ── */}
       {!aiLoading && aiReview?.keyMoments && aiReview.keyMoments.length > 0 && (
         <div>
-          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Key Factors</div>
+          <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Key Moments</div>
           <ul className="sh-quick-list">
-            {aiReview.keyMoments.map((m, i) => (
-              <li key={i} className="sh-quick-bullet"><span className="sh-quick-dot" />{m}</li>
-            ))}
+            {aiReview.keyMoments.map((m, i) => {
+              const { tag, text } = splitMoment(m);
+              return (
+                <li key={i} className="sh-quick-bullet">
+                  {tag ? <span className="sh-moment-tag">{tag}</span> : <span className="sh-quick-dot" />}
+                  <span>{text}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -403,7 +422,7 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
           <span className="sh-verdict-label">
             <TrendingUp className="sh-icon h-[11px] w-[11px]" />Going Forward
           </span>
-          {aiReview.verdict}
+          {copyedit(aiReview.verdict)}
         </blockquote>
       )}
 

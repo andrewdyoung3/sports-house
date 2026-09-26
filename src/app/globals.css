@@ -929,6 +929,27 @@
   .sh-detail-body-sm { max-width: 65ch; }
 }
 
+/* Match report prose: editorial paragraph rhythm. The lede reads as a
+   standfirst — a step up in size and ink — and paragraphs are separated by
+   space, not a blank line, as on a newspaper sport page. */
+.sh-report > p + p { margin-top: 0.9em; }
+.sh-report .sh-report-lede {
+  font-size: 15px; line-height: 1.6; font-weight: 500; color: var(--text);
+  letter-spacing: -0.005em;
+}
+.sh-report .sh-detail-body { text-wrap: pretty; hyphens: manual; }
+
+/* Key moments: the minute (or AFL term) as a fixed-width tag before the line. */
+.sh-moment-tag {
+  flex-shrink: 0; min-width: 34px; margin-top: 1px; padding: 1px 6px;
+  border-radius: 5px; text-align: center;
+  font-family: var(--font-head); font-size: 11px; font-weight: 700;
+  font-variant-numeric: tabular-nums; letter-spacing: .2px;
+  color: var(--accent-ink);
+  background: color-mix(in oklab, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent);
+}
+
 /* Widget row (Form + Standings + optional Weather): single-column stack on mobile,
    multi-column grid on md+. The inline gridTemplateColumns drives the column count;
    this rule overrides it to 1fr on small screens and fixes the border separators. */

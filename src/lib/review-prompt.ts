@@ -85,6 +85,7 @@ WHAT NOT TO WRITE:
 • No recitation of the score, the ladder position, or the fixture definition; the reader sees them.
 • No "the key factor was", "proved crucial/decisive", "confirms their credentials", "genuine contenders", "exposes a vulnerability".
 • A league position is never a cause. Absent data is never mentioned.
+• House style (Guardian): plural clubs take a bare apostrophe ("the Roosters' win", never "Roosters's"); a spaced en dash " – " for asides, never an em dash; "half-time", "full-time", "three-quarter time"; the definite article with plural nicknames ("the Roosters", "the Dolphins"); figures for 10 and above, words below.
 • Facts are rewritten, not pasted: never copy the block's annotations — "(this season)", "(authoritative)", "competition points", a label in brackets — into prose.
 • Valid JSON: no raw line breaks inside a string except the "\n\n" between the summary's paragraphs; no trailing commas.
 • Vary the rhythm: at least one sentence under ten words.
