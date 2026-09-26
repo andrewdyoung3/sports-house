@@ -80,6 +80,22 @@ function repairJson(src: string): string {
   return out.replace(/,\s*([}\]])/g, '$1');
 }
 
+/** Lift summary / keyMoments / verdicts out of malformed JSON by their fixed names and order. */
+function extractFields(src: string): AIReview | null {
+  const unesc = (s: string) => s.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/[“”]/g, '"').trim();
+  const sum = src.match(/"summary"\s*:\s*["“]([\s\S]*?)["”]\s*,\s*"keyMoments"/);
+  const km  = src.match(/"keyMoments"\s*:\s*\[([\s\S]*?)\]\s*,\s*"verdicts"/);
+  const vd  = src.match(/"verdicts"\s*:\s*\{([\s\S]*?)\}\s*\}?\s*$/);
+  if (!sum || !vd) return null;
+  const keyMoments = km
+    ? [...km[1].matchAll(/["“]([\s\S]*?)["”]\s*(?:,|$)/g)].map(m => unesc(m[1])).filter(Boolean)
+    : [];
+  const verdicts: Record<string, string> = {};
+  for (const m of vd[1].matchAll(/["“]([^"”]+)["”]\s*:\s*["“]([\s\S]*?)["”]\s*(?:,|$)/g)) verdicts[unesc(m[1])] = unesc(m[2]);
+  if (Object.keys(verdicts).length === 0) return null;
+  return { summary: unesc(sum[1]), keyMoments, verdicts, verdict: '' };
+}
+
 /** Violations that concern phrasing, not facts — never worth a refusal on their own. */
 const isStyleViolation = (v: string): boolean =>
   /^(?:register crutch|tautology|summary and a verdict substantially repeat)/.test(v);
@@ -267,6 +283,11 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
         const at = Number(String(e2 instanceof Error ? e2.message : e2).match(/position (\d+)/)?.[1] ?? -1);
         aiLog(`repair-fail cacheKey=${cacheKey} err=${e2 instanceof Error ? e2.message : e2} around=${JSON.stringify(at >= 0 ? repaired.slice(Math.max(0, at - 80), at + 40) : repaired.slice(-160))}`);
       }
+      // Last resort: the three fields have fixed names and order, so lift them
+      // out by shape — a quoted phrase followed by a comma inside the prose can
+      // defeat any quote-tracking repair.
+      const extracted = extractFields(body);
+      if (extracted) { aiLog(`extracted-fields cacheKey=${cacheKey}`); return extracted; }
       throw new SyntaxError(`Non-JSON review output: ${cleaned.slice(0, 120)}`);
     }
   };
