@@ -50,6 +50,42 @@ export interface MatchReport {
   playerNames: string[];
   /** Team-level stats, same label set both sides (empty when ESPN has none). */
   teamStats?:  { team: TeamStatLine[]; opponent: TeamStatLine[] };
+  /** Per-player lines a report is written from (goals, assists, shots, saves) — from ESPN rosters. */
+  performers?: { team: PlayerStatLine[]; opponent: PlayerStatLine[] };
+}
+
+import type { PlayerStatLine } from '@/types';
+
+/**
+ * The players a report would name, per side, from ESPN's roster stats:
+ * anyone with a goal or assist, the shot leaders, the goalkeeper's saves.
+ * Sorted by involvement; capped at five a side.
+ */
+function performersFrom(rosters: any[], espnTeamId: string | undefined): PlayerStatLine[] {
+  if (!espnTeamId) return [];
+  const entry = rosters.find(r => String(r?.team?.id) === espnTeamId);
+  const rows: any[] = entry?.roster ?? [];
+  const num = (p: any, k: string) => Number((p.stats ?? []).find((s: any) => s.name === k)?.value ?? (p.stats ?? []).find((s: any) => s.name === k)?.displayValue ?? 0) || 0;
+  const scored = rows.map(p => {
+    const goals = num(p, 'totalGoals'), assists = num(p, 'goalAssists'), shots = num(p, 'totalShots'), onT = num(p, 'shotsOnTarget'), saves = num(p, 'saves');
+    const fouls = num(p, 'foulsCommitted'), yc = num(p, 'yellowCards'), rc = num(p, 'redCards');
+    const involvement = goals * 4 + assists * 3 + onT * 1.2 + shots * 0.6 + saves * 1.2 + rc * 3;
+    return { p, goals, assists, shots, onT, saves, fouls, yc, rc, involvement };
+  }).filter(x => x.involvement > 0 || x.rc > 0);
+  scored.sort((a, b) => b.involvement - a.involvement);
+  return scored.slice(0, 5).map(({ p, goals, assists, shots, onT, saves, fouls, yc, rc }): PlayerStatLine => {
+    const stats: Array<{ label: string; value: string }> = [];
+    if (goals)   stats.push({ label: 'Goals', value: String(goals) });
+    if (assists) stats.push({ label: 'Assists', value: String(assists) });
+    if (shots)   stats.push({ label: 'Shots', value: String(shots) });
+    if (onT)     stats.push({ label: 'On target', value: String(onT) });
+    if (saves)   stats.push({ label: 'Saves', value: String(saves) });
+    if (fouls >= 3) stats.push({ label: 'Fouls', value: String(fouls) });
+    if (yc)      stats.push({ label: 'Yellow', value: String(yc) });
+    if (rc)      stats.push({ label: 'Red', value: String(rc) });
+    // ESPN marks substitutes' position as "SUB"; keep that as the code.
+    return { name: String(p.athlete?.displayName ?? '').trim(), position: p.position?.abbreviation || (p.subbedIn ? 'SUB' : undefined), stats };
+  }).filter(x => x.name && x.stats.length > 0);
 }
 
 /** One completed result, as the season-facts derivation sees it. */
@@ -240,6 +276,15 @@ export async function fetchESPNMatchReport(
     };
     const t = statsFor(report.teamEspnId), o = statsFor(report.oppEspnId);
     if (t.length > 0 && o.length > 0) report.teamStats = { team: t, opponent: o };
+
+    // ── Per-player lines (rosters carry shots / assists / saves) ─────────────
+    const rosters: any[] = data.rosters ?? [];
+    const pt = performersFrom(rosters, report.teamEspnId), po = performersFrom(rosters, report.oppEspnId);
+    if (pt.length + po.length > 0) {
+      report.performers = { team: pt, opponent: po };
+      for (const p of [...pt, ...po]) addName(p.name.replace(/ \(sub\)$/, ''));
+      report.playerNames = [...names];
+    }
 
     return report;
   } catch {

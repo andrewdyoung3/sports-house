@@ -13,7 +13,7 @@
 import type {
   PreviewContext, TeamStanding, NewsHeadline, TipSummary, CompetitionStage,
   LeagueTableRow,
-  GameResult, HeadToHeadMeeting, VenueRecord,
+  GameResult, HeadToHeadMeeting, VenueRecord, PlayerStatLine,
 } from '@/types';
 import { F1_DRIVER_IDS, ERGAST_ID_TO_TEAM_ID, F1_DRIVERS, F1_CONSTRUCTOR_TEAMS } from '@/lib/f1-data';
 import { lookupEnglishDivision, ENGLISH_TIER_SLUG } from '@/lib/english-football-divisions';
@@ -2194,7 +2194,10 @@ export async function fetchReviewFormAndH2H(
       // The reviewed match itself (same day, these two sides) → venue.
       const thisGame = games.find(g => String(g.date).slice(0, 10) === day
         && ((g.hteam === teamName && g.ateam === opponentName) || (g.hteam === opponentName && g.ateam === teamName)));
-      const venue = typeof thisGame?.venue === 'string' && thisGame.venue ? String(thisGame.venue) : undefined;
+      // Squiggle writes "M.C.G." / "S.C.G."; the prose then ends "at the S.C.G..".
+      const venue = typeof thisGame?.venue === 'string' && thisGame.venue
+        ? String(thisGame.venue).replace(/^((?:[A-Z]\.){2,})$/, s => s.replace(/\./g, ''))
+        : undefined;
 
       // Every completed game this season, finals included — a run computed over
       // home-and-away games only would skip a qualifying-final loss.
@@ -2519,6 +2522,8 @@ export async function fetchNRLMatchTimeline(
   attendance?:        number;
   /** Team stats from the match centre, mapped to the perspective side / opponent. */
   teamStats?:         { team: Array<{ label: string; value: string }>; opponent: Array<{ label: string; value: string }> };
+  /** Most-involved players per side with their figures (KEY PERFORMERS lines). */
+  performers?:        { team: PlayerStatLine[]; opponent: PlayerStatLine[] };
   /** Try scorers with the side they scored for (nrl.com nickname). */
   tries?:             Array<{ name: string; team: string }>;
 } | undefined> {
@@ -2559,31 +2564,66 @@ export async function fetchNRLMatchTimeline(
 
     const lines: string[] = [];
     const tries: Array<{ name: string; team: string }> = [];
-    // Running score (the feed leaves a side's score null until it changes) and
-    // the half-time state, which the model otherwise guesses — it read a 16–10
-    // half-time as "trailing by two" (live, 2026-09-25).
-    let hs = 0, as = 0, htDone = false;
-    const HALF_SECONDS = 40 * 60;
-    for (const t of (mc.timeline ?? []) as any[]) {
-      const kind = t.title ?? t.type ?? '';
-      const secs = Number(t.gameSeconds ?? 0);
-      if (!htDone && secs > HALF_SECONDS && lines.length > 0) {
-        lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`);
-        htDone = true;
+    let hs = 0, as = 0;
+
+    // Preferred source: each side's `scoring` summary — every try and kick
+    // NAMED with its minute ("Lindsay Collins 1'"), plus the half-time score.
+    // The `timeline` leaves tries unnamed (two of the Roosters' seven on
+    // 2026-09-25), so reports mis-credited them.
+    type Ev = { min: number; kind: 'Try' | 'Conversion' | 'Penalty Goal' | 'Field Goal'; who: string; side: string; pts: number; order: number };
+    const evs: Ev[] = [];
+    const parseSummaries = (side: string, kind: Ev['kind'], pts: number, arr: unknown) => {
+      for (const s of (Array.isArray(arr) ? arr : []) as string[]) {
+        const m = String(s).match(/^(.+?)\s+(\d+)'?$/);
+        if (m) evs.push({ min: Number(m[2]), kind, who: m[1].trim(), side, pts, order: kind === 'Try' ? 0 : 1 });
       }
-      if (!/^(Try|Penalty Goal|Field Goal|Conversion-Made)$/.test(kind)) continue;
-      if (typeof t.homeScore === 'number') hs = t.homeScore;
-      if (typeof t.awayScore === 'number') as = t.awayScore;
-      if (kind === 'Conversion-Made') continue; // tries + kicks that change momentum only
-      const min = Math.round(secs / 60);
-      const who = String(t.content?.name ?? '').replace(/ (Try|Penalty Goal|Field Goal)$/i, '').replace(/\s+\d+(?:st|nd|rd|th)$/, '').trim();
-      const side = nickOf(t.teamId);
-      lines.push(`${min}' ${kind}${side ? ` ${side}` : ''}${who ? ` — ${who}` : ''} — ${homeNick} ${hs}, ${awayNick} ${as}`);
-      if (kind === 'Try' && who && side) tries.push({ name: who, team: side });
+    };
+    for (const [t, nick] of [[mc.homeTeam, homeNick], [mc.awayTeam, awayNick]] as const) {
+      const sc = t?.scoring ?? {};
+      parseSummaries(nick, 'Try', 4, sc.tries?.summaries);
+      parseSummaries(nick, 'Conversion', 2, sc.conversions?.summaries);
+      parseSummaries(nick, 'Penalty Goal', 2, sc.penaltyGoals?.summaries);
+      parseSummaries(nick, 'Field Goal', 1, sc.fieldGoals?.summaries);
     }
-    if (!htDone && lines.length > 0 && Number(mc.gameSeconds ?? 0) > HALF_SECONDS) {
-      lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`); // no second-half score
+    evs.sort((a, b) => a.min - b.min || a.order - b.order);
+    const htHome = Number(mc.homeTeam?.scoring?.halfTimeScore), htAway = Number(mc.awayTeam?.scoring?.halfTimeScore);
+    let htDone = false;
+    if (evs.length > 0) {
+      for (const e of evs) {
+        if (!htDone && e.min > 40) { lines.push(`HT — ${homeNick} ${Number.isFinite(htHome) ? htHome : hs}–${Number.isFinite(htAway) ? htAway : as} ${awayNick}`); htDone = true; }
+        if (e.side === homeNick) hs += e.pts; else as += e.pts;
+        if (e.kind === 'Conversion') continue; // folded into the running score; the kicker is in KEY PERFORMERS
+        lines.push(`${e.min}' ${e.kind} ${e.side} — ${e.who} — ${homeNick} ${hs}, ${awayNick} ${as}`);
+        if (e.kind === 'Try') tries.push({ name: e.who, team: e.side });
+      }
+      if (!htDone) lines.push(`HT — ${homeNick} ${Number.isFinite(htHome) ? htHome : hs}–${Number.isFinite(htAway) ? htAway : as} ${awayNick}`);
+    } else {
+      // Fallback: the timeline (running score; some tries unnamed).
+      htDone = false;
+      const HALF_SECONDS = 40 * 60;
+      for (const t of (mc.timeline ?? []) as any[]) {
+        const kind = t.title ?? t.type ?? '';
+        const secs = Number(t.gameSeconds ?? 0);
+        if (!htDone && secs > HALF_SECONDS && lines.length > 0) {
+          lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`);
+          htDone = true;
+        }
+        if (!/^(Try|Penalty Goal|Field Goal|Conversion-Made)$/.test(kind)) continue;
+        if (typeof t.homeScore === 'number') hs = t.homeScore;
+        if (typeof t.awayScore === 'number') as = t.awayScore;
+        if (kind === 'Conversion-Made') continue;
+        const min = Math.round(secs / 60);
+        const who = String(t.content?.name ?? '').replace(/ (Try|Penalty Goal|Field Goal)$/i, '').replace(/\s+\d+(?:st|nd|rd|th)$/, '').trim();
+        const side = nickOf(t.teamId);
+        lines.push(`${min}' ${kind}${side ? ` ${side}` : ''}${who ? ` — ${who}` : ''} — ${homeNick} ${hs}, ${awayNick} ${as}`);
+        if (kind === 'Try' && who && side) tries.push({ name: who, team: side });
+      }
+      if (!htDone && lines.length > 0 && Number(mc.gameSeconds ?? 0) > HALF_SECONDS) {
+        lines.push(`HT — ${homeNick} ${hs}–${as} ${awayNick}`);
+      }
     }
+    const fh = Number(mc.homeTeam?.score), fa = Number(mc.awayTeam?.score);
+    if (lines.length > 0 && Number.isFinite(fh) && Number.isFinite(fa)) lines.push(`FT — ${homeNick} ${fh}–${fa} ${awayNick}`);
 
     // Team stats: the match centre's stat groups, mapped to the perspective side.
     const teamIsHome = nm(teamName).includes(nm(homeNick)) || nm(homeNick).includes(nm(teamName));
@@ -2605,17 +2645,61 @@ export async function fetchNRLMatchTimeline(
     const venue = typeof mc.venue === 'string' && mc.venue ? String(mc.venue) : undefined;
     const attendance = Number(mc.attendance) > 0 ? Number(mc.attendance) : undefined;
 
+    // Names and positions live on homeTeam/awayTeam.players; the stat rows in
+    // stats.players.{homeTeam,awayTeam} carry only playerId. (The old read of
+    // stats.players.home never resolved a name, so top performers were empty.)
     const tp: string[] = [];
-    const playersById = new Map<number, string>();
-    const rawPlayers = mc.stats?.players;
-    const playerArr: any[] = Array.isArray(rawPlayers)
-      ? rawPlayers
-      : [...(rawPlayers?.home ?? []), ...(rawPlayers?.away ?? [])];
-    for (const p of playerArr) {
-      if (p?.playerId && (p.firstName || p.lastName)) playersById.set(p.playerId, `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim());
+    const playersById = new Map<number, { name: string; position?: string }>();
+    for (const t of [mc.homeTeam, mc.awayTeam]) {
+      for (const p of (t?.players ?? []) as any[]) {
+        if (p?.playerId && (p.firstName || p.lastName)) {
+          playersById.set(p.playerId, { name: `${p.firstName ?? ''} ${p.lastName ?? ''}`.trim(), position: p.position || undefined });
+        }
+      }
     }
+
+    // Per-player lines a report is written from: the most involved players
+    // per side (tries, try assists, line breaks, metres, tackle breaks) plus
+    // the goal-kicker. Rendered as "<TEAM> KEY PERFORMERS" in the block.
+    const rawStats = mc.stats?.players ?? {};
+    const performersFor = (rows: any[]): PlayerStatLine[] => {
+      const scored = rows.map(r => {
+        const n = (k: string) => Number(r?.[k] ?? 0) || 0;
+        const who = playersById.get(r?.playerId);
+        const involvement = n('tries') * 3 + n('tryAssists') * 2 + n('lineBreaks') * 2 + n('lineBreakAssists')
+          + n('tackleBreaks') * 0.4 + n('allRunMetres') / 60 + n('offloads') * 0.5 + n('goals') * 0.8 + n('intercepts') * 2;
+        return { r, who, n, involvement };
+      }).filter(x => x.who && x.n('minutesPlayed') > 0);
+      scored.sort((a, b) => b.involvement - a.involvement);
+      const picked = scored.slice(0, 5);
+      // Goal-kicker always listed (conversions are how a margin is built).
+      const kicker = scored.find(x => x.n('conversionAttempts') + x.n('penaltyGoals') > 0 && !picked.includes(x));
+      if (kicker) picked.push(kicker);
+      return picked.map(({ r, who, n }): PlayerStatLine => {
+        const stats: Array<{ label: string; value: string }> = [];
+        if (n('tries')) stats.push({ label: 'Tries', value: String(n('tries')) });
+        if (n('tryAssists')) stats.push({ label: 'Try assists', value: String(n('tryAssists')) });
+        if (n('lineBreaks')) stats.push({ label: 'Line breaks', value: String(n('lineBreaks')) });
+        if (n('lineBreakAssists')) stats.push({ label: 'Line-break assists', value: String(n('lineBreakAssists')) });
+        if (n('allRunMetres') >= 60) stats.push({ label: 'Run metres', value: String(Math.round(n('allRunMetres'))) });
+        if (n('tackleBreaks') >= 2) stats.push({ label: 'Tackle breaks', value: String(n('tackleBreaks')) });
+        if (n('offloads') >= 2) stats.push({ label: 'Offloads', value: String(n('offloads')) });
+        if (n('tacklesMade') >= 25) stats.push({ label: 'Tackles', value: String(n('tacklesMade')) });
+        if (n('intercepts')) stats.push({ label: 'Intercepts', value: String(n('intercepts')) });
+        if (n('conversionAttempts')) stats.push({ label: 'Goals', value: `${n('conversions') + n('penaltyGoals')}/${n('conversionAttempts') + n('penaltyGoals')}` });
+        else if (n('goals')) stats.push({ label: 'Goals', value: String(n('goals')) });
+        if (n('errors') >= 2) stats.push({ label: 'Errors', value: String(n('errors')) });
+        if (r?.sinBins) stats.push({ label: 'Sin bin', value: String(r.sinBins) });
+        return { name: who!.name, position: who!.position, stats };
+      }).filter(p => p.stats.length > 0);
+    };
+    const homePerf = performersFor((rawStats.homeTeam ?? []) as any[]);
+    const awayPerf = performersFor((rawStats.awayTeam ?? []) as any[]);
+    const performers = (homePerf.length + awayPerf.length) > 0
+      ? { team: teamIsHome ? homePerf : awayPerf, opponent: teamIsHome ? awayPerf : homePerf }
+      : undefined;
     for (const perf of (mc.stats?.topPerformers ?? []) as any[]) {
-      const h = playersById.get(perf.homePlayerId), a = playersById.get(perf.awayPlayerId);
+      const h = playersById.get(perf.homePlayerId)?.name, a = playersById.get(perf.awayPlayerId)?.name;
       if (perf.title && (h || a)) {
         tp.push(`${perf.title}: ${[h ? `${h} ${perf.homeTotal}` : '', a ? `${a} ${perf.awayTotal}` : ''].filter(Boolean).join(' | ')}`);
       }
@@ -2623,7 +2707,7 @@ export async function fetchNRLMatchTimeline(
     return {
       scoringTimeline:   lines.length > 0 ? lines : undefined,
       topPerformerLines: tp.length > 0 ? tp : undefined,
-      venue, attendance, teamStats,
+      venue, attendance, teamStats, performers,
       tries: tries.length > 0 ? tries : undefined,
     };
   } catch {

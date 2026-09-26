@@ -76,7 +76,12 @@ async function currentSeasonId(): Promise<string | null> {
   return id;
 }
 
-interface AflMatchItem { match?: { matchId?: string; homeTeam?: { name?: string }; awayTeam?: { name?: string } } }
+interface AflPeriodScore { periodNumber?: number; score?: { totalScore?: number; goals?: number; behinds?: number } }
+interface AflTeamScore { matchScore?: { totalScore?: number; goals?: number; behinds?: number }; periodScore?: AflPeriodScore[]; minutesInFront?: number }
+interface AflMatchItem {
+  match?: { matchId?: string; homeTeam?: { name?: string }; awayTeam?: { name?: string } };
+  score?: { status?: string; homeTeamScore?: AflTeamScore; awayTeamScore?: AflTeamScore };
+}
 interface AflRoundResp { items?: AflMatchItem[] }
 const _round = new Map<string, AflRoundResp | null>();
 async function roundItems(roundId: string): Promise<AflRoundResp | null> {
@@ -143,7 +148,7 @@ async function findMatch(
   roundNumber: number,
   teamName: string,
   opponentName: string,
-): Promise<{ matchId: string; homeName: string } | null> {
+): Promise<{ matchId: string; homeName: string; awayName: string; item: AflMatchItem } | null> {
   if (!roundNumber || !teamName) return null;
   const seasonId = await currentSeasonId();
   if (!seasonId) return null;
@@ -157,8 +162,68 @@ async function findMatch(
            (nameMatch(a, teamName) && nameMatch(h, opponentName));
   });
   const matchId = item?.match?.matchId;
-  if (!matchId) return null;
-  return { matchId, homeName: item?.match?.homeTeam?.name ?? '' };
+  if (!matchId || !item) return null;
+  return { matchId, homeName: item.match?.homeTeam?.name ?? '', awayName: item.match?.awayTeam?.name ?? '', item };
+}
+
+/** Squiggle games feed → the round number for a completed match on a day. */
+async function roundForMatch(teamName: string, opponentName: string, day: string): Promise<number | null> {
+  const year = day.slice(0, 4);
+  const res = await fetchTimeout(
+    `https://api.squiggle.com.au/?q=games;year=${year}`,
+    { headers: { 'User-Agent': 'SportsHouseMVP/1.0' }, next: { revalidate: 1800 }, timeoutMs: 8000 },
+  );
+  if (!res.ok) return null;
+  const { games = [] } = await res.json() as { games?: any[] };
+  const game = games.find(g =>
+    Number(g.complete) === 100 &&
+    String(g.date).slice(0, 10) === day &&
+    ((nameMatch(g.hteam, teamName) && nameMatch(g.ateam, opponentName)) ||
+     (nameMatch(g.ateam, teamName) && nameMatch(g.hteam, opponentName))));
+  return game?.round ? Number(game.round) : null;
+}
+
+/**
+ * Quarter-by-quarter scores as MATCH EVENTS lines — the passage structure an
+ * AFL report is written around ("trailed by 28 late in the third", "kicked
+ * six of the last seven"). Cumulative after each term, home side first, with
+ * an HT line in the canonical "HT — Home h–a Away" shape the review binders
+ * read. Null when the feed has no period scores.
+ */
+export async function fetchAflQuarterScores(
+  teamName: string,
+  opponentName: string,
+  matchDateISO: string,
+): Promise<{ events: string[]; homeName: string; awayName: string } | null> {
+  try {
+    const round = await roundForMatch(teamName, opponentName, matchDateISO.slice(0, 10));
+    if (!round) return null;
+    const found = await findMatch(round, teamName, opponentName);
+    const hs = found?.item.score?.homeTeamScore, as = found?.item.score?.awayTeamScore;
+    if (!found || !hs?.periodScore?.length || !as?.periodScore?.length) return null;
+    const home = found.homeName, away = found.awayName;
+    const terms = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const events: string[] = [];
+    let hG = 0, hB = 0, hT = 0, aG = 0, aB = 0, aT = 0;
+    const periods = Math.max(hs.periodScore.length, as.periodScore.length);
+    for (let i = 0; i < periods; i++) {
+      const hp = hs.periodScore.find(p => p.periodNumber === i + 1)?.score ?? {};
+      const ap = as.periodScore.find(p => p.periodNumber === i + 1)?.score ?? {};
+      const hq = { g: hp.goals ?? 0, b: hp.behinds ?? 0, t: hp.totalScore ?? 0 };
+      const aq = { g: ap.goals ?? 0, b: ap.behinds ?? 0, t: ap.totalScore ?? 0 };
+      hG += hq.g; hB += hq.b; hT += hq.t; aG += aq.g; aB += aq.b; aT += aq.t;
+      const lead = hT === aT ? 'scores level' : `${hT > aT ? home : away} lead by ${Math.abs(hT - aT)}`;
+      events.push(`${terms[i] ?? `Q${i + 1}`} — ${home} ${hq.g}.${hq.b} (${hq.t}) v ${away} ${aq.g}.${aq.b} (${aq.t}) in the term; ${home} ${hG}.${hB} (${hT}) – ${aG}.${aB} (${aT}) ${away} after ${i + 1} term${i ? 's' : ''}; ${lead}`);
+      if (i === 1) events.push(`HT — ${home} ${hT}–${aT} ${away}`);
+    }
+    if (typeof hs.minutesInFront === 'number' && typeof as.minutesInFront === 'number') {
+      events.push(`Time in front: ${home} ${hs.minutesInFront} min, ${away} ${as.minutesInFront} min`);
+    }
+    events.push(`FT — ${home} ${hT}–${aT} ${away}`);
+    return { events, homeName: home, awayName: away };
+  } catch {
+    return null;
+  }
 }
 
 export interface AflLineups {

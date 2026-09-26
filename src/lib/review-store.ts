@@ -22,7 +22,7 @@ import { getSupabaseAdmin } from '@/lib/supabase/admin';
  *   v8: last data-cache generation.
  *   v9: Supabase-persisted, keyed by perspective id (2026-09-22).
  */
-export const REVIEW_REGIME = 'v11'; // v11 (2026-09-25): one neutral generation per match, two verdicts, mirrored to both perspective keys
+export const REVIEW_REGIME = 'v12'; // v12 (2026-09-26): report-craft prompt, per-player lines (NRL/soccer), AFL quarter scores, model key moments
 export const reviewStoreKey = (gameId: string): string => `${REVIEW_REGIME}:${gameId}`;
 
 export interface StoredReview {

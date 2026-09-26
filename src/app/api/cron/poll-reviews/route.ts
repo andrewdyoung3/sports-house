@@ -24,7 +24,7 @@ import { TEAMS } from '@/lib/teams';
 import { makeResultId } from '@/lib/result-match-key';
 import { existingReviewIds, reviewStoreKey } from '@/lib/review-store';
 import { getDistinctFollowed, followsNothing } from '@/lib/followed-teams-server';
-import { acquireLock, releaseLock } from '@/lib/generation-lock';
+import { acquireLock, refreshLock, releaseLock } from '@/lib/generation-lock';
 import { secretsMatch } from '@/lib/request-guards';
 
 function log(msg: string) {
@@ -201,6 +201,7 @@ export async function GET(req: NextRequest) {
     const counts = { generated: 0, cached: 0, errors: 0 };
     const cronSecret = process.env.CRON_SECRET ?? '';
     for (const job of pending) {
+      refreshLock(); // a long run must not look stale to the next tick
       const outcome = await postReview(job, cronSecret);
       if (outcome === 'ok')     counts.generated++;
       if (outcome === 'cached') counts.cached++;

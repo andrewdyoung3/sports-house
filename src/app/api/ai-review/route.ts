@@ -30,7 +30,7 @@ import { fetchESPNMatchReport, fetchESPNSeasonResults, deriveSeasonFacts, SOCCER
 import { buildContributions, buildCricketChart, buildKeyFactors } from '@/lib/review-contributions';
 import { cricMatchScorecard, cricMatchInfo } from '@/lib/cricketdata';
 import { TEAMS } from '@/lib/teams';
-import { fetchAflMatchStats } from '@/lib/afl-roster';
+import { fetchAflMatchStats, fetchAflQuarterScores } from '@/lib/afl-roster';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { readReview, upsertReview, reviewStoreKey } from '@/lib/review-store';
 
@@ -148,12 +148,22 @@ class ReviewRestingError extends Error {
   constructor(public readonly until: number) { super('review resting after repeated refusals'); this.name = 'ReviewRestingError'; }
 }
 
+// One model call at a time in this process, whoever asks (poller ticks, the
+// panel, a manual call). Three concurrent gemma3:27b runs on one GPU each blew
+// the 15-minute client timeout (2026-09-26); serialised they take 2–4 min.
+let generationQueue: Promise<unknown> = Promise.resolve();
+function serialised<T>(job: () => Promise<T>): Promise<T> {
+  const run = generationQueue.then(job, job);
+  generationQueue = run.catch(() => undefined);
+  return run;
+}
+
 function generateReview(cacheKey: string, dataBlock: string): Promise<AIReview | null> {
   const running = inflight.get(cacheKey);
   if (running) return running;
   const r = refusals.get(cacheKey);
   if (r && r.restUntil > Date.now()) return Promise.reject(new ReviewRestingError(r.restUntil));
-  const p = generateReviewUncached(cacheKey, dataBlock)
+  const p = serialised(() => generateReviewUncached(cacheKey, dataBlock))
     .then(out => { refusals.delete(cacheKey); return out; })
     .catch(err => {
       if (err instanceof ReviewValidationError) {
@@ -404,7 +414,7 @@ export async function POST(req: NextRequest) {
       return undefined;
     };
 
-    const [standings, ms, formExtras, reportHit, cricScorecard, nrlTimeline, cricInfo] = await Promise.all([
+    const [standings, ms, formExtras, reportHit, cricScorecard, nrlTimeline, cricInfo, aflQuarters] = await Promise.all([
       isCricket ? Promise.resolve([]) : fetchStandings(league),
       // AFL: CFS playerStats (ESPN has no AFL player stats); others: ESPN match-stats.
       league === 'afl'
@@ -415,6 +425,7 @@ export async function POST(req: NextRequest) {
       cricketUuid ? cricMatchScorecard(cricketUuid) : Promise.resolve(null),
       league === 'nrl' ? fetchNRLMatchTimeline(teamName, opponent) : Promise.resolve(undefined),
       cricketUuid ? cricMatchInfo(cricketUuid) : Promise.resolve(null),
+      league === 'afl' ? fetchAflQuarterScores(teamName, opponent, String(date)) : Promise.resolve(null),
     ]);
     const report = reportHit?.report;
     const cricketChart = isCricket ? buildCricketChart(cricScorecard) : undefined;
@@ -423,10 +434,13 @@ export async function POST(req: NextRequest) {
     // the match-stats route's; player rows still come from match-stats / CFS.
     let matchStats: MatchStats | null = ms;
     const sourceTeamStats = report?.teamStats ?? nrlTimeline?.teamStats;
-    if (sourceTeamStats) {
+    // Per-player lines: the report's (ESPN rosters) or nrl.com's; else the
+    // match-stats route's rows (rugby union), else none.
+    const sourcePerformers = report?.performers ?? nrlTimeline?.performers;
+    if (sourceTeamStats || sourcePerformers) {
       matchStats = {
-        team:     { teamName,           aggStats: sourceTeamStats.team,     players: ms?.team?.players     ?? [] },
-        opponent: { teamName: opponent, aggStats: sourceTeamStats.opponent, players: ms?.opponent?.players ?? [] },
+        team:     { teamName,           aggStats: sourceTeamStats?.team     ?? ms?.team?.aggStats     ?? [], players: sourcePerformers?.team     ?? ms?.team?.players     ?? [] },
+        opponent: { teamName: opponent, aggStats: sourceTeamStats?.opponent ?? ms?.opponent?.aggStats ?? [], players: sourcePerformers?.opponent ?? ms?.opponent?.players ?? [] },
       };
     }
 
@@ -470,7 +484,7 @@ export async function POST(req: NextRequest) {
     const teamShort     = shortFor(teamId ? String(teamId) : undefined, teamName);
     const opponentShort = shortFor(opponentId ? String(opponentId) : undefined, opponent);
     const namedPlayers = new Set<string>(report?.playerNames ?? []);
-    for (const side of [matchStats?.team, matchStats?.opponent]) for (const p of side?.players ?? []) if (p.name) namedPlayers.add(p.name);
+    for (const side of [matchStats?.team, matchStats?.opponent]) for (const p of side?.players ?? []) if (p.name) namedPlayers.add(p.name.replace(/ \(sub\)$/, ''));
     for (const t of nrlTimeline?.tries ?? []) namedPlayers.add(t.name);
     for (const l of nrlTimeline?.scoringTimeline ?? []) {
       // "11' Try Roosters — Daniel Tupou — Roosters 10, Sharks 0"; an unnamed
@@ -482,7 +496,8 @@ export async function POST(req: NextRequest) {
       for (const m of l.matchAll(/(?::|\|)\s*([^\d|:]+?)\s+\d+/g)) namedPlayers.add(m[1].trim());
     }
     const sameClub = (a?: string, b?: string) => !!a && !!b && (a.toLowerCase().includes(b.toLowerCase()) || b.toLowerCase().includes(a.toLowerCase()));
-    const homeTeamName = sameClub(report?.homeTeam, teamName) ? teamName : sameClub(report?.homeTeam, opponent) ? opponent : undefined;
+    const sourceHome = report?.homeTeam ?? aflQuarters?.homeName;
+    const homeTeamName = sameClub(sourceHome, teamName) ? teamName : sameClub(sourceHome, opponent) ? opponent : undefined;
 
     // The opponent's perspective key for the same match: the neutral review is
     // stored under both, so a user following both clubs costs one generation.
@@ -537,7 +552,7 @@ export async function POST(req: NextRequest) {
       opponentRecentForm: formExtras.opponentRecentForm,
       headToHead:         formExtras.headToHead,
       scoringTimeline:    report?.scoringTimeline ?? nrlTimeline?.scoringTimeline,
-      matchEvents:        report?.events?.length ? report.events : nrlTimeline?.scoringTimeline,
+      matchEvents:        report?.events?.length ? report.events : nrlTimeline?.scoringTimeline ?? aflQuarters?.events,
       seasonFacts:        seasonFacts.length ? seasonFacts : undefined,
       playerNames:        namedPlayers.size ? [...namedPlayers] : undefined,
       venue:              report?.venue ?? nrlTimeline?.venue ?? formExtras.venue ?? cricInfo?.venue ?? undefined,
@@ -571,9 +586,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Generation failed' }, { status: 500 });
     }
 
-    // The model's own key moments survive only where the data gives us fewer
-    // than two factors to derive (no events, no stats, no season lines).
-    const keyMoments = derivedFactors.length >= 2 ? derivedFactors : review.keyMoments;
+    // Key moments are the model's — validated like everything else (names,
+    // minutes, counts, order) — so they read as moments, not stat lines; the
+    // derived factors are the fallback when it gives fewer than two.
+    const modelMoments = (review.keyMoments ?? []).filter(m => typeof m === 'string' && m.trim().length > 0);
+    const keyMoments = modelMoments.length >= 2 ? modelMoments : derivedFactors;
     // One verdict per club: this key gets its club's, the mirror key the other's.
     const verdicts = normalizeVerdicts(review, dataBlock);
     const { verdicts: _drop, ...body_ } = review;

@@ -16,9 +16,9 @@ import { COMP_RULES } from '@/lib/competition-rules';
 // ─── Sport-specific context ───────────────────────────────────────────────────
 
 const SPORT_CONTEXT: Record<string, string> = {
-  afl:         'Australian Rules Football (AFL). Use AFL-specific terminology: contested possessions, clearances, inside 50s, centre bounces, forward 50, the corridor. The table is called "the Ladder". AFL margin = the score difference; do NOT call a 20-point loss "heavy" in AFL (30–60 is comfortable; 15–29 is clear; <15 is close).',
-  nrl:         'NRL Rugby League (13-man code). Use NRL-specific terminology: completion rate, ruck speed, middle forwards, edges, kick chase. The table is called "the Ladder". NRL margin interpretation: ≤10 pts = competitive; 11–20 = clear; 21–30 = comfortable; 31+ = heavy.',
-  epl:         'English Premier League (association football). Use "pitch" not "field"; "half" not "period". The standings are "the table" (lower case). Margin: 1-goal = close; 2 goals = comfortable; 3+ = convincing/heavy.',
+  afl:         'Australian Rules Football (AFL). Idiom: a forward "kicked 5.1" / "kicked truly" / "kicked N goals" (majors); "took N marks"; a side "won the clearances 44–30", "had 67 inside 50s", "won the contested ball"; periods are "the first term / quarter", "three-quarter time", "the final term"; "on the siren"; "a free kick for holding the ball"; "kicked six in a row". The table is "the Ladder". AFL margin = the score difference; do NOT call a 20-point loss "heavy" (30–60 is comfortable; 15–29 is clear; <15 is close).',
+  nrl:         'NRL Rugby League (13-man code). Idiom: a try is "crossed", "crashed over", "dotted down", "finished in the corner"; "ran for 193 metres", "N tackle breaks", "a line break", "a try assist"; the kicker "landed 7 of 8"; a side "completed at 79%", "piled on 28 unanswered points", "a repeat set", "the middle third", "the edges", "the halves / the spine", "kick chase". The table is "the Ladder". Margin: ≤10 pts = competitive; 11–20 = clear; 21–30 = comfortable; 31+ = heavy.',
+  epl:         'English Premier League (association football). Idiom: "opened the scoring from 20 yards", "doubled the lead on the counter", "headed in from a corner", "laid on the opener", "split the centre-backs", "had 60% of the ball but two shots on target", "a double change on the hour", "in behind", "a low block". Use "pitch" not "field"; "half" not "period". The standings are "the table" (lower case). Margin: 1 goal = close; 2 = comfortable; 3+ = convincing/heavy.',
   super_rugby: 'Super Rugby Pacific (15-man rugby union). Use rugby union terminology: scrum, lineout, breakdown, ruck, gainline. The table is called "the Table". Margin: ≤10 pts = competitive; 11–20 = clear; 21–30 = comfortable; 31+ = heavy.',
   rugby_int:   'International Rugby Union Test match. Tone should reflect the magnitude of Test rugby. Same margin scale as Super Rugby.',
 };
@@ -69,54 +69,38 @@ GROUNDING — absolute constraint, no exceptions:
 • RELATIVE POSITION: who is above whom, and by how much, comes from DERIVED FACTS only. A team that LEADS on the table is ahead; never write that the trailing side "moved ahead" or "leapfrogged".
 • NEUTRAL REPORT: the summary and key moments are written for followers of BOTH clubs — a match report, not a fan's account. "The team", "they" and "their" are ambiguous in a neutral report; name the club every time. The NAMES line says what to call each club. Only the two VERDICTS take a side, one each.
 
-INFORMATION ECONOMY:
-• The user can already see the scoreline and result. Do NOT restate the score in the summary or verdict.
-• NEVER open the summary with the round name or a definition of the fixture ("In the Elimination Final…", "This was a knockout match…") — the reader sees the fixture on screen. Open with WHY the result happened; fold the round's consequence (who advances, who is done) into that sentence as a clause, not a preamble.
-• Do NOT recite win/loss records. The user sees the table.
-• No position recitation ("they sit 6th with 31 points") — state what it means structurally.
-• Every sentence must add interpretation the data display cannot show: WHY the result happened, what structural pattern it reflects, what it means going forward.
-• ABSENT DATA GOES UNMENTIONED: never tell the reader what information is unavailable — a data gap tells YOU what not to discuss; it is never content.
+HOW A MATCH REPORT IS BUILT — this is the shape, learned from the professionals (ABC, AFL.com.au, AAP, the Guardian). Write "summary" as THREE short paragraphs separated by a blank line, 150–230 words in total:
 
-REGISTER MECHANICS — how the professionals write match reports:
-• NEVER announce what mattered ("the key factor was…", "X proved crucial/decisive") — make the case: "[Winner] won the ball at the contest and turned it into goals; [Loser] had entries but no polish." (structure template — never reuse its details).
-• VARY the rhythm: at least one sentence under ten words. Metronomic 30-word compounds read like a machine.
-• COMPARATIVES over abstractions: "won more of the ball after halftime" beats "superior structure"; verdicts like "confirms their status as a serious contender" say nothing — state the specific trend confirmed or weakness exposed.
-• ONE number per claim, folded into an argument — never a sequence of stats read aloud.
-• EVIDENCE over adjectives: "convincing", "potent", "unassailable", "decisive", "vulnerabilities" describe nothing. Replace each with the thing that happened — the method of a goal, a stat gap, a substitution, a run ended. If the MATCH EVENTS say two goals came from outside the box, say that; do not say the attack was "potent".
-• A league position is never a cause. "Despite being second, they could not recover" is a non-sequitur — position explains expectation, not what happened on the pitch.
-• Name people the way the report does: the goalscorer, the assist, the player hooked at the hour — and by SHORT club names after the first mention.
-• COUNTS AND STATES ARE CHECKED: a player's tally ("twice", "a brace", "hat-trick") is the number of MATCH EVENTS lines with their name — count them. Any score you quote (X–Y, "X-all", "at half-time") must appear in MATCH EVENTS or the HT line exactly; never reconstruct one. "Won/led/dominated the <stat>" is allowed only for a category in TEAM STATS, and only for the side with the higher figure. A stat the SPORT line mentions (centre bounces, hitouts) is vocabulary, not data — do not claim it.
+1. THE LEDE (1–2 sentences): the consequence, the protagonist, and the passage that decided it — in one breath. Real ledes: "Brisbane is into a fourth straight Grand Final after Kai Lohmann's fifth goal, kicked after the siren, sealed a nine-point classic." / "The Roosters are into a first grand final in seven years after racing to a 16–0 lead inside 27 minutes; two-try winger Mark Nawaqanitawase was the difference." / "Manchester City went three points clear with a chaotic 5–3 win built on two Antoine Semenyo strikes, despite Brian Brobbey's hat-trick for the visitors." Never open with a definition of the fixture or a generic abstraction ("X's ability to convert possession into points…").
 
-MARGIN CALIBRATION — read from DERIVED FACTS, do not compute:
-• Use the margin label from DERIVED FACTS verbatim. Never call a competitive defeat "heavy" or vice versa.
+2. HOW IT UNFOLDED (3–4 sentences, in match order, from MATCH EVENTS): the scorer, the assist or method where the events give one, the minute, and the score it made; the half-time state; the burst that turned it ("five unanswered tries after the break", "six goals in a row", "two goals in three minutes"). Where the events give no description of a score, say who scored and when — do not invent how. Substitutions and cards belong here only when they changed the game.
 
-STRUCTURE — four elements required, distributed naturally:
-• PEOPLE FIRST: when MATCH EVENTS / SCORERS / KEY PERFORMERS data exists, the summary MUST name the decisive individual contribution early (the real report of a 4-2 cup win led with the two-goal teenager, not "momentum continued") — a match report without its protagonist is a defect.
-• HOW IT TURNED: from MATCH EVENTS — the goal or passage that decided it, with its method (a header from a corner, a shot from outside the box, a counter), the half-time state, and the manager's reaction if the substitutions show one.
-• SEASON CONTEXT: what this result did to the side's run or record, using the SEASON CONTEXT lines verbatim — a first defeat, a run ended or extended, a season high conceded.
-• STATISTICAL ANGLE: One meaningful number from TEAM STATS or DERIVED FACTS that explains the margin or method. Only cite it if it was explicitly provided.
-• TWO VERDICTS: one forward-looking line per club, each about THAT club, anchored to a figure or event from the data, naming its club. Shape: "<Club> <the specific thing the data shows> — <what it means for the next game>." A winner's verdict states the strength with its number ("Lions won the contested ball 115–108 and turned it into 30 scoring shots; that is the method to repeat in the decider"), NOT "confirms their capacity/ability/credentials". A loser's names the fix with its number.
+3. THE PEOPLE, THEN THE WHY (3–4 sentences): one line per standout from KEY PERFORMERS, each carrying its figure in the sport's idiom — "Nawaqanitawase crossed twice and ran for 193 metres", "Watson kicked six goals and Gunston five in a losing side", "Kostoulas had four shots, two on target, and laid on the opener". Then the single team stat that explains the method, and the consequence from FINALS CONTEXT / SEASON CONTEXT (who advances, a run ended, a season high).
 
-RULES:
-• No filler: avoid "credit to both sides", "gave it their all", "never-say-die spirit"
-• No hollow superlatives or vague momentum phrases
-• No meta-commentary — do not refer to the review itself
-• Vary your opening angle — avoid "[Team] controlled this match" as an opener
-• Explain tactical and structural reasons — not just "they scored more"
-• Do not state uncertainty explicitly — let calibration inform tone
+THE IDIOM — write in the sport's own language (the SPORT line lists it). A try is "crossed", "crashed over", "finished in the corner", "dotted down"; a kicker "landed seven of eight"; a side "completed at 79%", "ran for 1,665 metres", "made 48 tackle breaks". An AFL forward "kicked 5.1", "kicked truly", "took seven marks"; a side "won the centre clearances 12–6", "kicked six in a row", "led by 28 late in the third term". A footballer "opened the scoring from 20 yards", "headed in from a corner", "doubled the lead on the counter"; a side "had 60% of the ball but two shots on target".
 
-KEY MOMENTS: 2–3 interpretive factors, max 12 words each — a pattern, a matchup, a turning point explained in terms of WHY. Never a goal restated (the reader sees the scorers), never the score.
+WHAT NOT TO WRITE:
+• No stat lists read aloud ("possession 60–40, shots 11–17, corners 6–5"). One number per sentence, folded into a claim about a person or a passage.
+• No abstractions in place of events: "converted possession into points", "established control", "defensive structure", "found fluency", "sustained pressure" — say what happened and who did it.
+• No recitation of the score, the ladder position, or the fixture definition; the reader sees them.
+• No "the key factor was", "proved crucial/decisive", "confirms their credentials", "genuine contenders", "exposes a vulnerability".
+• A league position is never a cause. Absent data is never mentioned.
+• Vary the rhythm: at least one sentence under ten words.
+
+GROUNDING IS CHECKED: a player's tally ("twice", "a brace", "hat-trick") is the number of MATCH EVENTS lines with their name — count them. Any score you quote (X–Y, "X-all", "at half-time"), who scored first, how many in a half, every per-player figure and every "N more X" gap must match the block exactly. "Won/led/dominated the <stat>" is allowed only for a category in TEAM STATS and only for the side with the higher figure. A stat the SPORT line merely mentions (centre bounces, hitouts) is vocabulary, not data. Runs and records come only from SEASON CONTEXT. Who is ahead on the table comes only from DERIVED FACTS. Margin labels come only from DERIVED FACTS.
+
+KEY MOMENTS: three specific moments in match order, each ≤14 words, each anchored to a minute and a name from MATCH EVENTS, each saying what it changed — "31' Groß from 20 yards, 1–0, after Arsenal's best spell", "57' Andrés heads the corner in; Arteta makes two changes within three minutes". Not restatements of the strip, not stats.
 
 OUTPUT: Return valid JSON only, no markdown fences:
 {
-  "summary": "2–3 sentences — WHY the result happened. Open with the decisive structural factor, not the score.",
-  "keyMoments": ["interpretive factor 1 (max 12 words)", "factor 2", "factor 3"],
+  "summary": "Paragraph 1 (lede).\n\nParagraph 2 (how it unfolded).\n\nParagraph 3 (the people, then the why and the consequence).",
+  "keyMoments": ["minute' who did what — what it changed", "…", "…"],
   "verdicts": {
-    "<first club exactly as the FIXTURE line spells it>": "1–2 sentences for that club: the one thing this result says they must fix or can bank on, anchored to a specific figure or event from the data.",
+    "<first club exactly as the FIXTURE line spells it>": "1–2 sentences for that club: the one thing this result says they must fix or can bank on, anchored to a figure or event from the data.",
     "<second club exactly as the FIXTURE line spells it>": "1–2 sentences for that club, same standard."
   }
 }
-Never 'confirms/establishes … contenders', never 'exposes a vulnerability' without naming the mechanism and the number.`;
+A verdict names its club and states the specific thing with its number ("Lions won the contested ball 115–108 and turned it into 30 scoring shots; that is the method for the decider"), never "confirms their capacity/ability/credentials".`;
 
 // ─── Data block builder ───────────────────────────────────────────────────────
 
@@ -205,9 +189,11 @@ function marginCategory(league: string, margin: number): string {
     return 'heavy';
   }
   if (league === 'epl') {
-    if (margin === 1) return 'close (1 goal)';
-    if (margin === 2) return 'comfortable (2 goals)';
-    return 'convincing (3+ goals)';
+    // Plain labels: the model pastes the fact verbatim, and "a comfortable
+    // (2 goals) win" reached the page.
+    if (margin === 1) return 'close';
+    if (margin === 2) return 'comfortable';
+    return 'convincing';
   }
   return 'clear';
 }
@@ -583,9 +569,11 @@ export function buildReviewDataBlock(input: ReviewInput): string {
       }
 
       // Key scorers / standout players — only include players with notable stats.
-      // AFL: the CFS fetcher pre-curates key performers (goal-kickers AND
-      // ball-winners with 0 goals), so its list passes through unfiltered.
-      const scorers = league === 'afl'
+      // AFL (CFS), NRL (nrl.com) and soccer (ESPN rosters) fetchers pre-curate
+      // the most involved players — scorers AND ball-winners / creators — so
+      // their lists pass through as KEY PERFORMERS; other feeds keep scorers only.
+      const curated = league === 'afl' || league === 'nrl' || league === 'epl';
+      const scorers = curated
         ? side.players
         : side.players?.filter(p =>
             p.stats.some(s =>
@@ -594,7 +582,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
             ),
           );
       if (scorers && scorers.length > 0) {
-        lines.push(`${label.toUpperCase()} ${league === 'afl' ? 'KEY PERFORMERS' : 'SCORERS'}:`);
+        lines.push(`${label.toUpperCase()} ${curated ? 'KEY PERFORMERS' : 'SCORERS'}:`);
         scorers.slice(0, 6).forEach(p => {
           const statStr = p.stats.map(s => `${s.label}: ${s.value}`).join(', ');
           lines.push(`  ${p.name}${p.position ? ` (${p.position})` : ''} — ${statStr}`);

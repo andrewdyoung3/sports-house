@@ -62,6 +62,19 @@ export function acquireLock(): boolean {
  * Releases the lock by removing the lockfile.
  * Safe to call even if the lock was never acquired (no-op).
  */
+/**
+ * Re-stamp a lock this process holds. A backlog run of several reviews now
+ * outlasts STALE_MS, and the next tick was reclaiming the lock mid-run — two
+ * runs, two model calls on one GPU, both timing out (2026-09-26). Call
+ * between jobs.
+ */
+export function refreshLock(): void {
+  try {
+    const data = readLockData();
+    if (data && data.pid === process.pid) writeFileSync(LOCK_PATH, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+  } catch { /* best effort */ }
+}
+
 export function releaseLock(): void {
   try { unlinkSync(LOCK_PATH); } catch { /* already gone — no-op */ }
 }

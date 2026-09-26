@@ -30,7 +30,7 @@ const STATS_LEAGUES       = new Set(['nrl', 'epl', 'super_rugby', 'rugby_int']);
 // Suffix tracks REVIEW_REGIME in lib/review-store.ts: a regime bump makes the
 // server re-generate, and this makes the browser re-ask instead of showing the
 // copy it kept.
-const REVIEW_CACHE_KEY = (id: string) => `ai-review-v11:${id}`;
+const REVIEW_CACHE_KEY = (id: string) => `ai-review-v12:${id}`;
 const STATS_CACHE_KEY  = (id: string) => `match-stats-v2:${id}`;
 
 function loadJSON<T>(key: string): T | null {
@@ -354,7 +354,10 @@ export function ResultExpandPanel({ result, className, onCollapse }: ResultExpan
         <div>
           <div className="sh-detail-head"><Zap className="sh-icon h-[13px] w-[13px]" />Match Report</div>
           {aiReview?.summary ? (
-            <p className="sh-detail-body">{aiReview.summary}</p>
+            // Reports are written in paragraphs (blank-line separated).
+            aiReview.summary.split(/\n\s*\n/).filter(Boolean).map((para, i) => (
+              <p key={i} className="sh-detail-body">{para}</p>
+            ))
           ) : (
             <p className="sh-detail-body" style={{ fontStyle: 'italic', color: 'var(--text-3)' }}>
               {result.isWin
