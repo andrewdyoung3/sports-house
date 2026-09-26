@@ -1058,6 +1058,7 @@ function scoringEvents(dataBlock: string): Array<{ minute: number; scorer: strin
 
 const PLAYER_FIGURE_NOUNS: Array<{ re: RegExp; labels: string[] }> = [
   { re: /^(?:goal|conversion|kick(?:ing)?) attempts?$|^attempts? at goal$|^shots? at goal$/i, labels: ['goals attempts'] },
+  { re: /^line[- ]?break assists?$/i,                            labels: ['line-break assists'] },
   { re: /^shots? on target$|^efforts? on target$|^on target$/i, labels: ['on target'] },
   { re: /^shots?$|^efforts?$|^attempts?$/i,                     labels: ['shots'] },
   { re: /^saves?$/i,                                             labels: ['saves'] },
@@ -1106,8 +1107,19 @@ export function validatePlayerFigures(review: AIReview, dataBlock: string): stri
   const violations: string[] = [];
   const seen = new Set<string>();
   const flag = (k: string, msg: string) => { if (!seen.has(k)) { seen.add(k); violations.push(msg); } };
-  const NUMW = String.raw`(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twice|once|thrice|a brace|a hat-trick)`;
-  const cnt = (s: string) => /^twice$/i.test(s) ? 2 : /^once$/i.test(s) ? 1 : /^thrice$/i.test(s) ? 3 : /brace/i.test(s) ? 2 : /hat-trick/i.test(s) ? 3 : toN(s);
+  // Compound words first so "twenty-three touches" is 23, not the trailing "three".
+  const NUMW = String.raw`((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-(?:one|two|three|four|five|six|seven|eight|nine))?|\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twice|once|thrice|a brace|a hat-trick)`;
+  const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+  const TEENS: Record<string, number> = { thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19 };
+  const cnt = (s: string): number => {
+    const l = s.toLowerCase();
+    if (/^twice$/.test(l)) return 2; if (/^once$/.test(l)) return 1; if (/^thrice$/.test(l)) return 3;
+    if (/brace/.test(l)) return 2; if (/hat-trick/.test(l)) return 3;
+    const comp = l.match(/^(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-([a-z]+))?$/);
+    if (comp) return TENS[comp[1]] + (comp[2] ? toN(comp[2]) || 0 : 0);
+    if (TEENS[l] !== undefined) return TEENS[l];
+    return toN(s);
+  };
   const mentioned = (sentence: string): PlayerLine[] => {
     const l = sentence.toLowerCase();
     return players.filter(p => (p.surname.length >= 4 && l.includes(p.surname)) || l.includes(p.name.toLowerCase()));
@@ -1386,10 +1398,19 @@ export function validateVerdicts(review: AIReview, dataBlock: string): string[] 
   const norm = normalizeVerdicts(review, dataBlock);
   if (!norm) return [`verdicts must cover both clubs, keyed exactly "${ctx.teamName}" and "${ctx.opponent}" (got: ${Object.keys(review.verdicts).map(k => `"${k}"`).join(', ') || 'none'})`];
   const violations: string[] = [];
+  const OTHER_CLUBS = /\b(Panthers|Knights|Storm|Collingwood|Magpies|Geelong|Cats|Broncos|Eels|Rabbitohs|Bulldogs|Warriors|Raiders|Cowboys|Titans|Dragons|Wests Tigers|Sea Eagles|Crows|Port Adelaide|Saints|Bombers|Demons|Giants|Suns|Eagles|Kangaroos|Carlton|Richmond|Essendon|Melbourne|Adelaide|Manchester City|Manchester United|Liverpool|Chelsea|Tottenham|Newcastle|Aston Villa|Everton|Leeds)\b/g;
   for (const [club, toks, otherToks] of [[ctx.teamName, ctx.teamToks, ctx.oppToks], [ctx.opponent, ctx.oppToks, ctx.teamToks]] as const) {
     const l = norm[club].toLowerCase();
     const mine  = toks.some(t => l.includes(t) && !otherToks.includes(t)) || /\bthe (?:team|side)\b|\bthey\b|\btheir\b/.test(l);
     if (!mine) violations.push(`verdict for ${club} never refers to ${club} — it must state the implication for them`);
+    // A verdict looks forward; the data never says whom to. "against either
+    // Collingwood or Brisbane" (Fremantle's verdict) was invented.
+    for (const m of norm[club].matchAll(OTHER_CLUBS)) {
+      const who = m[1].toLowerCase();
+      if (ctx.teamName.toLowerCase().includes(who) || ctx.opponent.toLowerCase().includes(who) || toks.some(t => who.includes(t)) || otherToks.some(t => who.includes(t))) continue;
+      violations.push(`verdict for ${club} names ${m[1]} — the data does not say who comes next; keep the verdict to this club's own method or fix`);
+      break;
+    }
   }
   return violations;
 }
@@ -1466,7 +1487,13 @@ export function validateReviewOutput(input: AIReview, dataBlock: string): string
     verdicts:   input.verdicts ? Object.fromEntries(Object.entries(input.verdicts).map(([k, v]) => [k, typeof v === 'string' ? dethousand(v) : v])) : input.verdicts,
   };
   const derived = derivedNumbers(dataBlock);
+  // The block's own thousands figures ("attendance 39,147") must match the
+  // uncommaed review text; strip the separators there too (only 9,999 forms).
+  const blockForNumbers = dataBlock.replace(/(\d),(\d{3})\b/g, '$1$2');
+  const allowed = new Set([...blockForNumbers.matchAll(/\d+/g)].map(m => Number(m[0])));
   return validateReviewOutputRaw(review, dataBlock).filter(v => {
+    const un = v.match(/^unsourced number "[^"]*" — no figure (\d+) appears/);
+    if (un && allowed.has(Number(un[1]))) return false;
     const m = v.match(/^unsourced number "[^"]*" — no figure (\d+) appears/);
     return !(m && derived.has(Number(m[1])));
   });

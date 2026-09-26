@@ -44,7 +44,14 @@ function repairJson(src: string): string {
   let out = '';
   let inStr = false;
   for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
+    let ch = src[i];
+    // Curly quotes used as JSON delimiters: `”,` / `”}` closes a string, `: “` opens one.
+    if (ch === '”' || ch === '“') {
+      const rest = src.slice(i + 1);
+      const before = out.slice(-6);
+      if (inStr && /^\s*([,}\]]|$)/.test(rest)) ch = '"';
+      else if (!inStr && /[:\[,]\s*$/.test(before)) ch = '"';
+    }
     if (inStr) {
       if (ch === '\\') {
         const nxt = src[i + 1];
