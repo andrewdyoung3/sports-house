@@ -446,13 +446,67 @@ export function validateScoreStates(review: AIReview, dataBlock: string): string
   const violations: string[] = [];
   const seen = new Set<string>();
   const flag = (raw: string, msg: string) => { if (!seen.has(raw)) { seen.add(raw); violations.push(msg); } };
+
+  // Who ever led, and whether the scores were ever level after the first
+  // score — from the running states. "Sharks replied with two tries to
+  // briefly lead" / "Sharks lead 8–12" when the Sharks trailed 12–8 (live).
+  const ctx = sideContext(dataBlock);
+  const states: Array<{ team: number; opp: number }> = [];
+  if (ctx) {
+    const start = dataBlock.indexOf('MATCH EVENTS');
+    const end = start >= 0 ? dataBlock.indexOf('\n\n', start) : -1;
+    const section = start >= 0 ? dataBlock.slice(start, end === -1 ? undefined : end) : '';
+    const sideOf = (label: string): 'team' | 'opp' | null => {
+      const s = label.trim().toLowerCase();
+      if (ctx.teamToks.some(t => s.includes(t)) || ctx.teamName.toLowerCase().includes(s)) return 'team';
+      if (ctx.oppToks.some(t => s.includes(t)) || ctx.opponent.toLowerCase().includes(s)) return 'opp';
+      return null;
+    };
+    for (const line of section.split('\n')) {
+      // Soccer "[Home 1–0 Away]" and rugby "— Roosters 12, Sharks 8" carry the clubs and numbers in different slots.
+      let clubA: string, numA: number, clubB: string, numB: number;
+      const br = line.match(/\[(.+?) (\d+)–(\d+) (.+?)\]$/) ?? line.match(/^\s*(?:HT|FT) — (.+?) (\d+)–(\d+) (.+?)\s*$/);
+      const da = br ? null : line.match(/— ([A-Za-z][^,\n]*?) (\d+), ([A-Za-z][^\n]*?) (\d+)\s*$/);
+      if (br) { clubA = br[1]; numA = +br[2]; numB = +br[3]; clubB = br[4]; }
+      else if (da) { clubA = da[1]; numA = +da[2]; clubB = da[3]; numB = +da[4]; }
+      else continue;
+      const a = sideOf(clubA), b = sideOf(clubB);
+      if (!a || !b || a === b) continue;
+      states.push(a === 'team' ? { team: numA, opp: numB } : { team: numB, opp: numA });
+    }
+  }
+  const everLed = (side: 'team' | 'opp') => states.some(s => side === 'team' ? s.team > s.opp : s.opp > s.team);
+  const everLevel = states.some(s => s.team === s.opp && s.team > 0);
+  const ledWithPair = (side: 'team' | 'opp', x: number, y: number) => states.some(s => {
+    const mine = side === 'team' ? s.team : s.opp, theirs = side === 'team' ? s.opp : s.team;
+    return mine > theirs && ((mine === x && theirs === y) || (mine === y && theirs === x));
+  });
   const ht = dataBlock.match(/^\s*HT — (.+?) (\d+)–(\d+) (.+)$/m);
   const h = ht ? Number(ht[2]) : NaN, a = ht ? Number(ht[3]) : NaN;
   const htRe = /(?:(?:at|by|before|into|reached)\s+(?:the\s+)?(?:half[- ]?time|the break|the interval)|half[- ]?time (?:lead|score|margin|deficit|advantage))/gi;
 
-  for (const text of REVIEW_SEGMENTS(review)) {
+  for (const { text, side } of ctx ? sidedSegments(review, ctx) : REVIEW_SEGMENTS(review).map(t => ({ text: t, side: null as 'team' | 'opp' | null }))) {
+    const lowerT = text.toLowerCase();
     for (const m of text.matchAll(/\b(\d{1,3})\s*[–-]\s*(\d{1,3})\b(?!['’%])/g)) {
       if (!pairs.has(`${m[1]}:${m[2]}`)) flag(m[0], `score/stat pair "${m[0]}" appears nowhere in the data — quote states and pairs exactly as MATCH EVENTS or TEAM STATS give them`);
+    }
+    if (ctx && states.length) {
+      // "<side> lead 8–12" → the side must be on the higher number in a real state.
+      for (const m of text.matchAll(/\b(led|lead|leading|ahead|in front|up)\b[^.;,]{0,20}?\b(\d{1,3})\s*[–-]\s*(\d{1,3})\b(?!['’%])/gi)) {
+        const subject = subjectFor(lowerT, m.index ?? 0, ctx, side);
+        if (!subject) continue;
+        if (!ledWithPair(subject, Number(m[2]), Number(m[3]))) flag(`lead:${m[0]}`, `"${m[0].trim()}" — ${subject === 'team' ? ctx.teamName : ctx.opponent} never led at ${m[2]}–${m[3]} in MATCH EVENTS`);
+      }
+      // Wordless lead / level claims: "to briefly lead", "took the lead", "briefly levelled", "level at the break".
+      for (const m of text.matchAll(/\b(?:(?:briefly |momentarily )?(?:took|take|taking|regain(?:ed|ing)?|retook|seiz(?:ed|ing)|held|hold(?:ing)?) (?:the |a |their )?lead|to (?:briefly |momentarily )?lead|(?:briefly |momentarily )?(?:went|moved|got|nosed|edged) (?:ahead|in front)|(?:briefly |momentarily )?level(?:led|ling)?(?: the scores| it| things)?|(?:scores )?(?:were |all )?(?:level|square|tied|locked)(?: at| after| by)?)\b/gi)) {
+        const phrase = m[0].toLowerCase();
+        const subject = subjectFor(lowerT, m.index ?? 0, ctx, side);
+        if (/level|square|tied|locked/.test(phrase)) {
+          if (!everLevel && !/\b(?:half[- ]?time|the break|three-quarter|quarter[- ]time)\b/.test(lowerT.slice((m.index ?? 0), (m.index ?? 0) + 60))) flag(`level:${phrase}`, `"${m[0].trim()}" — the scores were never level after the first score in MATCH EVENTS`);
+        } else if (subject && !everLed(subject)) {
+          flag(`led:${phrase}`, `"${m[0].trim()}" — ${subject === 'team' ? ctx.teamName : ctx.opponent} never led in MATCH EVENTS`);
+        }
+      }
     }
     for (const m of text.matchAll(/\b(\d{1,3})[–-]\s?all\b/gi)) {
       if (!pairs.has(`${m[1]}:${m[1]}`)) flag(m[0], `"${m[0]}" — the scores were never level at ${m[1]} in MATCH EVENTS`);
@@ -916,7 +970,7 @@ export function validateHalfCounts(review: AIReview, dataBlock: string): string[
     {
       const seq = scoringEvents(dataBlock);
       const minM = text.match(/\b(\d{1,3})'/);
-      const gapM = text.match(new RegExp(String.raw`\b(?:(?:clos(?:ed|ing)|cut|narrow(?:ed|ing)|reduc(?:ed|ing)|trimm(?:ed|ing)|pull(?:ed|ing)) (?:the )?(?:gap|deficit|margin|lead)(?: back)? to|(?:to )?within|back to within)\s+${N}\b`, 'i'));
+      const gapM = text.match(new RegExp(String.raw`\b(?:(?:clos(?:ed|ing)|cut|narrow(?:ed|ing)|reduc(?:ed|ing)|trimm(?:ed|ing)|pull(?:ed|ing)|extend(?:ed|s|ing)?|stretch(?:ed|es|ing)|push(?:ed|es|ing)|open(?:ed|s|ing)?|blow(?:s|ing)?|blew) (?:the |their |a )?(?:gap|deficit|margin|lead|advantage)(?: back| out)? to|(?:to )?within|back to within)\s+${N}\b`, 'i'));
       if (minM && gapM && seq.length) {
         const ev = seq.find(e => e.minute === Number(minM[1]));
         const margins = marginAfter(dataBlock, ctx);
