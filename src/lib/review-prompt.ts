@@ -73,9 +73,9 @@ HOW A MATCH REPORT IS BUILT — this is the shape, learned from the professional
 
 1. THE LEDE (1–2 sentences): the consequence, the protagonist, and the passage that decided it — in one breath. Real ledes: "Brisbane is into a fourth straight Grand Final after Kai Lohmann's fifth goal, kicked after the siren, sealed a nine-point classic." / "The Roosters are into a first grand final in seven years after racing to a 16–0 lead inside 27 minutes; two-try winger Mark Nawaqanitawase was the difference." / "Manchester City went three points clear with a chaotic 5–3 win built on two Antoine Semenyo strikes, despite Brian Brobbey's hat-trick for the visitors." Never open with a definition of the fixture or a generic abstraction ("X's ability to convert possession into points…").
 
-2. HOW IT UNFOLDED (3–4 sentences, in match order, from MATCH EVENTS): the scorer, the assist or method where the events give one, the minute, and the score it made; the half-time state; the burst that turned it ("five unanswered tries after the break", "six goals in a row", "two goals in three minutes"). Where the events give no description of a score, say who scored and when — do not invent how. Substitutions and cards belong here only when they changed the game.
+2. HOW IT UNFOLDED (3–4 sentences, in match order): built from the PASSAGES lines — the opening score, the run that turned it, the half-time state, the lead changes, the final state — each reworded into prose but with its figures, minutes and names exactly as the line gives them. Take the scorer's method or assist from the MATCH EVENTS line where one exists; where none exists, say who scored and when — do not invent how. DO NOT COMPUTE: no score state, margin, "N minutes later", "N unanswered", "levelled", "N goals in the second half" or term tally that is not in a PASSAGES line. Substitutions and cards belong here only when they changed the game.
 
-3. THE PEOPLE, THEN THE WHY (3–4 sentences): one line per standout from KEY PERFORMERS, each carrying its figure in the sport's idiom — "Nawaqanitawase crossed twice and ran for 193 metres", "Watson kicked six goals and Gunston five in a losing side", "Kostoulas had four shots, two on target, and laid on the opener". Then the single team stat that explains the method, and the consequence from FINALS CONTEXT / SEASON CONTEXT (who advances, a run ended, a season high).
+3. THE PEOPLE, THEN THE WHY (3–4 sentences): one line per standout from KEY PERFORMERS, each carrying its figure EXACTLY as the line gives it (a player's numbers come only from their own KEY PERFORMERS line; never total, average or compare two players' figures), in the sport's idiom — "Nawaqanitawase crossed twice and ran for 193 metres", "Watson kicked six goals and Gunston five in a losing side", "Kostoulas had four shots, two on target, and laid on the opener". Then the single team stat that explains the method, and the consequence from FINALS CONTEXT / SEASON CONTEXT (who advances, a run ended, a season high).
 
 THE IDIOM — write in the sport's own language (the SPORT line lists it). A try is "crossed", "crashed over", "finished in the corner", "dotted down"; a kicker "landed seven of eight"; a side "completed at 79%", "ran for 1,665 metres", "made 48 tackle breaks". An AFL forward "kicked 5.1", "kicked truly", "took seven marks"; a side "won the centre clearances 12–6", "kicked six in a row", "led by 28 late in the third term". A footballer "opened the scoring from 20 yards", "headed in from a corner", "doubled the lead on the counter"; a side "had 60% of the ball but two shots on target".
 
@@ -85,11 +85,13 @@ WHAT NOT TO WRITE:
 • No recitation of the score, the ladder position, or the fixture definition; the reader sees them.
 • No "the key factor was", "proved crucial/decisive", "confirms their credentials", "genuine contenders", "exposes a vulnerability".
 • A league position is never a cause. Absent data is never mentioned.
+• Facts are rewritten, not pasted: never copy the block's annotations — "(this season)", "(authoritative)", "competition points", a label in brackets — into prose.
+• Valid JSON: no raw line breaks inside a string except the "\n\n" between the summary's paragraphs; no trailing commas.
 • Vary the rhythm: at least one sentence under ten words.
 
 GROUNDING IS CHECKED: a player's tally ("twice", "a brace", "hat-trick") is the number of MATCH EVENTS lines with their name — count them. Any score you quote (X–Y, "X-all", "at half-time"), who scored first, how many in a half, every per-player figure and every "N more X" gap must match the block exactly. "Won/led/dominated the <stat>" is allowed only for a category in TEAM STATS and only for the side with the higher figure. A stat the SPORT line merely mentions (centre bounces, hitouts) is vocabulary, not data. Runs and records come only from SEASON CONTEXT. Who is ahead on the table comes only from DERIVED FACTS. Margin labels come only from DERIVED FACTS.
 
-KEY MOMENTS: three specific moments in match order, each ≤14 words, each anchored to a minute and a name from MATCH EVENTS, each saying what it changed — "31' Groß from 20 yards, 1–0, after Arsenal's best spell", "57' Andrés heads the corner in; Arteta makes two changes within three minutes". Not restatements of the strip, not stats.
+KEY MOMENTS: three specific moments in match order, each ≤14 words, each anchored to a minute and a name from MATCH EVENTS (AFL: anchored to the term — "Q3 —", "HT —", "Final term —" — never a made-up minute), each saying what it changed — "31' Groß from 20 yards, 1–0, after Arsenal's best spell", "57' Andrés heads the corner in; Arteta makes two changes within three minutes". Not restatements of the strip, not stats.
 
 OUTPUT: Return valid JSON only, no markdown fences:
 {
@@ -143,6 +145,8 @@ export interface ReviewInput {
   matchEvents?:        string[];
   /** Computed season lines (deriveSeasonFacts) — the only run/record figures the model may cite. */
   seasonFacts?:        string[];
+  /** Computed narrative passages (lib/review-passages.ts) — the only score states, runs and gaps the model may cite. */
+  passages?:           string[];
   /** Every individual the data names — rendered as the explicit whitelist line. */
   playerNames?:        string[];
   venue?:              string;
@@ -205,7 +209,7 @@ export function buildReviewDataBlock(input: ReviewInput): string {
     teamPosition, teamPlayed, teamPoints, teamPercentage,
     opponentPosition, opponentPlayed, opponentPoints, opponentPercentage,
     teamRecentForm, opponentRecentForm, headToHead, scoringTimeline,
-    matchEvents, seasonFacts, playerNames, venue, attendance, homeTeamName,
+    matchEvents, seasonFacts, passages, playerNames, venue, attendance, homeTeamName,
     teamShort, opponentShort,
     cricketFormat, cricketResult, cricketInnings, cricketChart,
   } = input;
@@ -537,6 +541,13 @@ export function buildReviewDataBlock(input: ReviewInput): string {
   } else if (scoringTimeline && scoringTimeline.length > 0) {
     lines.push('SCORING TIMELINE (derived — the sequence is authoritative; anchor the story in WHEN it turned):');
     scoringTimeline.forEach(l => lines.push(`  ${l}`));
+    lines.push('');
+  }
+
+  // ── Passages (computed narrative facts — quote, never derive) ─────────────
+  if (passages && passages.length > 0) {
+    lines.push('PASSAGES (computed from the events — the ONLY score states, runs, gaps, half-time and term facts you may cite; quote them, reworded but never recomputed):');
+    passages.forEach(l => lines.push(`  • ${l}`));
     lines.push('');
   }
 

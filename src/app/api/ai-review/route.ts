@@ -28,11 +28,50 @@ import { makeResultId } from '@/lib/result-match-key';
 import { fetchReviewFormAndH2H, fetchNRLMatchTimeline } from '@/lib/preview-fetchers';
 import { fetchESPNMatchReport, fetchESPNSeasonResults, deriveSeasonFacts, SOCCER_CUP_SLUGS } from '@/lib/match-report';
 import { buildContributions, buildCricketChart, buildKeyFactors } from '@/lib/review-contributions';
+import { buildPassages } from '@/lib/review-passages';
 import { cricMatchScorecard, cricMatchInfo } from '@/lib/cricketdata';
 import { TEAMS } from '@/lib/teams';
 import { fetchAflMatchStats, fetchAflQuarterScores } from '@/lib/afl-roster';
 import { SQUIGGLE_NAME } from '@/lib/afl';
 import { readReview, upsertReview, reviewStoreKey } from '@/lib/review-store';
+
+/**
+ * Mend the JSON faults a chat model produces: raw newlines / tabs inside
+ * string values, `\'`, and trailing commas. Walks the text tracking whether
+ * it is inside a string so structure outside strings is untouched.
+ */
+function repairJson(src: string): string {
+  let out = '';
+  let inStr = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inStr) {
+      if (ch === '\\') {
+        const nxt = src[i + 1];
+        if (nxt === "'") { out += "'"; i++; continue; }              // \' is not JSON
+        if (nxt === undefined) continue;
+        if (!/["\\/bfnrtu]/.test(nxt)) { out += '\\\\'; continue; } // stray backslash
+        out += ch + nxt; i++; continue;
+      }
+      if (ch === '"') {
+        // A quote that is not followed (after whitespace) by , } ] or : is a
+        // quotation INSIDE the value ("the Gunners" …) — escape it.
+        const rest = src.slice(i + 1).match(/^\s*([,}\]:]|$)/);
+        if (rest) { inStr = false; out += ch; continue; }
+        out += '\\"';
+        continue;
+      }
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') { inStr = true; out += ch; continue; }
+    out += ch;
+  }
+  return out.replace(/,\s*([}\]])/g, '$1');
+}
 
 /** Violations that concern phrasing, not facts — never worth a refusal on their own. */
 const isStyleViolation = (v: string): boolean =>
@@ -212,7 +251,15 @@ async function generateReviewUncached(cacheKey: string, dataBlock: string): Prom
     } catch {
       aiLog(`parse-fail cacheKey=${cacheKey} raw_len=${text.length} first300=${JSON.stringify(cleaned.slice(0, 300))}`);
       const s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
-      if (s >= 0 && e > s) return JSON.parse(cleaned.slice(s, e + 1)) as AIReview;
+      const body = s >= 0 && e > s ? cleaned.slice(s, e + 1) : cleaned;
+      try { return JSON.parse(body) as AIReview; } catch { /* repair below */ }
+      // Three-paragraph summaries brought the usual LLM JSON faults: raw
+      // newlines inside strings, \' escapes, trailing commas (2026-09-26).
+      const repaired = repairJson(body);
+      try { return JSON.parse(repaired) as AIReview; } catch (e2) {
+        const at = Number(String(e2 instanceof Error ? e2.message : e2).match(/position (\d+)/)?.[1] ?? -1);
+        aiLog(`repair-fail cacheKey=${cacheKey} err=${e2 instanceof Error ? e2.message : e2} around=${JSON.stringify(at >= 0 ? repaired.slice(Math.max(0, at - 80), at + 40) : repaired.slice(-160))}`);
+      }
       throw new SyntaxError(`Non-JSON review output: ${cleaned.slice(0, 120)}`);
     }
   };
@@ -553,6 +600,10 @@ export async function POST(req: NextRequest) {
       headToHead:         formExtras.headToHead,
       scoringTimeline:    report?.scoringTimeline ?? nrlTimeline?.scoringTimeline,
       matchEvents:        report?.events?.length ? report.events : nrlTimeline?.scoringTimeline ?? aflQuarters?.events,
+      passages:           buildPassages({
+        league, teamName, opponent, teamShort, opponentShort, teamScore: tScore, opponentScore: oScore,
+        matchEvents: report?.events?.length ? report.events : nrlTimeline?.scoringTimeline ?? aflQuarters?.events,
+      }),
       seasonFacts:        seasonFacts.length ? seasonFacts : undefined,
       playerNames:        namedPlayers.size ? [...namedPlayers] : undefined,
       venue:              report?.venue ?? nrlTimeline?.venue ?? formExtras.venue ?? cricInfo?.venue ?? undefined,
@@ -578,7 +629,7 @@ export async function POST(req: NextRequest) {
 
     // Cron-only inspection: the exact block the model would see, no generation.
     if (isCron && (body as { debugBlock?: boolean }).debugBlock === true) {
-      return NextResponse.json({ dataBlock, seasonFacts, contributions, keyFactors: derivedFactors, playerNames: [...namedPlayers], mirrorKey, genKey });
+      return NextResponse.json({ dataBlock, seasonFacts, passages: input.passages, contributions, keyFactors: derivedFactors, playerNames: [...namedPlayers], mirrorKey, genKey });
     }
 
     const review = await generateReview(genKey, dataBlock);

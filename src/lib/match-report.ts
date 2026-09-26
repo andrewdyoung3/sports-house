@@ -171,7 +171,6 @@ export async function fetchESPNMatchReport(
     let hs = 0, as = 0;
     const names = new Set<string>();
     const addName = (n?: string) => { if (n && n.trim().length > 1) names.add(n.trim()); };
-    const seen = new Set<string>();
 
     for (const e of (data.keyEvents ?? []) as any[]) {
       const type  = String(e.type?.text ?? '');
@@ -218,6 +217,9 @@ export async function fetchESPNMatchReport(
       }
 
       if (/card$/i.test(type)) {
+        // Yellow cards are noise the model tripped over in a 22-line block;
+        // only a red (or second yellow) changes a match.
+        if (!/red|second yellow/i.test(type)) continue;
         const who = parts[0]; if (!who) continue;
         const reason = text.match(/is shown the (?:yellow|red|second yellow) card(?: for (.+?))?\./i)?.[1];
         report.events.push(`${clock} ${type.replace(/ card$/i, ' card')} — ${who} (${team})${reason ? `, for ${reason}` : ''}`);
@@ -234,11 +236,8 @@ export async function fetchESPNMatchReport(
       }
 
       if (/^start delay$/i.test(type) && /injury/i.test(text)) {
+        // Kept out of the event list (noise); the player still enters the whitelist.
         const who = text.match(/injury (.+?) \(/i)?.[1] ?? parts[0];
-        const key = `delay-${clock}-${who ?? ''}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        report.events.push(`${clock} Injury stoppage — ${who ? `${who} (${team})` : team}`);
         addName(who);
         continue;
       }
