@@ -297,31 +297,39 @@ function ResultRow({
     );
   }
 
-  // ── Step 8 — two-team path: .sh-fix card (mirrors the schedule's ScheduleRow) ─
+  // ── Two-team path: the schedule's ScheduleRow skeleton exactly, with the
+  //    kick-off time's slot taken by the score. Same crest size (54), same
+  //    21px names, same nowrap units so long pairings wrap at the separator,
+  //    same sub-row of pills; on mobile .sh-fix-main stacks the score line
+  //    under the teams just as the schedule stacks its time line.
   const hasCricketScore = !!result.cricketScore;
 
   // W/L/D outcome chip
-  const outcomeChipClass = 'sh-result-outcome' + (isDraw ? '' : result.isWin ? ' is-win' : ' is-loss');
+  const outcomeChipClass = 'sh-result-outcome' + (isDraw ? ' is-draw' : result.isWin ? ' is-win' : ' is-loss');
   const outcomeLabel     = isDraw ? 'D' : result.isWin ? 'W' : 'L';
-  // Draw uses inline amber (no .is-draw CSS class exists in the design)
-  const drawChipStyle = isDraw
-    ? { color: '#f59e0b', background: 'rgba(245,158,11,0.18)', boxShadow: 'inset 0 0 0 1px rgba(245,158,11,0.4)' }
-    : undefined;
 
-  // Score class: feature team's score gets win color, opponent gets muted
-  const teamScoreClass = isDraw ? undefined : (result.isWin ? 'is-win-score' : 'is-loss-score');
-  const oppScoreClass  = isDraw ? undefined : (result.isWin ? 'is-loss-score' : 'is-win-score');
-  const drawScoreStyle = isDraw ? { color: '#f59e0b' } : undefined;
+  // Score halves: the winner's number in the win colour, the loser's muted.
+  const teamScoreClass = isDraw ? 'is-draw-score' : (result.isWin ? 'is-win-score' : 'is-loss-score');
+  const oppScoreClass  = isDraw ? 'is-draw-score' : (result.isWin ? 'is-loss-score' : 'is-win-score');
 
-  // Three-tier opponent name: same logic as ScheduleRow (shortName substitution first,
-  // compact font only as last resort when display name is still long after substitution).
+  // Cricket: "272/9 (49.5/50 ov, target 272)" is a sentence, not a score. The
+  // slot shows "272/9 · 271/8"; the overs/target detail and the result line
+  // go to the sub-row where the schedule keeps its venue and TV.
+  const compactCricket = (v?: string) => (v ? v.replace(/\s*\([^)]*\)\s*$/, '').trim() : undefined);
+  const cricketDetail  = [result.cricketScore, result.cricketOppScore]
+    .map(v => v?.match(/\(([^)]*)\)\s*$/)?.[1])
+    .filter(Boolean)
+    .join(' · ');
+
+  // Opponent display name: prefer the club's own name when the feed's label is long
+  // (mirrors ScheduleRow); the type stays 21px everywhere and wraps at the separator.
   const SHORTNAME_THRESHOLD = 14;
   const oppTeam = result.opponentId ? TEAMS.find(t => t.id === result.opponentId) : undefined;
   const oppDisplayName = result.opponent.length > SHORTNAME_THRESHOLD && oppTeam
     ? (oppTeam.name.length < result.opponent.length ? oppTeam.name : oppTeam.shortName)
     : result.opponent;
-  const longerDisplayLen = Math.max(team.shortName?.length ?? 0, oppDisplayName.length);
-  const nameSize         = longerDisplayLen > 11 ? { fontSize: '14px' } : undefined;
+  const nameSize = { fontSize: '21px' } as React.CSSProperties;
+  const cricketColor = result.cricketFormat === 'test' ? '#e2a84b' : result.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa';
 
   return (
     <article
@@ -338,60 +346,41 @@ function ResultRow({
       {/* Competition watermark — falls back to the sport ball on a dead CDN. */}
       <CompetitionWatermark competition={baseComp} league={team.league} />
 
-      {/* Feature badge: left column (direct flex item on the article) */}
-      <span className="sh-fix-badge-f">
-        <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={56} logoFilter={teamLogoFilter} />
-      </span>
-
-      {/* Text column: main row + sub row, so the sub aligns under names */}
       <div className="sh-fix-text">
         <div className="sh-fix-main">
-          {/* Teams + inline score.
-              Outer .sh-fix-teams wraps so only the trailing comp pill can drop to a new line;
-              inner span keeps the matchup unit (both teams + score) on one nowrap unit. */}
-          <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'nowrap', minWidth: 0 }}>
+          {/* Two nowrap units (crest + name) so a long pairing wraps at the
+              separator rather than shrinking the type — identical to the schedule. */}
+          <div className="sh-fix-teams" style={{ flexWrap: 'wrap', rowGap: '6px', columnGap: '10px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
+              <TeamBadge logoUrl={teamLogoUrl} abbreviation={team.abbreviation} primaryColor={team.primaryColor} size={54} logoFilter={teamLogoFilter} />
               <span className="sh-fix-name" style={nameSize}>{team.shortName}</span>
-
-              {/* Standard score (two numbers, split by win/loss colour) */}
-              {!hasCricketScore && (
-                <span className="sh-result-score-inline">
-                  <span className={teamScoreClass} style={drawScoreStyle}>{result.teamScore}</span>
-                  <span className="sh-fix-sep">–</span>
-                  <span className={oppScoreClass}  style={drawScoreStyle}>{result.opponentScore}</span>
-                </span>
-              )}
-
-              {/* Cricket score (smaller text, dot separator; scores include overs notation) */}
-              {hasCricketScore && (
-                <span className="sh-result-score-inline" style={{ fontSize: '13px', letterSpacing: 0 }}>
-                  <span className={teamScoreClass} style={drawScoreStyle}>{result.cricketScore}</span>
-                  {result.cricketOppScore && (
-                    <><span className="sh-fix-sep">·</span>
-                    <span className={oppScoreClass} style={drawScoreStyle}>{result.cricketOppScore}</span></>
-                  )}
-                </span>
-              )}
-
-              {/* Opponent badge: 40px circle (bumped from 32 for clearer hierarchy) */}
-              <TeamBadge logoUrl={result.opponentLogoUrl} abbreviation={result.opponentAbbr} primaryColor="#6B7280" size={40} logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']} />
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '9px', flexWrap: 'nowrap', minWidth: 0 }}>
+              <span className="sh-fix-sep">{result.isHome ? 'vs' : 'at'}</span>
+              <TeamBadge logoUrl={result.opponentLogoUrl} abbreviation={result.opponentAbbr} primaryColor="#6B7280" size={54} logoFilter={TEAM_LOGO_FILTERS[result.opponentId ?? '']} />
               <span className="sh-fix-name" style={nameSize}>{oppDisplayName}</span>
             </span>
-
-            {/* Competition badge */}
-            <ResultBadge league={team.league} competition={result.competition} />
-
-            {/* Cricket format label (Test / ODI / T20) — matches schedule's cricket pill */}
-            {result.cricketFormat && (
-              <span className="sh-comptag" style={{ '--c': result.cricketFormat === 'test' ? '#e2a84b' : result.cricketFormat === 'odi' ? '#60a5fa' : '#a78bfa' } as React.CSSProperties}>
-                {result.cricketFormat === 'test' ? 'Test' : result.cricketFormat.toUpperCase()}
-              </span>
-            )}
           </div>
 
-          {/* Right slot: outcome chip + home/away tag + chevron */}
+          {/* The time slot, holding the score: big tabular figures like the
+              kick-off time, then the W/L/D chip, the Home/Away tag and the chevron. */}
           <div className="sh-fix-time">
-            <span className={outcomeChipClass} style={drawChipStyle}>{outcomeLabel}</span>
+            {!hasCricketScore ? (
+              <span className="sh-result-score">
+                <span className={teamScoreClass}>{result.teamScore}</span>
+                <span className="sh-fix-sep">–</span>
+                <span className={oppScoreClass}>{result.opponentScore}</span>
+              </span>
+            ) : (
+              <span className="sh-result-score is-cricket">
+                <span className={teamScoreClass}>{compactCricket(result.cricketScore)}</span>
+                {result.cricketOppScore && (
+                  <><span className="sh-fix-sep">·</span>
+                  <span className={oppScoreClass}>{compactCricket(result.cricketOppScore)}</span></>
+                )}
+              </span>
+            )}
+            <span className={outcomeChipClass}>{outcomeLabel}</span>
             <span className={'sh-tag-venue is-' + (result.isHome ? 'home' : 'away')}>
               {result.isHome ? 'Home' : 'Away'}
             </span>
@@ -402,13 +391,23 @@ function ResultRow({
           </div>
         </div>
 
-        {/* Sub-row: date + cricket result text (no venue — GameResult has no venue field) */}
+        {/* Sub-row: competition pill (as the schedule), cricket format, and the
+            cricket result/overs where the schedule shows venue and TV. The date
+            is already the day header, so it is not repeated here. */}
         <div className="sh-fix-sub">
-          <span className="sh-meta-item">{dateStr}</span>
-          {result.cricketResult && (
-            <span className="sh-meta-item">
-              <span className="truncate" style={{ maxWidth: '200px' }} title={result.cricketResult}>{result.cricketResult}</span>
+          {team.league !== 'cricket_int' && (
+            <ResultBadge league={team.league} competition={result.competition} />
+          )}
+          {result.cricketFormat && (
+            <span className="sh-comptag" style={{ '--c': cricketColor } as React.CSSProperties}>
+              {cricketFormatLabel(result.cricketFormat)}
             </span>
+          )}
+          {result.cricketResult && (
+            <span className="sh-meta-item"><span className="truncate" style={{ maxWidth: '260px' }} title={result.cricketResult}>{result.cricketResult}</span></span>
+          )}
+          {cricketDetail && (
+            <span className="sh-meta-item" style={{ color: 'var(--text-3)' }}><span className="truncate" style={{ maxWidth: '260px' }}>{cricketDetail}</span></span>
           )}
         </div>
       </div>

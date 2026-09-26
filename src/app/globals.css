@@ -841,16 +841,6 @@
               var(--shadow-hero, 0 0 0 transparent);
 }
 
-/* ── Feature-team badge inside .sh-fix cards (card badge restyling) ──
-   Larger, rounded-square, with a soft team-colour glow that follows the
-   logo's alpha shape. Both the TeamBadge outer wrapper div AND its inner
-   clip div need the radius override so the image clips correctly to 12px. */
-.sh-theme .sh-fix-badge-f {
-  display: inline-flex;
-  filter: drop-shadow(0 0 10px color-mix(in oklab, var(--accent) 50%, transparent));
-}
-.sh-theme .sh-fix-badge-f > div,
-.sh-theme .sh-fix-badge-f > div > div:first-child { border-radius: 12px; }
 
 .sh-fix-detail {
   position: relative; z-index: 1; margin-top: 16px; padding-top: 16px;
@@ -1119,6 +1109,23 @@
 }
 .sh-result-outcome.is-win  { color: var(--win);  background: color-mix(in oklab, var(--win) 18%, transparent);  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--win) 40%, transparent); }
 .sh-result-outcome.is-loss { color: var(--loss); background: color-mix(in oklab, var(--loss) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--loss) 38%, transparent); }
+.sh-result-outcome.is-draw { color: #f59e0b; background: rgba(245,158,11,.18); box-shadow: inset 0 0 0 1px rgba(245,158,11,.4); }
+
+/* Result row: the score sits in the schedule's kick-off slot and is set like
+   the kick-off time (same face, weight, size, tabular figures). Winner's half
+   in the win colour, loser's muted, draws amber. Cricket scores are strings
+   ("272/9"), so they step down a size and keep a dot separator. */
+.sh-result-score {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-family: var(--font-head); font-weight: 800; font-size: 21px;
+  letter-spacing: -0.3px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.sh-result-score .is-win-score  { color: var(--win); }
+.sh-result-score .is-loss-score { color: var(--text-3); }
+.sh-result-score .is-draw-score { color: #f59e0b; }
+.sh-result-score .sh-fix-sep    { font-weight: 400; font-size: 17px; opacity: .55; }
+.sh-result-score.is-cricket     { font-size: 15px; letter-spacing: 0; }
+.sh-result-score.is-cricket .sh-fix-sep { font-size: 13px; }
 
 /* Hero score block (results page hero) */
 .sh-result-scores {
