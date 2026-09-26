@@ -318,10 +318,18 @@
 }
 .sh-nav-tab:hover { color: var(--text-2); }
 .sh-nav-tab.is-active { background: var(--surface-2); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
-/* Icon-only mode (<sm): square the tab padding so the icon row is evenly spaced
-   (the design's 8px 16px reads lopsided once the labels collapse to icons). */
+/* Icon-only mode (<sm): the tabs were 32px squares butted 4px apart, so a thumb
+   aimed at Schedule landed on Results. Each tab is now a 44px touch target
+   (Apple HIG / Material minimum) with a larger icon, and the gap between tabs
+   is dead space rather than the neighbour. The pill stays inside the 56px bar. */
 @media (max-width: 639px) {
-  .sh-theme .sh-nav-tab { padding: 8px; }
+  .sh-theme .sh-nav { gap: 8px; padding: 3px; }
+  .sh-theme .sh-nav-tab {
+    padding: 0; min-width: 44px; min-height: 44px; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sh-theme .sh-nav-tab svg { width: 20px; height: 20px; }
+  .sh-theme .sh-nav-tab:active { background: var(--surface-2); }
 }
 .sh-nav-myteams {
   display: inline-flex; align-items: center; gap: 8px;
